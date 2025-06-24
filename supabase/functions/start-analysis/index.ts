@@ -149,30 +149,8 @@ serve(async (req) => {
             User's Case Goals: ${caseGoals || 'Not specified.'}
             User's System Instruction: ${systemInstruction || 'None provided.'}
             
-            You have access to a 'file_search' tool for documents uploaded directly to me.
-            Additionally, you have a custom tool called 'search_case_files' to search for files by name within the user's Supabase storage. Use this tool when the user explicitly asks to search for files by name or mentions keywords related to file names.
-            
             When responding, provide updates on your analysis progress, key findings, and any questions you have. Structure your output clearly for legal professionals.`,
-            tools: [
-              { type: "file_search" },
-              {
-                type: "function",
-                function: {
-                  name: "search_case_files",
-                  description: "Search for case files by name in the user's Supabase storage.",
-                  parameters: {
-                    type: "object",
-                    properties: {
-                      query: {
-                        type: "string",
-                        description: "The search query for file names (e.g., 'financial statements', 'emails from 2023').",
-                      },
-                    },
-                    required: ["query"],
-                  },
-                },
-              },
-            ],
+            tools: [{ type: "file_search" }],
             model: "gpt-4o", // Or another suitable model like "gpt-4-turbo"
           });
           assistantId = assistant.id;
