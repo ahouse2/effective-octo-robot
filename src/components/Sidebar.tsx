@@ -1,9 +1,9 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Home, FolderKanban, Scale, Settings, Gavel, FileText } from "lucide-react";
+import { Home, FolderKanban, Scale, Settings, Gavel, FileText, BotMessageSquare } from "lucide-react"; // Import BotMessageSquare icon
 import { cn } from "@/lib/utils";
-import { ThemeToggle } from "./ThemeToggle"; // Import ThemeToggle
+import { ThemeToggle } from "./ThemeToggle";
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {}
 
@@ -40,6 +40,12 @@ export function Sidebar({ className }: SidebarProps) {
                 Case Management
               </Button>
             </Link>
+            <Link to="/agent-interaction"> {/* Add the new link here */}
+              <Button variant="ghost" className="w-full justify-start">
+                <BotMessageSquare className="mr-2 h-4 w-4" />
+                Agent Interaction
+              </Button>
+            </Link>
           </div>
         </div>
         <div className="px-3 py-2">
@@ -51,7 +57,7 @@ export function Sidebar({ className }: SidebarProps) {
               <Settings className="mr-2 h-4 w-4" />
               App Settings
             </Button>
-            <ThemeToggle /> {/* Add the ThemeToggle here */}
+            <ThemeToggle />
           </div>
         </div>
       </div>
