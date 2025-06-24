@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import Layout from "@/components/Layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { AgentInteractionDisplay } from "@/components/AgentInteractionDisplay";
+import { AgentActivityLog } from "@/components/AgentActivityLog"; // Updated import
 import { CaseTheorySummary } from "@/components/CaseTheorySummary";
 import { CaseInsightsCard } from "@/components/CaseInsightsCard";
 import { CaseTimeline } from "@/components/CaseTimeline";
@@ -424,7 +424,7 @@ const AgentInteraction = () => {
               </CardHeader>
               <CardContent>
                 <ScrollArea className="h-[300px] pr-4">
-                  <AgentInteractionDisplay caseId={caseId} />
+                  <AgentActivityLog caseId={caseId} />
                 </ScrollArea>
               </CardContent>
             </Card>
