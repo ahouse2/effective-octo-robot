@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const { caseId, fileNames, caseGoals } = await req.json(); // Receive caseGoals
+    const { caseId, fileNames, caseGoals, systemInstruction } = await req.json(); // Receive systemInstruction
 
     if (!caseId) {
       return new Response(JSON.stringify({ error: 'Case ID is required' }), {
@@ -39,7 +39,7 @@ serve(async (req) => {
         agent_name: 'System Initiator',
         agent_role: 'Orchestrator',
         activity_type: 'Analysis Initiation',
-        content: `Analysis initiated for case ${caseId}. Files received: ${fileNames.join(', ')}. Case Goals: ${caseGoals || 'Not specified'}.`, // Include case goals
+        content: `Analysis initiated for case ${caseId}. Files received: ${fileNames.join(', ')}. Case Goals: ${caseGoals || 'Not specified'}. System Instruction: ${systemInstruction || 'None provided'}.`, // Include system instruction
         status: 'processing',
       });
 
@@ -85,7 +85,8 @@ serve(async (req) => {
             caseId: caseId,
             userId: req.headers.get('x-supabase-user-id'), // Pass user ID if needed by AI service
             fileNames: fileNames,
-            caseGoals: caseGoals, // Pass case goals to AI service
+            caseGoals: caseGoals,
+            systemInstruction: systemInstruction, // Pass system instruction to AI service
             // You might also pass URLs to the uploaded files if your AI service needs direct access
             // fileUrls: fileNames.map(name => supabaseClient.storage.from('evidence-files').getPublicUrl(`${req.headers.get('x-supabase-user-id')}/${caseId}/${name}`).data.publicUrl)
           }),
