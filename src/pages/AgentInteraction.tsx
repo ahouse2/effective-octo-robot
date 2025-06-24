@@ -2,12 +2,12 @@ import React, { useState } from "react";
 import Layout from "@/components/Layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { AgentInteractionDisplay } from "@/components/AgentInteractionDisplay"; // This will be moved
+import { AgentInteractionDisplay } from "@/components/AgentInteractionDisplay";
 import { CaseTheorySummary } from "@/components/CaseTheorySummary";
 import { CaseInsightsCard } from "@/components/CaseInsightsCard";
 import { CaseTimeline } from "@/components/CaseTimeline";
 import { CaseFilesDisplay } from "@/components/CaseFilesDisplay";
-import { CaseChatDisplay } from "@/components/CaseChatDisplay"; // New import
+import { CaseChatDisplay } from "@/components/CaseChatDisplay";
 import { useParams } from "react-router-dom";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Terminal, Send, Lightbulb, Upload } from "lucide-react";
@@ -172,7 +172,7 @@ const AgentInteraction = () => {
               <CardDescription>Interact directly with the AI agents.</CardDescription>
             </CardHeader>
             <CardContent className="flex-1 flex flex-col">
-              <CaseChatDisplay caseId={caseId} /> {/* New Chat Display */}
+              <CaseChatDisplay caseId={caseId} />
               
               {/* User Input for Agent Interaction */}
               <Card className="mt-4 mb-4">
