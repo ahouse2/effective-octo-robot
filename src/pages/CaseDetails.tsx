@@ -2,126 +2,77 @@ import React, { useEffect, useState } from "react";
 import Layout from "@/components/Layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { useParams, useNavigate, Link } from "react-router-dom";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useParams, useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft } from "lucide-react";
+import { EditCaseDetailsDialog } from "@/components/EditCaseDetailsDialog"; // Import the dialog
 
-const caseDetailsSchema = z.object({
-  name: z.string().min(1, { message: "Case name is required." }).max(100, { message: "Case name too long." }),
-  type: z.string().min(1, { message: "Case type is required." }).max(50, { message: "Case type too long." }),
-  caseGoals: z.string().optional(),
-  systemInstruction: z.string().optional(),
-  aiModel: z.enum(["openai", "gemini"], {
-    required_error: "Please select an AI model.",
-  }),
-});
-
-type CaseDetailsFormValues = z.infer<typeof caseDetailsSchema>;
+interface CaseDetailsData {
+  name: string;
+  type: string;
+  status: string;
+  case_goals: string | null;
+  system_instruction: string | null;
+  ai_model: "openai" | "gemini";
+  last_updated: string;
+}
 
 const CaseDetails = () => {
   const { caseId } = useParams<{ caseId: string }>();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [caseStatus, setCaseStatus] = useState<string | null>(null);
+  const [caseDetails, setCaseDetails] = useState<CaseDetailsData | null>(null);
 
-  const form = useForm<CaseDetailsFormValues>({
-    resolver: zodResolver(caseDetailsSchema),
-    defaultValues: {
-      name: "",
-      type: "",
-      caseGoals: "",
-      systemInstruction: "",
-      aiModel: "openai",
-    },
-  });
-
-  useEffect(() => {
+  const fetchCaseDetails = async () => {
     if (!caseId) {
       toast.error("No case ID provided.");
       navigate("/case-management");
       return;
     }
 
-    const fetchCaseDetails = async () => {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('cases')
-        .select('name, type, status, case_goals, system_instruction, ai_model')
-        .eq('id', caseId)
-        .single();
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('cases')
+      .select('name, type, status, case_goals, system_instruction, ai_model, last_updated')
+      .eq('id', caseId)
+      .single();
 
-      if (error) {
-        console.error("Error fetching case details:", error);
-        toast.error("Failed to load case details. " + error.message);
-        navigate("/case-management");
-      } else if (data) {
-        form.reset({
-          name: data.name,
-          type: data.type,
-          caseGoals: data.case_goals || "",
-          systemInstruction: data.system_instruction || "",
-          aiModel: (data.ai_model as "openai" | "gemini") || "openai",
-        });
-        setCaseStatus(data.status);
-      }
-      setLoading(false);
-    };
-
-    fetchCaseDetails();
-  }, [caseId, navigate, form]);
-
-  const onSubmit = async (values: CaseDetailsFormValues) => {
-    if (!caseId) {
-      toast.error("Case ID is missing. Cannot update case.");
-      return;
+    if (error) {
+      console.error("Error fetching case details:", error);
+      toast.error("Failed to load case details. " + error.message);
+      setCaseDetails(null);
+      // Optionally navigate back or show a more prominent error
+    } else if (data) {
+      setCaseDetails(data as CaseDetailsData);
     }
-
-    setIsSubmitting(true);
-    const loadingToastId = toast.loading("Updating case details...");
-
-    try {
-      const { error } = await supabase
-        .from('cases')
-        .update({
-          name: values.name,
-          type: values.type,
-          case_goals: values.caseGoals,
-          system_instruction: values.systemInstruction,
-          ai_model: values.aiModel,
-          last_updated: new Date().toISOString(),
-        })
-        .eq('id', caseId);
-
-      if (error) {
-        throw new Error("Failed to update case: " + error.message);
-      }
-
-      toast.success("Case details updated successfully!");
-    } catch (err: any) {
-      console.error("Case update error:", err);
-      toast.error(err.message || "An unexpected error occurred during case update.");
-    } finally {
-      setIsSubmitting(false);
-      toast.dismiss(loadingToastId);
-    }
+    setLoading(false);
   };
+
+  useEffect(() => {
+    fetchCaseDetails();
+  }, [caseId, navigate]);
 
   if (loading) {
     return (
       <Layout>
         <div className="container mx-auto py-8 text-center">
           <p className="text-lg text-gray-700 dark:text-gray-300">Loading case details...</p>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (!caseDetails) {
+    return (
+      <Layout>
+        <div className="container mx-auto py-8 text-center text-red-500">
+          <p className="text-lg">Case not found or an error occurred.</p>
+          <Button onClick={() => navigate("/case-management")} className="mt-4">
+            Back to Case Management
+          </Button>
         </div>
       </Layout>
     );
@@ -139,131 +90,63 @@ const CaseDetails = () => {
 
         <Card className="max-w-3xl mx-auto">
           <CardHeader>
-            <CardTitle>Manage Case Information</CardTitle>
-            <CardDescription>View and update the core details of this case.</CardDescription>
+            <CardTitle>Case Information</CardTitle>
+            <CardDescription>Overview of the core details for this case.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="mb-6 flex items-center justify-between">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-y-4 gap-x-8 mb-6">
               <div>
                 <Label className="text-sm font-medium">Case ID</Label>
-                <p className="text-lg font-semibold text-foreground">{caseId}</p>
+                <p className="text-lg font-semibold text-foreground break-all">{caseId}</p>
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Case Name (Parties Involved)</Label>
+                <p className="text-lg font-semibold text-foreground">{caseDetails.name}</p>
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Case Type</Label>
+                <p className="text-lg font-semibold text-foreground">{caseDetails.type}</p>
               </div>
               <div>
                 <Label className="text-sm font-medium">Current Status</Label>
                 <Badge variant={
-                  caseStatus === "Analysis Complete" ? "default" :
-                  caseStatus === "In Progress" ? "secondary" :
-                  caseStatus === "Initial Setup" ? "outline" :
+                  caseDetails.status === "Analysis Complete" ? "default" :
+                  caseDetails.status === "In Progress" ? "secondary" :
+                  caseDetails.status === "Initial Setup" ? "outline" :
                   "outline"
                 }>
-                  {caseStatus}
+                  {caseDetails.status}
                 </Badge>
+              </div>
+              <div className="md:col-span-2">
+                <Label className="text-sm font-medium">Primary Case Goals</Label>
+                <p className="text-base text-muted-foreground whitespace-pre-wrap">{caseDetails.case_goals || "Not specified."}</p>
+              </div>
+              <div className="md:col-span-2">
+                <Label className="text-sm font-medium">System Instructions (for AI Agents)</Label>
+                <p className="text-base text-muted-foreground whitespace-pre-wrap">{caseDetails.system_instruction || "None provided."}</p>
+              </div>
+              <div>
+                <Label className="text-sm font-medium">AI Model</Label>
+                <p className="text-base text-muted-foreground">{caseDetails.ai_model === 'openai' ? 'OpenAI (GPT-4o)' : 'Google Gemini'}</p>
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Last Updated</Label>
+                <p className="text-base text-muted-foreground">{new Date(caseDetails.last_updated).toLocaleString()}</p>
               </div>
             </div>
 
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                <FormField
-                  control={form.control}
-                  name="name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Case Name (Parties Involved)</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., John Doe vs. Jane Smith" {...field} disabled={isSubmitting} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="type"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Case Type</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., Divorce, Child Custody" {...field} disabled={isSubmitting} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="caseGoals"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Primary Case Goals</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          placeholder="e.g., Prove financial misconduct, Establish primary custody"
-                          className="min-h-[80px]"
-                          {...field}
-                          disabled={isSubmitting}
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        Clearly outlining your goals will help the AI agents focus their analysis.
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="systemInstruction"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>System Instructions (for AI Agents)</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          placeholder="Provide specific instructions or context for the AI agents. E.g., 'Focus heavily on financial documents for discrepancies.', 'Prioritize evidence related to child's welfare.', 'Ignore documents older than 2020.'"
-                          className="min-h-[120px]"
-                          {...field}
-                          disabled={isSubmitting}
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        Use this field to give the AI agents detailed directives on how to approach the analysis.
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="aiModel"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>AI Model for Analysis</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value} disabled={isSubmitting}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select an AI model" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="openai">OpenAI (GPT-4o)</SelectItem>
-                          <SelectItem value="gemini">Google Gemini (Requires RAG setup for full document analysis)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormDescription>
-                        This model powers the AI analysis for this specific case.
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <Button type="submit" className="w-full" disabled={isSubmitting}>
-                  {isSubmitting ? "Saving Changes..." : "Save Changes"}
-                </Button>
-              </form>
-            </Form>
-            <div className="mt-6 text-center">
-              <Link to={`/agent-interaction/${caseId}`}>
-                <Button variant="outline">Go to Agent Interaction</Button>
-              </Link>
+            <div className="mt-6 flex justify-center space-x-4">
+              <EditCaseDetailsDialog
+                caseId={caseId}
+                initialCaseGoals={caseDetails.case_goals || ""}
+                initialSystemInstruction={caseDetails.system_instruction || ""}
+                initialAiModel={caseDetails.ai_model}
+                onSaveSuccess={fetchCaseDetails} // Re-fetch details on successful save
+              />
+              <Button variant="outline" onClick={() => navigate(`/agent-interaction/${caseId}`)}>
+                Go to Agent Interaction
+              </Button>
             </div>
           </CardContent>
         </Card>
