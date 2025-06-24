@@ -1,33 +1,105 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Lightbulb, TrendingUp, Scale } from "lucide-react"; // Example icons
+import { Lightbulb, TrendingUp, Scale, Info } from "lucide-react"; // Added Info icon for generic insights
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+
+interface CaseInsight {
+  id: string;
+  case_id: string;
+  title: string;
+  description: string;
+  insight_type: 'key_fact' | 'risk_assessment' | 'outcome_trend' | 'general'; // Define possible types
+  timestamp: string;
+}
 
 interface CaseInsightsCardProps {
   caseId: string;
-  // In the future, this component would receive structured data from the AI agents
-  // For now, it's a placeholder.
 }
 
 export const CaseInsightsCard: React.FC<CaseInsightsCardProps> = ({ caseId }) => {
-  // Placeholder data for demonstration
-  const insights = [
-    {
-      title: "Key Fact Identified",
-      description: "Discovered a previously unrecorded financial transaction relevant to asset division.",
-      icon: <Lightbulb className="h-5 w-5 text-blue-500" />,
-    },
-    {
-      title: "Risk Assessment",
-      description: "High risk of prolonged litigation due to contested child custody arrangements.",
-      icon: <Scale className="h-5 w-5 text-red-500" />,
-    },
-    {
-      title: "Potential Outcome Trend",
-      description: "Early indicators suggest a favorable outcome for spousal support claims.",
-      icon: <TrendingUp className="h-5 w-5 text-green-500" />,
-    },
-  ];
+  const [insights, setInsights] = useState<CaseInsight[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!caseId) {
+      setError("No case ID provided for insights.");
+      setLoading(false);
+      return;
+    }
+
+    const fetchCaseInsights = async () => {
+      setLoading(true);
+      setError(null);
+      const { data, error } = await supabase
+        .from("case_insights")
+        .select("*")
+        .eq("case_id", caseId)
+        .order("timestamp", { ascending: false }); // Order by most recent first
+
+      if (error) {
+        console.error("Error fetching case insights:", error);
+        setError("Failed to load case insights. Please try again.");
+        toast.error("Failed to load case insights.");
+      } else {
+        setInsights(data || []);
+      }
+      setLoading(false);
+    };
+
+    fetchCaseInsights();
+
+    // Real-time subscription for new insights
+    const channel = supabase
+      .channel(`case_insights_for_case_${caseId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'case_insights', filter: `case_id=eq.${caseId}` },
+        (payload) => {
+          console.log('Case insight change received!', payload);
+          if (payload.eventType === 'INSERT') {
+            setInsights((prev) => [payload.new as CaseInsight, ...prev].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
+          } else if (payload.eventType === 'UPDATE') {
+            setInsights((prev) =>
+              prev.map((insight) =>
+                insight.id === payload.old.id ? (payload.new as CaseInsight) : insight
+              ).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+            );
+          } else if (payload.eventType === 'DELETE') {
+            setInsights((prev) => prev.filter((insight) => insight.id !== payload.old.id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [caseId]);
+
+  const getInsightIcon = (type: CaseInsight["insight_type"]) => {
+    switch (type) {
+      case "key_fact":
+        return <Lightbulb className="h-5 w-5 text-blue-500" />;
+      case "risk_assessment":
+        return <Scale className="h-5 w-5 text-red-500" />;
+      case "outcome_trend":
+        return <TrendingUp className="h-5 w-5 text-green-500" />;
+      case "general":
+      default:
+        return <Info className="h-5 w-5 text-gray-500" />;
+    }
+  };
+
+  if (loading) {
+    return <div className="text-center py-8">Loading insights...</div>;
+  }
+
+  if (error) {
+    return <div className="text-center py-8 text-red-500">{error}</div>;
+  }
 
   return (
     <Card>
@@ -38,14 +110,17 @@ export const CaseInsightsCard: React.FC<CaseInsightsCardProps> = ({ caseId }) =>
       <CardContent>
         <div className="space-y-4">
           {insights.length > 0 ? (
-            insights.map((insight, index) => (
-              <div key={index} className="flex items-start space-x-3">
+            insights.map((insight) => (
+              <div key={insight.id} className="flex items-start space-x-3">
                 <div className="flex-shrink-0 mt-1">
-                  {insight.icon}
+                  {getInsightIcon(insight.insight_type || 'general')}
                 </div>
                 <div>
                   <h3 className="font-semibold text-foreground">{insight.title}</h3>
                   <p className="text-sm text-muted-foreground">{insight.description}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {new Date(insight.timestamp).toLocaleString()}
+                  </p>
                 </div>
               </div>
             ))
