@@ -33,6 +33,7 @@ const formSchema = z.object({
     message: "Parties involved must be at least 2 characters.",
   }),
   caseGoals: z.string().optional(), // New field for case goals
+  systemInstruction: z.string().optional(), // New field for system instruction
 });
 
 export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) => {
@@ -47,6 +48,7 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
       caseType: "",
       partiesInvolved: "",
       caseGoals: "", // Initialize caseGoals
+      systemInstruction: "", // Initialize systemInstruction
     },
   });
 
@@ -69,6 +71,7 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
             status: "Initial Setup", // New cases start with 'Initial Setup' status
             user_id: user.id,
             case_goals: values.caseGoals, // Save case goals
+            system_instruction: values.systemInstruction, // Save system instruction
           },
         ])
         .select();
@@ -157,6 +160,27 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
                   </FormControl>
                   <FormDescription>
                     Clearly outlining your goals will help the AI agents focus their analysis.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="systemInstruction"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>System Instructions (for AI Agents)</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      placeholder="Provide specific instructions or context for the AI agents. E.g., 'Focus heavily on financial documents for discrepancies.', 'Prioritize evidence related to child's welfare.', 'Ignore documents older than 2020.'"
+                      className="min-h-[120px]"
+                      {...field}
+                      disabled={isSubmitting}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Use this field to give the AI agents detailed directives on how to approach the analysis.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
