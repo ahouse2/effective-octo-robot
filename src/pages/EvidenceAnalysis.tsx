@@ -10,7 +10,8 @@ import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { useSession } from "@/components/SessionContextProvider"; // Import useSession
+import { useSession } from "@/components/SessionContextProvider";
+import { useNavigate } from "react-router-dom"; // Import useNavigate
 
 const formSchema = z.object({
   caseType: z.string().min(2, {
@@ -23,7 +24,8 @@ const formSchema = z.object({
 
 const EvidenceAnalysis = () => {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const { user } = useSession(); // Get the current user from the session context
+  const { user } = useSession();
+  const navigate = useNavigate(); // Initialize useNavigate
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -57,7 +59,7 @@ const EvidenceAnalysis = () => {
             name: values.partiesInvolved,
             type: values.caseType,
             status: "In Progress",
-            user_id: user.id, // Associate the case with the current user
+            user_id: user.id,
           },
         ])
         .select();
@@ -70,6 +72,10 @@ const EvidenceAnalysis = () => {
         toast.success("New case created successfully!");
         form.reset();
         setSelectedFiles([]);
+        if (data && data.length > 0) {
+          // Navigate to the AgentInteraction page for the newly created case
+          navigate(`/agent-interaction/${data[0].id}`);
+        }
       }
     } catch (err) {
       console.error("Unexpected error during case creation:", err);
