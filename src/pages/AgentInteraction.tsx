@@ -8,7 +8,7 @@ import { CaseInsightsCard } from "@/components/CaseInsightsCard";
 import { CaseTimeline } from "@/components/CaseTimeline";
 import { CaseFilesDisplay } from "@/components/CaseFilesDisplay";
 import { CaseChatDisplay } from "@/components/CaseChatDisplay";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom"; // Import useNavigate
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Terminal, Send, Lightbulb, Upload, Edit } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
@@ -31,6 +31,7 @@ interface CaseDetails {
 
 const AgentInteraction = () => {
   const { caseId } = useParams<{ caseId: string }>();
+  const navigate = useNavigate(); // Initialize useNavigate
   const [userPrompt, setUserPrompt] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [filesToUpload, setFilesToUpload] = useState<File[]>([]);
@@ -40,7 +41,12 @@ const AgentInteraction = () => {
   const [loadingCaseDetails, setLoadingCaseDetails] = useState(true);
 
   const fetchCaseDetails = async () => {
-    if (!caseId) return;
+    if (!caseId) {
+      // If caseId is missing, redirect to case management
+      toast.error("No case selected. Please select a case to interact with agents.");
+      navigate("/case-management");
+      return;
+    }
     setLoadingCaseDetails(true);
     const { data, error } = await supabase
       .from('cases')
@@ -52,6 +58,7 @@ const AgentInteraction = () => {
       console.error("Error fetching case details for AgentInteraction:", error);
       toast.error("Failed to load case details.");
       setCaseDetails(null);
+      navigate("/case-management"); // Redirect on error
     } else {
       setCaseDetails(data as CaseDetails);
     }
@@ -60,7 +67,7 @@ const AgentInteraction = () => {
 
   useEffect(() => {
     fetchCaseDetails();
-  }, [caseId]);
+  }, [caseId, navigate]); // Add navigate to dependency array
 
   const handleSendPrompt = async () => {
     if (!userPrompt.trim()) {
@@ -198,23 +205,9 @@ const AgentInteraction = () => {
     }
   };
 
-  if (!caseId) {
-    return (
-      <Layout>
-        <div className="container mx-auto py-8">
-          <Alert variant="destructive">
-            <Terminal className="h-4 w-4" />
-            <AlertTitle>Error</AlertTitle>
-            <AlertDescription>
-              No case ID provided. Please navigate to this page from a specific case.
-            </AlertDescription>
-          </Alert>
-        </div>
-      </Layout>
-    );
-  }
-
-  if (loadingCaseDetails) {
+  // If caseId is missing, the useEffect will handle the redirect.
+  // We can return a simple loading state here to avoid rendering the full page before redirect.
+  if (!caseId || loadingCaseDetails) {
     return (
       <Layout>
         <div className="container mx-auto py-8 text-center">
@@ -328,7 +321,7 @@ const AgentInteraction = () => {
               <CardHeader>
                 <CardTitle>Upload More Evidence</CardTitle>
                 <CardDescription>Add additional files to this case for analysis.</CardDescription>
-              </CardHeader>
+              </CardDescription>
               <CardContent>
                 <div className="grid w-full items-center gap-1.5 mb-4">
                   <Label htmlFor="additional-evidence-files">Select Files</Label>
