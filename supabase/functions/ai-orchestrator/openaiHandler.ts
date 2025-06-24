@@ -1,6 +1,6 @@
 import OpenAI from 'https://esm.sh/openai@4.52.7';
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-import { insertAgentActivity, updateCaseData } from '../commonUtils.ts'; // Corrected import path
+import { insertAgentActivity, updateCaseData } from './commonUtils.ts'; // Corrected import path
 
 // Helper function to handle individual tool calls
 async function handleToolCall(

@@ -1,8 +1,8 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import OpenAI from 'https://esm.sh/openai@4.52.7';
-import { handleOpenAICommand } from './utils/openaiHandler.ts';
-import { handleGeminiCommand } from './utils/geminiHandler.ts';
+import { handleOpenAICommand } from './openaiHandler.ts'; // Corrected import path
+import { handleGeminiCommand } from './geminiHandler.ts'; // Corrected import path
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
