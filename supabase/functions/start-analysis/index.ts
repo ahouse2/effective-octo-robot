@@ -14,7 +14,7 @@ serve(async (req) => {
   }
 
   try {
-    const { caseId, fileNames, caseGoals, systemInstruction, aiModel } = await req.json();
+    const { caseId, fileNames, caseGoals, systemInstruction, aiModel, openaiAssistantId: clientProvidedAssistantId } = await req.json();
     const userId = req.headers.get('x-supabase-user-id');
 
     if (!caseId || !userId || !aiModel) {
@@ -94,8 +94,8 @@ serve(async (req) => {
       }
     }
 
+    let finalOpenAIAssistantId: string | undefined;
     let openaiThreadId: string | undefined;
-    let openaiAssistantId: string | undefined;
 
     const structuredOutputInstruction = `
     When providing updates or summaries, especially after processing new information or a user prompt, please include structured JSON data within a markdown code block (e.g., \`\`\`json{...}\`\`\`). This JSON should contain updates to the case theory and/or new insights.
@@ -189,8 +189,8 @@ serve(async (req) => {
       }
 
       // 4. Create or retrieve an OpenAI Assistant
-      let assistantId = Deno.env.get('OPENAI_ASSISTANT_ID');
       let assistant;
+      let assistantToUseId = clientProvidedAssistantId; // Prioritize client-provided ID
 
       const assistantTools = [
         { type: "file_search" },
@@ -213,11 +213,11 @@ serve(async (req) => {
         },
       ];
 
-      if (assistantId) {
+      if (assistantToUseId) {
         try {
-          assistant = await openai.beta.assistants.retrieve(assistantId);
+          assistant = await openai.beta.assistants.retrieve(assistantToUseId);
           // Update assistant to ensure it has the latest tools and instructions
-          assistant = await openai.beta.assistants.update(assistantId, {
+          assistant = await openai.beta.assistants.update(assistantToUseId, {
             instructions: `You are a specialized AI assistant for California family law cases. Your primary goal is to analyze evidence, identify key facts, legal arguments, and potential outcomes. You should be precise, objective, and focus on the legal implications of the provided documents. Always cite the source document when making claims.
             
             User's Case Goals: ${caseGoals || 'Not specified.'}
@@ -229,13 +229,14 @@ serve(async (req) => {
             model: "gpt-4o",
           });
           console.log('Using and updated existing OpenAI Assistant:', assistant.id);
+          finalOpenAIAssistantId = assistant.id;
         } catch (retrieveError: any) {
-          console.warn(`Failed to retrieve existing Assistant with ID ${assistantId}: ${retrieveError.message}. Creating a new one.`);
-          assistantId = undefined; // Force creation of a new assistant
+          console.warn(`Failed to retrieve existing Assistant with ID ${assistantToUseId}: ${retrieveError.message}. Creating a new one.`);
+          assistantToUseId = undefined; // Force creation of a new assistant
         }
       }
 
-      if (!assistantId) {
+      if (!assistantToUseId) { // If no ID was provided or retrieval failed
         try {
           assistant = await openai.beta.assistants.create({
             name: "Family Law AI Assistant",
@@ -249,14 +250,14 @@ serve(async (req) => {
             tools: assistantTools,
             model: "gpt-4o", // Or another suitable model like "gpt-4-turbo"
           });
-          assistantId = assistant.id;
+          finalOpenAIAssistantId = assistant.id;
           console.log('Created new OpenAI Assistant:', assistant.id);
           await supabaseClient.from('agent_activities').insert({
             case_id: caseId,
             agent_name: 'OpenAI Setup',
             agent_role: 'Configuration',
             activity_type: 'Assistant Created',
-            content: `New OpenAI Assistant created with ID: ${assistant.id}. Please save this ID as OPENAI_ASSISTANT_ID in Supabase secrets for future use.`,
+            content: `New OpenAI Assistant created with ID: ${assistant.id}.`,
             status: 'completed',
           });
         } catch (createError: any) {
@@ -276,6 +277,7 @@ serve(async (req) => {
       // 5. Create a new thread
       const thread = await openai.beta.threads.create();
       console.log('Created new OpenAI Thread:', thread.id);
+      openaiThreadId = thread.id;
 
       // 6. Add initial message to the thread with file references
       const initialMessageContent = `Please begin the analysis for the case. The primary case goals are: "${caseGoals || 'Not specified.'}". Additional system instructions: "${systemInstruction || 'None provided.'}". The uploaded files are now available for analysis.`;
@@ -294,7 +296,7 @@ serve(async (req) => {
       const run = await openai.beta.threads.runs.create(
         thread.id,
         {
-          assistant_id: assistantId,
+          assistant_id: finalOpenAIAssistantId,
         }
       );
       console.log('Initiated OpenAI Run:', run.id);
@@ -303,8 +305,8 @@ serve(async (req) => {
       const { error: updateCaseError } = await supabaseClient
         .from('cases')
         .update({
-          openai_thread_id: thread.id,
-          openai_assistant_id: assistantId,
+          openai_thread_id: openaiThreadId,
+          openai_assistant_id: finalOpenAIAssistantId, // Save the actual assistant ID used
           status: 'In Progress', // Set status to In Progress as AI starts working
         })
         .eq('id', caseId);
@@ -319,11 +321,11 @@ serve(async (req) => {
         agent_name: 'OpenAI Integration',
         agent_role: 'Orchestrator',
         activity_type: 'AI Analysis Started',
-        content: `OpenAI Assistant (ID: ${assistantId}) started analysis on Thread (ID: ${thread.id}). Run ID: ${run.id}.`,
+        content: `OpenAI Assistant (ID: ${finalOpenAIAssistantId}) started analysis on Thread (ID: ${openaiThreadId}). Run ID: ${run.id}.`,
         status: 'processing',
       });
 
-      return new Response(JSON.stringify({ message: 'AI analysis initiated successfully', caseId, threadId: thread.id, runId: run.id }), {
+      return new Response(JSON.stringify({ message: 'AI analysis initiated successfully', caseId, threadId: openaiThreadId, runId: run.id }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
       });
