@@ -50,7 +50,6 @@ serve(async (req) => {
     }
 
     // 2. Update the case status to 'In Progress' if it was 'Analysis Complete'
-    // This ensures the AI knows to re-evaluate the case with new data.
     const { data: caseData, error: caseFetchError } = await supabaseClient
       .from('cases')
       .select('status')
@@ -82,71 +81,36 @@ serve(async (req) => {
       }
     }
 
-    // 3. Forward the new file information to the AI service
-    const aiServiceEndpoint = Deno.env.get('AI_SERVICE_ENDPOINT');
-    const aiServiceApiKey = Deno.env.get('AI_SERVICE_API_KEY');
-
-    if (aiServiceEndpoint) {
-      console.log(`Forwarding new file information to AI service at: ${aiServiceEndpoint}`);
-      try {
-        const aiResponse = await fetch(aiServiceEndpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${aiServiceApiKey}`,
-          },
-          body: JSON.stringify({
-            caseId: caseId,
-            userId: userId,
-            newFileNames: newFileNames,
-            command: 'process_additional_files', // Indicate this is for new files
-            // You might also pass URLs to the uploaded files if your AI service needs direct access
-            // fileUrls: newFileNames.map(name => supabaseClient.storage.from('evidence-files').getPublicUrl(`${userId}/${caseId}/${name}`).data.publicUrl)
-          }),
-        });
-
-        if (!aiResponse.ok) {
-          const errorBody = await aiResponse.text();
-          console.error('AI Service call for new files failed:', aiResponse.status, errorBody);
-          await supabaseClient.from('agent_activities').insert({
-            case_id: caseId,
-            agent_name: 'AI Orchestrator',
-            agent_role: 'Error Handler',
-            activity_type: 'AI Service Call Failed (New Files)',
-            content: `Failed to trigger AI analysis for new files: ${aiResponse.status} - ${errorBody}`,
-            status: 'error',
-          });
-          throw new Error(`AI Service call for new files failed with status ${aiResponse.status}`);
-        }
-
-        const aiResult = await aiResponse.json();
-        console.log('AI Service response for new files:', aiResult);
-
-      } catch (aiCallError: any) {
-        console.error('Error during AI service invocation for new files:', aiCallError);
-        await supabaseClient.from('agent_activities').insert({
-          case_id: caseId,
-          agent_name: 'AI Orchestrator',
-          agent_role: 'Error Handler',
-          activity_type: 'AI Service Invocation Error (New Files)',
-          content: `Error invoking AI analysis service for new files: ${aiCallError.message}`,
-          status: 'error',
-        });
-        throw new Error(`Error invoking AI analysis service for new files: ${aiCallError.message}`);
+    // 3. Invoke the AI Orchestrator Edge Function
+    console.log(`Invoking AI Orchestrator for new files on case: ${caseId}`);
+    const { data: orchestratorResponse, error: orchestratorError } = await supabaseClient.functions.invoke(
+      'ai-orchestrator',
+      {
+        body: JSON.stringify({
+          caseId: caseId,
+          command: 'process_additional_files',
+          payload: { newFileNames: newFileNames },
+        }),
+        headers: { 'Content-Type': 'application/json', 'x-supabase-user-id': userId },
       }
-    } else {
-      console.warn('AI_SERVICE_ENDPOINT not set. New files will not be forwarded to AI for analysis.');
+    );
+
+    if (orchestratorError) {
+      console.error('Error invoking AI Orchestrator:', orchestratorError);
       await supabaseClient.from('agent_activities').insert({
         case_id: caseId,
         agent_name: 'AI Orchestrator',
-        agent_role: 'Warning',
-        activity_type: 'AI Service Not Configured',
-        content: 'AI_SERVICE_ENDPOINT environment variable is not set. New files will not be forwarded to AI for analysis.',
-        status: 'completed',
+        agent_role: 'Error Handler',
+        activity_type: 'Orchestrator Invocation Failed (New Files)',
+        content: `Failed to invoke AI Orchestrator for new files: ${orchestratorError.message}`,
+        status: 'error',
       });
+      throw new Error(`Failed to invoke AI Orchestrator: ${orchestratorError.message}`);
     }
 
-    return new Response(JSON.stringify({ message: 'Additional files processed successfully', caseId }), {
+    console.log('AI Orchestrator response:', orchestratorResponse);
+
+    return new Response(JSON.stringify({ message: 'Additional files sent to AI Orchestrator successfully', caseId }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });

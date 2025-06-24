@@ -49,106 +49,36 @@ serve(async (req) => {
       throw new Error('Failed to record user prompt.');
     }
 
-    // Check for specific commands
-    let aiServicePayload: any = {
-      caseId: caseId,
-      userId: userId,
-      prompt: promptContent,
-    };
-
-    if (promptContent.startsWith('/search ')) {
-      const query = promptContent.substring('/search '.length).trim();
-      console.log(`Detected /search command with query: "${query}"`);
-      aiServicePayload.command = 'file_search';
-      aiServicePayload.query = query;
-
-      // Log an activity indicating the search command was received
-      await supabaseClient.from('agent_activities').insert({
-        case_id: caseId,
-        agent_name: 'Command Interpreter',
-        agent_role: 'System',
-        activity_type: 'Command Received',
-        content: `User requested a file search for: "${query}"`,
-        status: 'processing',
-      });
-    } else if (promptContent.startsWith('/websearch ')) { // New command for web search
-      const query = promptContent.substring('/websearch '.length).trim();
-      console.log(`Detected /websearch command with query: "${query}"`);
-      aiServicePayload.command = 'web_search';
-      aiServicePayload.query = query;
-
-      // Log an activity indicating the web search command was received
-      await supabaseClient.from('agent_activities').insert({
-        case_id: caseId,
-        agent_name: 'Command Interpreter',
-        agent_role: 'System',
-        activity_type: 'Web Search Request', // New activity type
-        content: `User requested a web search for: "${query}"`,
-        status: 'processing',
-      });
-    }
-    // Add more commands here if needed (e.g., /summarize, /analyze)
-
-    // 2. Forward the prompt (or command) to the AI service
-    const aiServiceEndpoint = Deno.env.get('AI_SERVICE_ENDPOINT');
-    const aiServiceApiKey = Deno.env.get('AI_SERVICE_API_KEY');
-
-    if (aiServiceEndpoint) {
-      console.log(`Forwarding user prompt/command to AI service at: ${aiServiceEndpoint}`);
-      try {
-        const aiResponse = await fetch(aiServiceEndpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${aiServiceApiKey}`,
-          },
-          body: JSON.stringify(aiServicePayload), // Send the parsed payload
-        });
-
-        if (!aiResponse.ok) {
-          const errorBody = await aiResponse.text();
-          console.error('AI Service prompt forwarding failed:', aiResponse.status, errorBody);
-          await supabaseClient.from('agent_activities').insert({
-            case_id: caseId,
-            agent_name: 'AI Orchestrator',
-            agent_role: 'Error Handler',
-            activity_type: 'AI Prompt Forwarding Failed',
-            content: `Failed to forward user prompt to AI service: ${aiResponse.status} - ${errorBody}`,
-            status: 'error',
-          });
-          throw new Error(`AI Service prompt forwarding failed with status ${aiResponse.status}`);
-        }
-
-        const aiResult = await aiResponse.json();
-        console.log('AI Service response to prompt:', aiResult);
-        // The AI service is expected to update agent_activities and case_theories directly
-        // based on the prompt/command.
-
-      } catch (aiCallError: any) {
-        console.error('Error during AI service prompt invocation:', aiCallError);
-        await supabaseClient.from('agent_activities').insert({
-          case_id: caseId,
-          agent_name: 'AI Orchestrator',
-          agent_role: 'Error Handler',
-          activity_type: 'AI Prompt Invocation Error',
-          content: `Error invoking AI analysis service with user prompt: ${aiCallError.message}`,
-          status: 'error',
-        });
-        throw new Error(`Error invoking AI analysis service with user prompt: ${aiCallError.message}`);
+    // 2. Invoke the AI Orchestrator Edge Function
+    console.log(`Invoking AI Orchestrator for user prompt on case: ${caseId}`);
+    const { data: orchestratorResponse, error: orchestratorError } = await supabaseClient.functions.invoke(
+      'ai-orchestrator',
+      {
+        body: JSON.stringify({
+          caseId: caseId,
+          command: 'user_prompt',
+          payload: { promptContent: promptContent },
+        }),
+        headers: { 'Content-Type': 'application/json', 'x-supabase-user-id': userId },
       }
-    } else {
-      console.warn('AI_SERVICE_ENDPOINT not set. User prompt/command will not be forwarded to AI.');
+    );
+
+    if (orchestratorError) {
+      console.error('Error invoking AI Orchestrator:', orchestratorError);
       await supabaseClient.from('agent_activities').insert({
         case_id: caseId,
         agent_name: 'AI Orchestrator',
-        agent_role: 'Warning',
-        activity_type: 'AI Service Not Configured',
-        content: 'AI_SERVICE_ENDPOINT environment variable is not set. User prompt/command will not be forwarded to AI.',
-        status: 'completed',
+        agent_role: 'Error Handler',
+        activity_type: 'Orchestrator Invocation Failed',
+        content: `Failed to invoke AI Orchestrator for user prompt: ${orchestratorError.message}`,
+        status: 'error',
       });
+      throw new Error(`Failed to invoke AI Orchestrator: ${orchestratorError.message}`);
     }
 
-    return new Response(JSON.stringify({ message: 'Prompt sent successfully', caseId }), {
+    console.log('AI Orchestrator response:', orchestratorResponse);
+
+    return new Response(JSON.stringify({ message: 'Prompt sent to AI Orchestrator successfully', caseId }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });
