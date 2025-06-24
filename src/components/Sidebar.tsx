@@ -1,7 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Home, FolderKanban, Scale, Settings, Gavel, FileText, BotMessageSquare } from "lucide-react"; // Import BotMessageSquare icon
+import { Home, FolderKanban, Scale, Settings, Gavel, FileText, BotMessageSquare, User } from "lucide-react"; // Import User icon
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -40,7 +40,7 @@ export function Sidebar({ className }: SidebarProps) {
                 Case Management
               </Button>
             </Link>
-            <Link to="/agent-interaction"> {/* Add the new link here */}
+            <Link to="/agent-interaction">
               <Button variant="ghost" className="w-full justify-start">
                 <BotMessageSquare className="mr-2 h-4 w-4" />
                 Agent Interaction
@@ -53,6 +53,12 @@ export function Sidebar({ className }: SidebarProps) {
             Settings
           </h2>
           <div className="space-y-1">
+            <Link to="/profile"> {/* Add the new link here */}
+              <Button variant="ghost" className="w-full justify-start">
+                <User className="mr-2 h-4 w-4" />
+                Profile
+              </Button>
+            </Link>
             <Button variant="ghost" className="w-full justify-start">
               <Settings className="mr-2 h-4 w-4" />
               App Settings
