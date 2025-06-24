@@ -3,6 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Separator } from "@/components/ui/separator";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Download } from "lucide-react";
 
 interface CaseTheory {
   id: string;
@@ -76,6 +78,57 @@ export const CaseTheorySummary: React.FC<CaseTheorySummaryProps> = ({ caseId }) 
     };
   }, [caseId]);
 
+  const handleExportTheory = () => {
+    if (!caseTheory) {
+      toast.info("No case theory data to export.");
+      return;
+    }
+
+    let content = `# Case Theory for Case ID: ${caseId}\n\n`;
+    content += `Status: ${caseTheory.status}\n`;
+    content += `Last Updated: ${new Date(caseTheory.last_updated).toLocaleString()}\n\n`;
+
+    content += `## Fact Patterns:\n`;
+    if (caseTheory.fact_patterns && caseTheory.fact_patterns.length > 0) {
+      caseTheory.fact_patterns.forEach((fact, index) => {
+        content += `- ${fact}\n`;
+      });
+    } else {
+      content += `[No fact patterns yet]\n`;
+    }
+    content += `\n`;
+
+    content += `## Legal Arguments:\n`;
+    if (caseTheory.legal_arguments && caseTheory.legal_arguments.length > 0) {
+      caseTheory.legal_arguments.forEach((arg, index) => {
+        content += `- ${arg}\n`;
+      });
+    } else {
+      content += `[No legal arguments yet]\n`;
+    }
+    content += `\n`;
+
+    content += `## Potential Outcomes:\n`;
+    if (caseTheory.potential_outcomes && caseTheory.potential_outcomes.length > 0) {
+      caseTheory.potential_outcomes.forEach((outcome, index) => {
+        content += `- ${outcome}\n`;
+      });
+    } else {
+      content += `[No potential outcomes yet]\n`;
+    }
+
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `case_theory_${caseId}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success("Case theory exported successfully!");
+  };
+
   if (loading) {
     return <div className="text-center py-8">Loading case theory...</div>;
   }
@@ -86,9 +139,14 @@ export const CaseTheorySummary: React.FC<CaseTheorySummaryProps> = ({ caseId }) 
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Current Case Theory</CardTitle>
-        <CardDescription>The evolving legal theory compiled by the agents.</CardDescription>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <div>
+          <CardTitle>Current Case Theory</CardTitle>
+          <CardDescription>The evolving legal theory compiled by the agents.</CardDescription>
+        </div>
+        <Button variant="outline" size="sm" onClick={handleExportTheory} disabled={!caseTheory}>
+          <Download className="h-4 w-4 mr-2" /> Export
+        </Button>
       </CardHeader>
       <CardContent>
         <div className="space-y-4 text-sm text-muted-foreground">

@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Lightbulb, TrendingUp, Scale, Info } from "lucide-react"; // Added Info icon for generic insights
+import { Lightbulb, TrendingUp, Scale, Info, Download } from "lucide-react"; // Added Download icon
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 
 interface CaseInsight {
   id: string;
@@ -93,6 +94,35 @@ export const CaseInsightsCard: React.FC<CaseInsightsCardProps> = ({ caseId }) =>
     }
   };
 
+  const handleExportInsights = () => {
+    if (insights.length === 0) {
+      toast.info("No insights data to export.");
+      return;
+    }
+
+    let content = `# Case Insights for Case ID: ${caseId}\n\n`;
+    insights.forEach((insight, index) => {
+      content += `## ${insight.title}\n`;
+      content += `Type: ${insight.insight_type}\n`;
+      content += `Timestamp: ${new Date(insight.timestamp).toLocaleString()}\n`;
+      content += `Description:\n${insight.description}\n\n`;
+      if (index < insights.length - 1) {
+        content += `---\n\n`; // Separator between insights
+      }
+    });
+
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `case_insights_${caseId}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success("Case insights exported successfully!");
+  };
+
   if (loading) {
     return <div className="text-center py-8">Loading insights...</div>;
   }
@@ -103,9 +133,14 @@ export const CaseInsightsCard: React.FC<CaseInsightsCardProps> = ({ caseId }) =>
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Key Case Insights</CardTitle>
-        <CardDescription>High-level summaries and important findings from the analysis.</CardDescription>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <div>
+          <CardTitle>Key Case Insights</CardTitle>
+          <CardDescription>High-level summaries and important findings from the analysis.</CardDescription>
+        </div>
+        <Button variant="outline" size="sm" onClick={handleExportInsights} disabled={insights.length === 0}>
+          <Download className="h-4 w-4 mr-2" /> Export
+        </Button>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
