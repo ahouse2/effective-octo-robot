@@ -13,6 +13,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/components/SessionContextProvider";
 import { useNavigate } from "react-router-dom";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"; // Import Select components
 
 const formSchema = z.object({
   caseType: z.string().min(2, {
@@ -22,7 +23,10 @@ const formSchema = z.object({
     message: "Parties involved must be at least 2 characters.",
   }),
   caseGoals: z.string().optional(),
-  systemInstruction: z.string().optional(), // New field for system instruction
+  systemInstruction: z.string().optional(),
+  aiModel: z.enum(["openai", "gemini"], { // New field for AI model choice
+    required_error: "Please select an AI model.",
+  }),
 });
 
 const EvidenceAnalysis = () => {
@@ -37,7 +41,8 @@ const EvidenceAnalysis = () => {
       caseType: "",
       partiesInvolved: "",
       caseGoals: "",
-      systemInstruction: "", // Initialize systemInstruction
+      systemInstruction: "",
+      aiModel: "openai", // Default to OpenAI
     },
   });
 
@@ -75,7 +80,8 @@ const EvidenceAnalysis = () => {
             status: "In Progress",
             user_id: user.id,
             case_goals: values.caseGoals,
-            system_instruction: values.systemInstruction, // Save system instruction
+            system_instruction: values.systemInstruction,
+            ai_model: values.aiModel, // Save the selected AI model
           },
         ])
         .select();
@@ -117,7 +123,8 @@ const EvidenceAnalysis = () => {
             caseId: newCase.id,
             fileNames: uploadedFileNames,
             caseGoals: values.caseGoals,
-            systemInstruction: values.systemInstruction, // Pass system instruction to edge function
+            systemInstruction: values.systemInstruction,
+            aiModel: values.aiModel, // Pass the selected AI model to the edge function
           }),
           headers: { 'Content-Type': 'application/json' },
         }
@@ -218,6 +225,30 @@ const EvidenceAnalysis = () => {
                       </FormControl>
                       <FormDescription>
                         Use this field to give the AI agents detailed directives on how to approach the analysis.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="aiModel"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Choose AI Model</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isSubmitting}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select an AI model" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="openai">OpenAI (GPT-4o)</SelectItem>
+                          <SelectItem value="gemini">Google Gemini (Requires RAG setup for full document analysis)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>
+                        Select the AI model to power your case analysis. Note: Gemini integration for document analysis requires a separate RAG (Retrieval Augmented Generation) setup.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>

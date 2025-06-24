@@ -19,7 +19,8 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/components/SessionContextProvider";
 import { useNavigate } from "react-router-dom";
-import { Textarea } from "@/components/ui/textarea"; // Import Textarea
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"; // Import Select components
 
 interface NewCaseDialogProps {
   onCaseCreated?: (caseId: string) => void;
@@ -32,8 +33,11 @@ const formSchema = z.object({
   partiesInvolved: z.string().min(2, {
     message: "Parties involved must be at least 2 characters.",
   }),
-  caseGoals: z.string().optional(), // New field for case goals
-  systemInstruction: z.string().optional(), // New field for system instruction
+  caseGoals: z.string().optional(),
+  systemInstruction: z.string().optional(),
+  aiModel: z.enum(["openai", "gemini"], { // New field for AI model choice
+    required_error: "Please select an AI model.",
+  }),
 });
 
 export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) => {
@@ -47,8 +51,9 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
     defaultValues: {
       caseType: "",
       partiesInvolved: "",
-      caseGoals: "", // Initialize caseGoals
-      systemInstruction: "", // Initialize systemInstruction
+      caseGoals: "",
+      systemInstruction: "",
+      aiModel: "openai", // Default to OpenAI
     },
   });
 
@@ -68,10 +73,11 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
           {
             name: values.partiesInvolved,
             type: values.caseType,
-            status: "Initial Setup", // New cases start with 'Initial Setup' status
+            status: "Initial Setup",
             user_id: user.id,
-            case_goals: values.caseGoals, // Save case goals
-            system_instruction: values.systemInstruction, // Save system instruction
+            case_goals: values.caseGoals,
+            system_instruction: values.systemInstruction,
+            ai_model: values.aiModel, // Save the selected AI model
           },
         ])
         .select();
@@ -181,6 +187,30 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
                   </FormControl>
                   <FormDescription>
                     Use this field to give the AI agents detailed directives on how to approach the analysis.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="aiModel"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Choose AI Model</FormLabel>
+                  <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isSubmitting}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select an AI model" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="openai">OpenAI (GPT-4o)</SelectItem>
+                      <SelectItem value="gemini">Google Gemini (Requires RAG setup for full document analysis)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>
+                    Select the AI model to power your case analysis. Note: Gemini integration for document analysis requires a separate RAG (Retrieval Augmented Generation) setup.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
