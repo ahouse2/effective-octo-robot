@@ -27,16 +27,18 @@ export function Sidebar({ className }: SidebarProps) {
                 Dashboard
               </Button>
             </Link>
-            <Link to="/evidence-analysis"> {/* New link */}
+            <Link to="/evidence-analysis">
               <Button variant="ghost" className="w-full justify-start">
-                <FileText className="mr-2 h-4 w-4" /> {/* New icon */}
+                <FileText className="mr-2 h-4 w-4" />
                 Evidence Analysis
               </Button>
             </Link>
-            <Button variant="ghost" className="w-full justify-start">
-              <Gavel className="mr-2 h-4 w-4" />
-              Case Management
-            </Button>
+            <Link to="/case-management"> {/* Updated link */}
+              <Button variant="ghost" className="w-full justify-start">
+                <Gavel className="mr-2 h-4 w-4" />
+                Case Management
+              </Button>
+            </Link>
           </div>
         </div>
         <div className="px-3 py-2">
