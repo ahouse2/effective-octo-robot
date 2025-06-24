@@ -119,7 +119,7 @@ serve(async (req) => {
           agent_name: 'AI Orchestrator',
           agent_role: 'Error Handler',
           activity_type: 'AI Service Invocation Error',
-          content: `Error invoking AI analysis service: ${aiCallError.message}`,
+          content: `Error invoking AI analysis service with user prompt: ${aiCallError.message}`,
           status: 'error',
         });
         throw new Error(`Error invoking AI analysis service: ${aiCallError.message}`);
