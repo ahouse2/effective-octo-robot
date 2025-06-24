@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { NewCaseDialog } from "@/components/NewCaseDialog";
 import { Link } from "react-router-dom";
 import { DeleteCaseDialog } from "@/components/DeleteCaseDialog"; // Import the new delete dialog
+import { Settings } from "lucide-react"; // Import Settings icon
 
 interface Case {
   id: string;
@@ -134,6 +135,11 @@ const CaseManagement = () => {
                       </TableCell>
                       <TableCell>{new Date(caseItem.last_updated).toLocaleDateString()}</TableCell>
                       <TableCell className="text-right flex items-center justify-end space-x-2">
+                        <Link to={`/case-details/${caseItem.id}`}>
+                          <Button variant="outline" size="sm">
+                            <Settings className="h-4 w-4" />
+                          </Button>
+                        </Link>
                         <Link to={`/agent-interaction/${caseItem.id}`}>
                           <Button variant="outline" size="sm">View Analysis</Button>
                         </Link>
