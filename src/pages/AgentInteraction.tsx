@@ -4,7 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { AgentInteractionDisplay } from "@/components/AgentInteractionDisplay";
 import { CaseTheorySummary } from "@/components/CaseTheorySummary";
-import { CaseInsightsCard } from "@/components/CaseInsightsCard"; // Import the new component
+import { CaseInsightsCard } from "@/components/CaseInsightsCard";
+import { CaseTimeline } from "@/components/CaseTimeline"; // Import the new component
 import { useParams } from "react-router-dom";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Terminal } from "lucide-react";
@@ -47,10 +48,11 @@ const AgentInteraction = () => {
             </CardContent>
           </Card>
 
-          {/* Right Sidebar for Summaries and Insights */}
+          {/* Right Sidebar for Summaries, Insights, and Timeline */}
           <div className="lg:col-span-1 flex flex-col space-y-8">
             <CaseTheorySummary caseId={caseId} />
-            <CaseInsightsCard caseId={caseId} /> {/* Add the new insights card here */}
+            <CaseInsightsCard caseId={caseId} />
+            <CaseTimeline caseId={caseId} /> {/* Add the new timeline card here */}
           </div>
         </div>
       </div>
