@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/components/SessionContextProvider";
@@ -16,9 +16,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 const profileFormSchema = z.object({
   firstName: z.string().min(1, { message: "First name is required." }).max(50, { message: "First name too long." }),
   lastName: z.string().min(1, { message: "Last name is required." }).max(50, { message: "Last name too long." }),
-  defaultAiModel: z.enum(["openai", "gemini"], { // New field for default AI model
+  defaultAiModel: z.enum(["openai", "gemini"], {
     required_error: "Please select a default AI model.",
   }),
+  openaiAssistantId: z.string().optional(), // New field for OpenAI Assistant ID
 });
 
 type ProfileFormValues = z.infer<typeof profileFormSchema>;
@@ -33,7 +34,8 @@ const UserProfile = () => {
     defaultValues: {
       firstName: "",
       lastName: "",
-      defaultAiModel: "openai", // Default to OpenAI if no preference is set
+      defaultAiModel: "openai",
+      openaiAssistantId: "", // Initialize new field
     },
   });
 
@@ -47,7 +49,7 @@ const UserProfile = () => {
       setLoadingProfile(true);
       const { data, error } = await supabase
         .from('profiles')
-        .select('first_name, last_name, default_ai_model') // Select default_ai_model
+        .select('first_name, last_name, default_ai_model, openai_assistant_id') // Select openai_assistant_id
         .eq('id', user.id)
         .single();
 
@@ -58,7 +60,8 @@ const UserProfile = () => {
         form.reset({
           firstName: data.first_name || "",
           lastName: data.last_name || "",
-          defaultAiModel: (data.default_ai_model as "openai" | "gemini") || "openai", // Set default from fetched data
+          defaultAiModel: (data.default_ai_model as "openai" | "gemini") || "openai",
+          openaiAssistantId: data.openai_assistant_id || "", // Set from fetched data
         });
       }
       setLoadingProfile(false);
@@ -84,7 +87,8 @@ const UserProfile = () => {
         .update({
           first_name: values.firstName,
           last_name: values.lastName,
-          default_ai_model: values.defaultAiModel, // Save the default AI model
+          default_ai_model: values.defaultAiModel,
+          openai_assistant_id: values.openaiAssistantId || null, // Save the OpenAI Assistant ID
         })
         .eq('id', user.id);
 
@@ -193,6 +197,27 @@ const UserProfile = () => {
                       </Select>
                       <FormDescription>
                         This model will be pre-selected when you create new cases or start new analyses.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="openaiAssistantId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Your OpenAI Assistant ID (Optional)</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="asst_..."
+                          {...field}
+                          disabled={isSubmitting}
+                          value={field.value || ""} // Ensure controlled component
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Provide a specific OpenAI Assistant ID if you want to use a pre-configured assistant for your cases. If left blank, a new one will be created for your first case.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
