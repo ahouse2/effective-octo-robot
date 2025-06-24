@@ -87,6 +87,22 @@ serve(async (req) => {
         throw new Error('Failed to insert agent activity: ' + error.message);
       }
       responseMessage = 'Agent activity added successfully.';
+    } else if (updateType === 'case_details') { // New update type for case goals, system instruction, AI model
+      const { error } = await supabaseClient
+        .from('cases')
+        .update({
+          case_goals: payload.case_goals,
+          system_instruction: payload.system_instruction,
+          ai_model: payload.ai_model,
+          last_updated: new Date().toISOString(),
+        })
+        .eq('id', caseId);
+
+      if (error) {
+        console.error('Error updating case details:', error);
+        throw new Error('Failed to update case details: ' + error.message);
+      }
+      responseMessage = 'Case details updated successfully.';
     }
     else {
       return new Response(JSON.stringify({ error: 'Invalid updateType' }), {
