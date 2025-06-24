@@ -84,6 +84,47 @@ async function insertAgentActivity(
   }
 }
 
+// Helper function to handle individual tool calls
+async function handleToolCall(
+  supabaseClient: SupabaseClient,
+  caseId: string,
+  toolCall: any
+): Promise<{ tool_call_id: string; output: string }> {
+  if (toolCall.function.name === 'web_search') {
+    console.log('OpenAI requested web_search tool:', toolCall.function.arguments);
+    await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'Tool Executor', 'Web Search Initiated', `Performing web search for: ${toolCall.function.arguments}`, 'processing');
+
+    try {
+      const args = JSON.parse(toolCall.function.arguments);
+      const { data: searchResult, error: searchError } = await supabaseClient.functions.invoke(
+        'web-search',
+        {
+          body: JSON.stringify({ query: args.query }),
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+
+      if (searchError) {
+        throw new Error(`Web search failed: ${searchError.message}`);
+      }
+      const output = JSON.stringify(searchResult?.results || []);
+      await insertAgentActivity(supabaseClient, caseId, 'Web Search Agent', 'Tool Executor', 'Web Search Completed', `Web search completed. Results: ${output.substring(0, 200)}...`, 'completed');
+      return { tool_call_id: toolCall.id, output: output };
+    } catch (toolError: any) {
+      console.error('Error executing web_search tool:', toolError);
+      await insertAgentActivity(supabaseClient, caseId, 'Web Search Agent', 'Error Handler', 'Web Search Failed', `Web search failed: ${toolError.message}`, 'error');
+      return { tool_call_id: toolCall.id, output: `Error: ${toolError.message}` };
+    }
+  } else if (toolCall.function.name === 'file_search') {
+    console.log('OpenAI requested file_search tool:', toolCall.function.arguments);
+    await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'Tool Executor', 'File Search Note', `File search tool requested but not fully implemented. Query: ${toolCall.function.arguments}`, 'processing');
+    return { tool_call_id: toolCall.id, output: `File search tool not fully implemented yet. Query: ${toolCall.function.arguments}` };
+  } else {
+    console.warn(`Unknown tool call: ${toolCall.function.name}`);
+    return { tool_call_id: toolCall.id, output: `Unknown tool: ${toolCall.function.name}` };
+  }
+}
+
 // Function to poll for OpenAI run completion and handle tool calls
 async function pollOpenAIRun(
   openai: OpenAI,
@@ -100,42 +141,10 @@ async function pollOpenAIRun(
     console.log(`OpenAI Run Status: ${runStatus}`);
 
     if (runStatus === 'requires_action' && retrievedRun.required_action?.type === 'submit_tool_outputs') {
-      const toolOutputs: { tool_call_id: string; output: string }[] = [];
-      for (const toolCall of retrievedRun.required_action.submit_tool_outputs.tool_calls) {
-        if (toolCall.function.name === 'web_search') {
-          console.log('OpenAI requested web_search tool:', toolCall.function.arguments);
-          await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'Tool Executor', 'Web Search Initiated', `Performing web search for: ${toolCall.function.arguments}`, 'processing');
-
-          try {
-            const args = JSON.parse(toolCall.function.arguments);
-            const { data: searchResult, error: searchError } = await supabaseClient.functions.invoke(
-              'web-search',
-              {
-                body: JSON.stringify({ query: args.query }),
-                headers: { 'Content-Type': 'application/json' },
-              }
-            );
-
-            if (searchError) {
-              throw new Error(`Web search failed: ${searchError.message}`);
-            }
-            const output = JSON.stringify(searchResult?.results || []);
-            toolOutputs.push({ tool_call_id: toolCall.id, output: output });
-            await insertAgentActivity(supabaseClient, caseId, 'Web Search Agent', 'Tool Executor', 'Web Search Completed', `Web search completed. Results: ${output.substring(0, 200)}...`, 'completed');
-          } catch (toolError: any) {
-            console.error('Error executing web_search tool:', toolError);
-            toolOutputs.push({ tool_call_id: toolCall.id, output: `Error: ${toolError.message}` });
-            await insertAgentActivity(supabaseClient, caseId, 'Web Search Agent', 'Error Handler', 'Web Search Failed', `Web search failed: ${toolError.message}`, 'error');
-          }
-        } else if (toolCall.function.name === 'file_search') {
-          console.log('OpenAI requested file_search tool:', toolCall.function.arguments);
-          toolOutputs.push({ tool_call_id: toolCall.id, output: `File search tool not fully implemented yet. Query: ${toolCall.function.arguments}` });
-          await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'Tool Executor', 'File Search Note', `File search tool requested but not fully implemented. Query: ${toolCall.function.arguments}`, 'processing');
-        } else {
-          console.warn(`Unknown tool call: ${toolCall.function.name}`);
-          toolOutputs.push({ tool_call_id: toolCall.id, output: `Unknown tool: ${toolCall.function.name}` });
-        }
-      }
+      const toolOutputsPromises = retrievedRun.required_action.submit_tool_outputs.tool_calls.map(
+        (toolCall: any) => handleToolCall(supabaseClient, caseId, toolCall)
+      );
+      const toolOutputs = await Promise.all(toolOutputsPromises);
 
       if (toolOutputs.length > 0) {
         await openai.beta.threads.runs.submitToolOutputs(threadId, runId, { tool_outputs: toolOutputs });
@@ -277,6 +286,9 @@ async function handleOpenAICommand(
     const { query } = payload;
     console.log(`OpenAI: Performing web search for case ${caseId} with query: "${query}"`);
 
+    // The web search is now handled by the tool call within pollOpenAIRun,
+    // but this command might be invoked directly by the client for a specific reason.
+    // If so, we'd still want to send the results back to the assistant.
     const { data: searchResult, error: searchError } = await supabaseClient.functions.invoke(
       'web-search',
       {
