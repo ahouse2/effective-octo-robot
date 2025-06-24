@@ -161,9 +161,30 @@ serve(async (req) => {
         }
       }
 
-      // 4. Create or retrieve an OpenAI Assistant
-      let assistantId = Deno.env.get('OPENAI_ASSISTANT_ID');
+      // 4. Retrieve or create an OpenAI Assistant for the user
       let assistant;
+      let userAssistantId: string | undefined;
+
+      // Try to get user's default assistant ID from their profile
+      const { data: profileData, error: profileError } = await supabaseClient
+        .from('profiles')
+        .select('openai_assistant_id')
+        .eq('id', userId)
+        .single();
+
+      if (profileError && profileError.code !== 'PGRST116') { // PGRST116 means no rows found
+        console.error('Error fetching user profile for assistant ID:', profileError);
+        // Continue, but user might get a new assistant if profile fetch fails
+      } else if (profileData?.openai_assistant_id) {
+        userAssistantId = profileData.openai_assistant_id;
+        try {
+          assistant = await openai.beta.assistants.retrieve(userAssistantId);
+          console.log('Using existing OpenAI Assistant from user profile:', assistant.id);
+        } catch (retrieveError: any) {
+          console.warn(`Failed to retrieve user's default Assistant with ID ${userAssistantId}: ${retrieveError.message}. Creating a new one.`);
+          userAssistantId = undefined; // Force creation of a new assistant
+        }
+      }
 
       const assistantTools = [
         { type: "file_search" },
@@ -186,29 +207,7 @@ serve(async (req) => {
         },
       ];
 
-      if (assistantId) {
-        try {
-          assistant = await openai.beta.assistants.retrieve(assistantId);
-          // Update assistant to ensure it has the latest tools and instructions
-          assistant = await openai.beta.assistants.update(assistantId, {
-            instructions: `You are a specialized AI assistant for California family law cases. Your primary goal is to analyze evidence, identify key facts, legal arguments, and potential outcomes. You should be precise, objective, and focus on the legal implications of the provided documents. Always cite the source document when making claims.
-            
-            User's Case Goals: ${caseGoals || 'Not specified.'}
-            User's System Instruction: ${systemInstruction || 'None provided.'}
-            
-            When responding, provide updates on your analysis progress, key findings, and any questions you have.
-            ${structuredOutputInstruction}`,
-            tools: assistantTools,
-            model: "gpt-4o",
-          });
-          console.log('Using and updated existing OpenAI Assistant:', assistant.id);
-        } catch (retrieveError: any) {
-          console.warn(`Failed to retrieve existing Assistant with ID ${assistantId}: ${retrieveError.message}. Creating a new one.`);
-          assistantId = undefined; // Force creation of a new assistant
-        }
-      }
-
-      if (!assistantId) {
+      if (!userAssistantId) {
         try {
           assistant = await openai.beta.assistants.create({
             name: "Family Law AI Assistant",
@@ -222,16 +221,35 @@ serve(async (req) => {
             tools: assistantTools,
             model: "gpt-4o", // Or another suitable model like "gpt-4-turbo"
           });
-          assistantId = assistant.id;
+          userAssistantId = assistant.id;
           console.log('Created new OpenAI Assistant:', assistant.id);
-          await supabaseClient.from('agent_activities').insert({
-            case_id: caseId,
-            agent_name: 'OpenAI Setup',
-            agent_role: 'Configuration',
-            activity_type: 'Assistant Created',
-            content: `New OpenAI Assistant created with ID: ${assistant.id}. Please save this ID as OPENAI_ASSISTANT_ID in Supabase secrets for future use.`,
-            status: 'completed',
-          });
+
+          // Save the new assistant ID to the user's profile
+          const { error: updateProfileError } = await supabaseClient
+            .from('profiles')
+            .update({ openai_assistant_id: userAssistantId })
+            .eq('id', userId);
+
+          if (updateProfileError) {
+            console.error('Error saving new assistant ID to profile:', updateProfileError);
+            await supabaseClient.from('agent_activities').insert({
+              case_id: caseId,
+              agent_name: 'OpenAI Setup',
+              agent_role: 'Configuration',
+              activity_type: 'Assistant ID Save Failed',
+              content: `Failed to save new OpenAI Assistant ID (${userAssistantId}) to user profile: ${updateProfileError.message}.`,
+              status: 'error',
+            });
+          } else {
+            await supabaseClient.from('agent_activities').insert({
+              case_id: caseId,
+              agent_name: 'OpenAI Setup',
+              agent_role: 'Configuration',
+              activity_type: 'Assistant Created & Saved',
+              content: `New OpenAI Assistant created and saved to your profile with ID: ${userAssistantId}.`,
+              status: 'completed',
+            });
+          }
         } catch (createError: any) {
           console.error('Error creating OpenAI Assistant:', createError);
           await supabaseClient.from('agent_activities').insert({
@@ -245,6 +263,8 @@ serve(async (req) => {
           throw new Error('Failed to create OpenAI Assistant.');
         }
       }
+
+      openaiAssistantId = userAssistantId; // Use the determined assistant ID for this case
 
       // 5. Create a new thread
       const thread = await openai.beta.threads.create();
@@ -267,7 +287,7 @@ serve(async (req) => {
       const run = await openai.beta.threads.runs.create(
         thread.id,
         {
-          assistant_id: assistantId,
+          assistant_id: openaiAssistantId,
         }
       );
       console.log('Initiated OpenAI Run:', run.id);
@@ -277,7 +297,7 @@ serve(async (req) => {
         .from('cases')
         .update({
           openai_thread_id: thread.id,
-          openai_assistant_id: assistantId,
+          openai_assistant_id: openaiAssistantId, // Store the specific assistant ID used for this case
           status: 'In Progress', // Set status to In Progress as AI starts working
         })
         .eq('id', caseId);
@@ -292,7 +312,7 @@ serve(async (req) => {
         agent_name: 'OpenAI Integration',
         agent_role: 'Orchestrator',
         activity_type: 'AI Analysis Started',
-        content: `OpenAI Assistant (ID: ${assistantId}) started analysis on Thread (ID: ${thread.id}). Run ID: ${run.id}.`,
+        content: `OpenAI Assistant (ID: ${openaiAssistantId}) started analysis on Thread (ID: ${thread.id}). Run ID: ${run.id}.`,
         status: 'processing',
       });
 
