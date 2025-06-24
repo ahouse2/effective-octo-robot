@@ -115,6 +115,30 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
         throw new Error("Case data not returned after creation.");
       }
 
+      // Invoke start-analysis to initialize AI assistant/thread or Gemini chat history
+      const { data: analysisData, error: analysisError } = await supabase.functions.invoke(
+        'start-analysis',
+        {
+          body: JSON.stringify({
+            caseId: newCase.id,
+            fileNames: [], // No files yet, just initialize AI
+            caseGoals: values.caseGoals,
+            systemInstruction: values.systemInstruction,
+            aiModel: values.aiModel,
+            openaiAssistantId: values.openaiAssistantId || null, // Pass the assistant ID
+          }),
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+
+      if (analysisError) {
+        console.error("Error initiating AI for new case:", analysisError);
+        toast.error("Failed to initialize AI for the new case. You may need to update case details or upload files to trigger AI setup.");
+        // Do not throw, allow case creation to complete, but warn user
+      } else {
+        console.log("AI initialization for new case successful:", analysisData);
+      }
+
       toast.success("New case created successfully!");
       form.reset();
       setIsOpen(false);
