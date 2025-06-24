@@ -3,9 +3,10 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { FileText, Download } from "lucide-react";
+import { FileText, Download, FolderOpen } from "lucide-react"; // Added FolderOpen icon
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/components/SessionContextProvider";
+import { EmptyPlaceholder } from "./EmptyPlaceholder"; // Import EmptyPlaceholder
 
 interface CaseFilesDisplayProps {
   caseId: string;
@@ -152,9 +153,11 @@ export const CaseFilesDisplay: React.FC<CaseFilesDisplayProps> = ({ caseId }) =>
               ))}
             </ul>
           ) : (
-            <p className="text-center py-4 text-muted-foreground">
-              No files uploaded for this case yet.
-            </p>
+            <EmptyPlaceholder
+              icon={FolderOpen}
+              title="No Files Uploaded"
+              description="Upload evidence files to begin analysis for this case."
+            />
           )}
         </ScrollArea>
       </CardContent>

@@ -4,6 +4,7 @@ import { Separator } from "@/components/ui/separator";
 import { Lightbulb, TrendingUp, Scale, Info } from "lucide-react"; // Added Info icon for generic insights
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { EmptyPlaceholder } from "./EmptyPlaceholder"; // Import EmptyPlaceholder
 
 interface CaseInsight {
   id: string;
@@ -108,9 +109,9 @@ export const CaseInsightsCard: React.FC<CaseInsightsCardProps> = ({ caseId }) =>
         <CardDescription>High-level summaries and important findings from the analysis.</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="space-y-4">
-          {insights.length > 0 ? (
-            insights.map((insight) => (
+        {insights.length > 0 ? (
+          <div className="space-y-4">
+            {insights.map((insight) => (
               <div key={insight.id} className="flex items-start space-x-3">
                 <div className="flex-shrink-0 mt-1">
                   {getInsightIcon(insight.insight_type || 'general')}
@@ -124,12 +125,15 @@ export const CaseInsightsCard: React.FC<CaseInsightsCardProps> = ({ caseId }) =>
                 </div>
               </div>
             ))
-          ) : (
-            <p className="text-center py-4 text-muted-foreground">
-              Insights will appear here as the analysis progresses.
-            </p>
-          )}
-        </div>
+          }
+          </div>
+        ) : (
+          <EmptyPlaceholder
+            icon={Lightbulb}
+            title="No Insights Yet"
+            description="Insights will appear here as the analysis progresses."
+          />
+        )}
         <Separator className="my-6" />
         <p className="text-sm text-muted-foreground">
           Case ID: {caseId}

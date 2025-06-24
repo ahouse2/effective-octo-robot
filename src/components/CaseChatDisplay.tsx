@@ -3,7 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { Bot, User } from "lucide-react";
+import { Bot, User, MessageSquare } from "lucide-react"; // Added MessageSquare icon
+import { EmptyPlaceholder } from "./EmptyPlaceholder"; // Import EmptyPlaceholder
 
 interface ChatMessage {
   id: string;
@@ -104,9 +105,11 @@ export const CaseChatDisplay: React.FC<CaseChatDisplayProps> = ({ caseId }) => {
     <ScrollArea className="h-[500px] pr-4">
       <div className="flex flex-col space-y-4">
         {messages.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            No messages yet. Send a prompt to start the conversation!
-          </div>
+          <EmptyPlaceholder
+            icon={MessageSquare}
+            title="No Messages Yet"
+            description="Send a prompt to start the conversation with the AI agents!"
+          />
         ) : (
           messages.map((message) => (
             <div
