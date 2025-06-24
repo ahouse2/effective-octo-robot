@@ -40,13 +40,31 @@ const AgentInteraction = () => {
     setIsSending(true);
     const loadingToastId = toast.loading("Sending prompt to agents...");
 
+    let commandToSend: string;
+    let payloadToSend: any;
+    const trimmedPrompt = userPrompt.trim();
+
+    if (trimmedPrompt.startsWith('/search ')) {
+      const query = trimmedPrompt.substring('/search '.length).trim();
+      commandToSend = 'user_prompt'; // Send as a regular user prompt, let AI assistant handle file search
+      payloadToSend = { promptContent: `Please search the uploaded files for: "${query}". Summarize your findings.` };
+    } else if (trimmedPrompt.startsWith('/websearch ')) {
+      const query = trimmedPrompt.substring('/websearch '.length).trim();
+      commandToSend = 'web_search'; // New command for web search
+      payloadToSend = { query: query };
+    } else {
+      commandToSend = 'user_prompt';
+      payloadToSend = { promptContent: trimmedPrompt };
+    }
+
     try {
       const { data, error } = await supabase.functions.invoke(
-        'send-user-prompt',
+        'ai-orchestrator', // Directing to orchestrator
         {
           body: JSON.stringify({
             caseId: caseId,
-            promptContent: userPrompt,
+            command: commandToSend,
+            payload: payloadToSend,
           }),
           headers: { 'Content-Type': 'application/json' },
         }
