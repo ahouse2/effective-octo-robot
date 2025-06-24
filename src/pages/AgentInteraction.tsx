@@ -2,11 +2,12 @@ import React, { useState } from "react";
 import Layout from "@/components/Layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { AgentInteractionDisplay } from "@/components/AgentInteractionDisplay";
+import { AgentInteractionDisplay } from "@/components/AgentInteractionDisplay"; // This will be moved
 import { CaseTheorySummary } from "@/components/CaseTheorySummary";
 import { CaseInsightsCard } from "@/components/CaseInsightsCard";
 import { CaseTimeline } from "@/components/CaseTimeline";
 import { CaseFilesDisplay } from "@/components/CaseFilesDisplay";
+import { CaseChatDisplay } from "@/components/CaseChatDisplay"; // New import
 import { useParams } from "react-router-dom";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Terminal, Send, Lightbulb, Upload } from "lucide-react";
@@ -164,18 +165,17 @@ const AgentInteraction = () => {
         <h1 className="text-4xl font-bold mb-8 text-center">Multi-Agent Case Analysis</h1>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
-          {/* Agent Activity Log */}
+          {/* Main Content Area: Chat and User Input */}
           <Card className="lg:col-span-2 flex flex-col">
             <CardHeader>
-              <CardTitle>Agent Activity Log</CardTitle>
-              <CardDescription>Observe the agents collaborating on your case analysis.</CardDescription>
+              <CardTitle>Agent Chat</CardTitle>
+              <CardDescription>Interact directly with the AI agents.</CardDescription>
             </CardHeader>
             <CardContent className="flex-1 flex flex-col">
-              <ScrollArea className="h-[500px] pr-4 mb-4">
-                <AgentInteractionDisplay caseId={caseId} />
-              </ScrollArea>
+              <CaseChatDisplay caseId={caseId} /> {/* New Chat Display */}
+              
               {/* User Input for Agent Interaction */}
-              <Card className="mb-4">
+              <Card className="mt-4 mb-4">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base flex items-center">
                     <Lightbulb className="h-4 w-4 mr-2 text-yellow-500" />
@@ -223,7 +223,7 @@ const AgentInteraction = () => {
             </CardContent>
           </Card>
 
-          {/* Right Sidebar for Summaries, Insights, Timeline, and Files */}
+          {/* Right Sidebar for Summaries, Insights, Timeline, Files, and Activity Log */}
           <div className="lg:col-span-1 flex flex-col space-y-8">
             <CaseTheorySummary caseId={caseId} />
             <CaseInsightsCard caseId={caseId} />
@@ -267,6 +267,18 @@ const AgentInteraction = () => {
               </CardContent>
             </Card>
             <CaseTimeline caseId={caseId} />
+            {/* Moved Agent Activity Log to the sidebar */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Detailed Activity Log</CardTitle>
+                <CardDescription>A comprehensive log of all agent actions.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[300px] pr-4"> {/* Adjust height as needed */}
+                  <AgentInteractionDisplay caseId={caseId} />
+                </ScrollArea>
+              </CardContent>
+            </Card>
           </div>
         </div>
       </div>
