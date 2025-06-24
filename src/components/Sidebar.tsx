@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./ThemeToggle";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { MadeWithDyad } from "./made-with-dyad"; // Import the MadeWithDyad component
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {}
 
@@ -77,7 +78,7 @@ export function Sidebar({ className }: SidebarProps) {
                 Profile
               </Button>
             </Link>
-            <Link to="/app-settings"> {/* Updated Link */}
+            <Link to="/app-settings">
               <Button variant="ghost" className="w-full justify-start">
                 <Settings className="mr-2 h-4 w-4" />
                 App Settings
@@ -91,15 +92,8 @@ export function Sidebar({ className }: SidebarProps) {
           </div>
         </div>
       </div>
-      <div className="mt-auto p-4 text-center text-sm text-gray-500">
-        <a
-          href="https://www.dyad.sh/"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="hover:text-gray-700 dark:hover:text-gray-200"
-        >
-          Made with Dyad
-        </a>
+      <div className="mt-auto">
+        <MadeWithDyad />
       </div>
     </div>
   );
