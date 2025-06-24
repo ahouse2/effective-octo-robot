@@ -58,6 +58,32 @@ async function updateCaseData(supabaseClient: SupabaseClient, caseId: string, as
   }
 }
 
+// Helper function to insert agent activities
+async function insertAgentActivity(
+  supabaseClient: SupabaseClient,
+  caseId: string,
+  agentName: string,
+  agentRole: string,
+  activityType: string,
+  content: string,
+  status: 'processing' | 'completed' | 'error'
+) {
+  const { error } = await supabaseClient
+    .from('agent_activities')
+    .insert({
+      case_id: caseId,
+      agent_name: agentName,
+      agent_role: agentRole,
+      activity_type: activityType,
+      content: content,
+      status: status,
+      timestamp: new Date().toISOString(),
+    });
+  if (error) {
+    console.error(`Error inserting agent activity (${activityType}):`, error);
+  }
+}
+
 // Function to poll for OpenAI run completion and handle tool calls
 async function pollOpenAIRun(
   openai: OpenAI,
@@ -78,14 +104,7 @@ async function pollOpenAIRun(
       for (const toolCall of retrievedRun.required_action.submit_tool_outputs.tool_calls) {
         if (toolCall.function.name === 'web_search') {
           console.log('OpenAI requested web_search tool:', toolCall.function.arguments);
-          await supabaseClient.from('agent_activities').insert({
-            case_id: caseId,
-            agent_name: 'OpenAI Assistant',
-            agent_role: 'Tool Executor',
-            activity_type: 'Web Search Initiated',
-            content: `Performing web search for: ${toolCall.function.arguments}`,
-            status: 'processing',
-          });
+          await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'Tool Executor', 'Web Search Initiated', `Performing web search for: ${toolCall.function.arguments}`, 'processing');
 
           try {
             const args = JSON.parse(toolCall.function.arguments);
@@ -102,37 +121,16 @@ async function pollOpenAIRun(
             }
             const output = JSON.stringify(searchResult?.results || []);
             toolOutputs.push({ tool_call_id: toolCall.id, output: output });
-            await supabaseClient.from('agent_activities').insert({
-              case_id: caseId,
-              agent_name: 'Web Search Agent',
-              agent_role: 'Tool Executor',
-              activity_type: 'Web Search Completed',
-              content: `Web search completed. Results: ${output.substring(0, 200)}...`,
-              status: 'completed',
-            });
+            await insertAgentActivity(supabaseClient, caseId, 'Web Search Agent', 'Tool Executor', 'Web Search Completed', `Web search completed. Results: ${output.substring(0, 200)}...`, 'completed');
           } catch (toolError: any) {
             console.error('Error executing web_search tool:', toolError);
             toolOutputs.push({ tool_call_id: toolCall.id, output: `Error: ${toolError.message}` });
-            await supabaseClient.from('agent_activities').insert({
-              case_id: caseId,
-              agent_name: 'Web Search Agent',
-              agent_role: 'Error Handler',
-              activity_type: 'Web Search Failed',
-              content: `Web search failed: ${toolError.message}`,
-              status: 'error',
-            });
+            await insertAgentActivity(supabaseClient, caseId, 'Web Search Agent', 'Error Handler', 'Web Search Failed', `Web search failed: ${toolError.message}`, 'error');
           }
         } else if (toolCall.function.name === 'file_search') {
           console.log('OpenAI requested file_search tool:', toolCall.function.arguments);
           toolOutputs.push({ tool_call_id: toolCall.id, output: `File search tool not fully implemented yet. Query: ${toolCall.function.arguments}` });
-          await supabaseClient.from('agent_activities').insert({
-            case_id: caseId,
-            agent_name: 'OpenAI Assistant',
-            agent_role: 'Tool Executor',
-            activity_type: 'File Search Note',
-            content: `File search tool requested but not fully implemented. Query: ${toolCall.function.arguments}`,
-            status: 'processing',
-          });
+          await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'Tool Executor', 'File Search Note', `File search tool requested but not fully implemented. Query: ${toolCall.function.arguments}`, 'processing');
         } else {
           console.warn(`Unknown tool call: ${toolCall.function.name}`);
           toolOutputs.push({ tool_call_id: toolCall.id, output: `Unknown tool: ${toolCall.function.name}` });
@@ -145,6 +143,45 @@ async function pollOpenAIRun(
     }
   }
   return runStatus;
+}
+
+// Helper function to upload files to OpenAI
+async function uploadFilesToOpenAI(
+  supabaseClient: SupabaseClient,
+  openai: OpenAI,
+  caseId: string,
+  userId: string,
+  fileNames: string[]
+): Promise<string[]> {
+  const openaiFileIds: string[] = [];
+  for (const fileName of fileNames) {
+    const filePath = `${userId}/${caseId}/${fileName}`;
+    const { data: fileBlob, error: downloadError } = await supabaseClient.storage
+      .from('evidence-files')
+      .download(filePath);
+
+    if (downloadError) {
+      console.error(`Error downloading file ${fileName} from Supabase Storage:`, downloadError);
+      await insertAgentActivity(supabaseClient, caseId, 'File Processor', 'Error Handler', 'File Download Failed', `Failed to download ${fileName} from Supabase Storage: ${downloadError.message}`, 'error');
+      throw new Error(`Failed to download file ${fileName}.`);
+    }
+
+    if (fileBlob) {
+      try {
+        const openaiFile = await openai.files.create({
+          file: new File([fileBlob], fileName),
+          purpose: 'assistants',
+        });
+        openaiFileIds.push(openaiFile.id);
+        await insertAgentActivity(supabaseClient, caseId, 'File Processor', 'OpenAI Integration', 'File Uploaded to OpenAI', `Successfully uploaded ${fileName} to OpenAI (ID: ${openaiFile.id}).`, 'completed');
+      } catch (openaiUploadError: any) {
+        console.error(`Error uploading file ${fileName} to OpenAI:`, openaiUploadError);
+        await insertAgentActivity(supabaseClient, caseId, 'File Processor', 'Error Handler', 'OpenAI File Upload Failed', `Failed to upload ${fileName} to OpenAI: ${openaiUploadError.message}`, 'error');
+        throw new Error(`Failed to upload file ${fileName} to OpenAI.`);
+      }
+    }
+  }
+  return openaiFileIds;
 }
 
 // OpenAI Handler
@@ -194,36 +231,14 @@ async function handleOpenAICommand(
         }).join('\n');
 
         await updateCaseData(supabaseClient, caseId, assistantResponse);
-
-        await supabaseClient.from('agent_activities').insert({
-          case_id: caseId,
-          agent_name: 'OpenAI Assistant',
-          agent_role: 'AI',
-          activity_type: 'Response',
-          content: assistantResponse,
-          status: 'completed',
-        });
+        await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'AI', 'Response', assistantResponse, 'completed');
         responseMessage = 'OpenAI Assistant responded.';
       } else {
-        await supabaseClient.from('agent_activities').insert({
-          case_id: caseId,
-          agent_name: 'OpenAI Assistant',
-          agent_role: 'AI',
-          activity_type: 'No Response',
-          content: 'OpenAI Assistant completed run but provided no visible response.',
-          status: 'completed',
-        });
+        await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'AI', 'No Response', 'OpenAI Assistant completed run but provided no visible response.', 'completed');
         responseMessage = 'OpenAI Assistant completed run but no response.';
       }
     } else {
-      await supabaseClient.from('agent_activities').insert({
-        case_id: caseId,
-        agent_name: 'OpenAI Assistant',
-        agent_role: 'Error Handler',
-        activity_type: 'Run Failed',
-        content: `OpenAI Assistant run failed or ended with status: ${finalStatus}`,
-        status: 'error',
-      });
+      await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'Error Handler', 'Run Failed', `OpenAI Assistant run failed or ended with status: ${finalStatus}`, 'error');
       throw new Error(`OpenAI Assistant run failed with status: ${finalStatus}`);
     }
 
@@ -231,55 +246,7 @@ async function handleOpenAICommand(
     const { newFileNames } = payload;
     console.log(`OpenAI: Processing additional files for case ${caseId}: ${newFileNames.join(', ')}`);
 
-    const openaiFileIds: string[] = [];
-    for (const fileName of newFileNames) {
-      const filePath = `${userId}/${caseId}/${fileName}`;
-      const { data: fileBlob, error: downloadError } = await supabaseClient.storage
-        .from('evidence-files')
-        .download(filePath);
-
-      if (downloadError) {
-        console.error(`Error downloading file ${fileName} from Supabase Storage:`, downloadError);
-        await supabaseClient.from('agent_activities').insert({
-          case_id: caseId,
-          agent_name: 'File Processor',
-          agent_role: 'Error Handler',
-          activity_type: 'File Download Failed',
-          content: `Failed to download ${fileName} from Supabase Storage: ${downloadError.message}`,
-          status: 'error',
-        });
-        throw new Error(`Failed to download file ${fileName}.`);
-      }
-
-      if (fileBlob) {
-        try {
-          const openaiFile = await openai.files.create({
-            file: new File([fileBlob], fileName),
-            purpose: 'assistants',
-          });
-          openaiFileIds.push(openaiFile.id);
-          await supabaseClient.from('agent_activities').insert({
-            case_id: caseId,
-            agent_name: 'File Processor',
-            agent_role: 'OpenAI Integration',
-            activity_type: 'File Uploaded to OpenAI',
-            content: `Successfully uploaded ${fileName} to OpenAI (ID: ${openaiFile.id}).`,
-            status: 'completed',
-          });
-        } catch (openaiUploadError: any) {
-          console.error(`Error uploading file ${fileName} to OpenAI:`, openaiUploadError);
-          await supabaseClient.from('agent_activities').insert({
-            case_id: caseId,
-            agent_name: 'File Processor',
-            agent_role: 'Error Handler',
-            activity_type: 'OpenAI File Upload Failed',
-            content: `Failed to upload ${fileName} to OpenAI: ${openaiUploadError.message}`,
-            status: 'error',
-          });
-          throw new Error(`Failed to upload file ${fileName} to OpenAI.`);
-        }
-      }
-    }
+    const openaiFileIds = await uploadFilesToOpenAI(supabaseClient, openai, caseId, userId, newFileNames);
 
     await openai.beta.threads.messages.create(
       openaiThreadId,
@@ -300,24 +267,10 @@ async function handleOpenAICommand(
     const finalStatus = await pollOpenAIRun(openai, supabaseClient, caseId, openaiThreadId, run.id);
 
     if (finalStatus === 'completed') {
-      await supabaseClient.from('agent_activities').insert({
-        case_id: caseId,
-        agent_name: 'OpenAI Assistant',
-        agent_role: 'AI',
-        activity_type: 'New Files Processed',
-        content: 'OpenAI Assistant has processed the newly uploaded files.',
-        status: 'completed',
-      });
+      await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'AI', 'New Files Processed', 'OpenAI Assistant has processed the newly uploaded files.', 'completed');
       responseMessage = 'OpenAI Assistant processed new files.';
     } else {
-      await supabaseClient.from('agent_activities').insert({
-        case_id: caseId,
-        agent_name: 'OpenAI Assistant',
-        agent_role: 'Error Handler',
-        activity_type: 'New File Processing Failed',
-        content: `OpenAI Assistant run for new files failed or ended with status: ${finalStatus}`,
-        status: 'error',
-      });
+      await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'Error Handler', 'New File Processing Failed', `OpenAI Assistant run for new files failed or ended with status: ${finalStatus}`, 'error');
       throw new Error(`OpenAI Assistant run for new files failed with status: ${finalStatus}`);
     }
   } else if (command === 'web_search') {
@@ -334,14 +287,7 @@ async function handleOpenAICommand(
 
     if (searchError) {
       console.error('Error invoking web-search function:', searchError);
-      await supabaseClient.from('agent_activities').insert({
-        case_id: caseId,
-        agent_name: 'Web Search Agent',
-        agent_role: 'Error Handler',
-        activity_type: 'Web Search Failed',
-        content: `Failed to perform web search: ${searchError.message}`,
-        status: 'error',
-      });
+      await insertAgentActivity(supabaseClient, caseId, 'Web Search Agent', 'Error Handler', 'Web Search Failed', `Failed to perform web search: ${searchError.message}`, 'error');
       throw new Error(`Failed to perform web search: ${searchError.message}`);
     }
 
@@ -377,36 +323,14 @@ async function handleOpenAICommand(
         }).join('\n');
 
         await updateCaseData(supabaseClient, caseId, assistantResponse);
-
-        await supabaseClient.from('agent_activities').insert({
-          case_id: caseId,
-          agent_name: 'OpenAI Assistant',
-          agent_role: 'AI',
-          activity_type: 'Response (Web Search)',
-          content: assistantResponse,
-          status: 'completed',
-        });
+        await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'AI', 'Response (Web Search)', assistantResponse, 'completed');
         responseMessage = 'OpenAI Assistant processed web search results.';
       } else {
-        await supabaseClient.from('agent_activities').insert({
-          case_id: caseId,
-          agent_name: 'OpenAI Assistant',
-          agent_role: 'AI',
-          activity_type: 'No Response (Web Search)',
-          content: 'OpenAI Assistant completed run for web search but provided no visible response.',
-          status: 'completed',
-        });
+        await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'AI', 'No Response (Web Search)', 'OpenAI Assistant completed run for web search but provided no visible response.', 'completed');
         responseMessage = 'OpenAI Assistant completed run for web search but no response.';
       }
     } else {
-      await supabaseClient.from('agent_activities').insert({
-        case_id: caseId,
-        agent_name: 'OpenAI Assistant',
-        agent_role: 'Error Handler',
-        activity_type: 'Web Search Processing Failed',
-        content: `OpenAI Assistant run for web search failed or ended with status: ${finalStatus}`,
-        status: 'error',
-      });
+      await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'Error Handler', 'Web Search Processing Failed', `OpenAI Assistant run for web search failed or ended with status: ${finalStatus}`, 'error');
       throw new Error(`OpenAI Assistant run for web search failed with status: ${finalStatus}`);
     }
   } else {
@@ -450,26 +374,11 @@ async function handleGeminiCommand(
       await supabaseClient.from('cases').update({ gemini_chat_history: updatedChatHistory }).eq('id', caseId);
 
       await updateCaseData(supabaseClient, caseId, text);
-
-      await supabaseClient.from('agent_activities').insert({
-        case_id: caseId,
-        agent_name: 'Google Gemini',
-        agent_role: 'AI',
-        activity_type: 'Response',
-        content: text,
-        status: 'completed',
-      });
+      await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'AI', 'Response', text, 'completed');
       responseMessage = 'Google Gemini responded.';
     } catch (geminiError: any) {
       console.error('Error interacting with Gemini:', geminiError);
-      await supabaseClient.from('agent_activities').insert({
-        case_id: caseId,
-        agent_name: 'Google Gemini',
-        agent_role: 'Error Handler',
-        activity_type: 'Gemini Interaction Failed',
-        content: `Failed to get response from Gemini: ${geminiError.message}`,
-        status: 'error',
-      });
+      await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'Error Handler', 'Gemini Interaction Failed', `Failed to get response from Gemini: ${geminiError.message}`, 'error');
       throw new Error(`Failed to get response from Gemini: ${geminiError.message}`);
     }
 
@@ -479,14 +388,7 @@ async function handleGeminiCommand(
 
     const content = `New files (${newFileNames.join(', ')}) have been uploaded to storage for this case. Google Gemini currently does not support direct document analysis without a Retrieval Augmented Generation (RAG) setup. These files are available for future RAG integration but will not be analyzed by Gemini at this time.`;
     
-    await supabaseClient.from('agent_activities').insert({
-      case_id: caseId,
-      agent_name: 'Google Gemini',
-      agent_role: 'File Processor',
-      activity_type: 'File Processing Note',
-      content: content,
-      status: 'completed',
-    });
+    await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'File Processor', 'File Processing Note', content, 'completed');
 
     const updatedChatHistory = [...(geminiChatHistory || []),
       { role: 'model', parts: [{ text: content }] }
@@ -508,14 +410,7 @@ async function handleGeminiCommand(
 
     if (searchError) {
       console.error('Error invoking web-search function:', searchError);
-      await supabaseClient.from('agent_activities').insert({
-        case_id: caseId,
-        agent_name: 'Web Search Agent',
-        agent_role: 'Error Handler',
-        activity_type: 'Web Search Failed',
-        content: `Failed to perform web search: ${searchError.message}`,
-        status: 'error',
-      });
+      await insertAgentActivity(supabaseClient, caseId, 'Web Search Agent', 'Error Handler', 'Web Search Failed', `Failed to perform web search: ${searchError.message}`, 'error');
       throw new Error(`Failed to perform web search: ${searchError.message}`);
     }
 
@@ -535,26 +430,11 @@ async function handleGeminiCommand(
       await supabaseClient.from('cases').update({ gemini_chat_history: updatedChatHistory }).eq('id', caseId);
 
       await updateCaseData(supabaseClient, caseId, text);
-
-      await supabaseClient.from('agent_activities').insert({
-        case_id: caseId,
-        agent_name: 'Google Gemini',
-        agent_role: 'AI',
-        activity_type: 'Response (Web Search)',
-        content: text,
-        status: 'completed',
-      });
+      await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'AI', 'Response (Web Search)', text, 'completed');
       responseMessage = 'Google Gemini processed web search results.';
     } catch (geminiError: any) {
       console.error('Error interacting with Gemini after web search:', geminiError);
-      await supabaseClient.from('agent_activities').insert({
-        case_id: caseId,
-        agent_name: 'Google Gemini',
-        agent_role: 'Error Handler',
-        activity_type: 'Gemini Web Search Processing Failed',
-        content: `Failed to process web search results with Gemini: ${geminiError.message}`,
-        status: 'error',
-      });
+      await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'Error Handler', 'Gemini Web Search Processing Failed', `Failed to process web search results with Gemini: ${geminiError.message}`, 'error');
       throw new Error(`Failed to process web search results with Gemini: ${geminiError.message}`);
     }
   } else {
