@@ -70,6 +70,41 @@ serve(async (req) => {
     let openaiThreadId: string | undefined;
     let openaiAssistantId: string | undefined;
 
+    const structuredOutputInstruction = `
+    When providing updates or summaries, especially after processing new information or a user prompt, please include structured JSON data within a markdown code block (e.g., \`\`\`json{...}\`\`\`). This JSON should contain updates to the case theory and/or new insights.
+
+    **Case Theory Update Schema (optional, include if theory changes):**
+    \`\`\`json
+    {
+      "theory_update": {
+        "fact_patterns": ["Updated fact 1", "Updated fact 2"],
+        "legal_arguments": ["Updated argument 1", "Updated argument 2"],
+        "potential_outcomes": ["Updated outcome 1", "Updated outcome 2"],
+        "status": "developing" | "refined" | "complete"
+      }
+    }
+    \`\`\`
+
+    **Case Insights Schema (optional, include if new insights are generated):**
+    \`\`\`json
+    {
+      "insights": [
+        {
+          "title": "Insight Title",
+          "description": "Detailed description of the insight.",
+          "insight_type": "key_fact" | "risk_assessment" | "outcome_trend" | "general"
+        },
+        {
+          "title": "Another Insight",
+          "description": "More details.",
+          "insight_type": "general"
+        }
+      ]
+    }
+    \`\`\`
+    You can combine both "theory_update" and "insights" in a single JSON block if applicable.
+    `;
+
     if (aiModel === 'openai') {
       const openai = new OpenAI({
         apiKey: Deno.env.get('OPENAI_API_KEY'),
@@ -130,10 +165,43 @@ serve(async (req) => {
       let assistantId = Deno.env.get('OPENAI_ASSISTANT_ID');
       let assistant;
 
+      const assistantTools = [
+        { type: "file_search" },
+        {
+          type: "function",
+          function: {
+            name: "web_search",
+            description: "Perform a web search to get up-to-date information or external context.",
+            parameters: {
+              type: "object",
+              properties: {
+                query: {
+                  type: "string",
+                  description: "The search query.",
+                },
+              },
+              required: ["query"],
+            },
+          },
+        },
+      ];
+
       if (assistantId) {
         try {
           assistant = await openai.beta.assistants.retrieve(assistantId);
-          console.log('Using existing OpenAI Assistant:', assistant.id);
+          // Update assistant to ensure it has the latest tools and instructions
+          assistant = await openai.beta.assistants.update(assistantId, {
+            instructions: `You are a specialized AI assistant for California family law cases. Your primary goal is to analyze evidence, identify key facts, legal arguments, and potential outcomes. You should be precise, objective, and focus on the legal implications of the provided documents. Always cite the source document when making claims.
+            
+            User's Case Goals: ${caseGoals || 'Not specified.'}
+            User's System Instruction: ${systemInstruction || 'None provided.'}
+            
+            When responding, provide updates on your analysis progress, key findings, and any questions you have.
+            ${structuredOutputInstruction}`,
+            tools: assistantTools,
+            model: "gpt-4o",
+          });
+          console.log('Using and updated existing OpenAI Assistant:', assistant.id);
         } catch (retrieveError: any) {
           console.warn(`Failed to retrieve existing Assistant with ID ${assistantId}: ${retrieveError.message}. Creating a new one.`);
           assistantId = undefined; // Force creation of a new assistant
@@ -149,8 +217,9 @@ serve(async (req) => {
             User's Case Goals: ${caseGoals || 'Not specified.'}
             User's System Instruction: ${systemInstruction || 'None provided.'}
             
-            When responding, provide updates on your analysis progress, key findings, and any questions you have. Structure your output clearly for legal professionals.`,
-            tools: [{ type: "file_search" }],
+            When responding, provide updates on your analysis progress, key findings, and any questions you have.
+            ${structuredOutputInstruction}`,
+            tools: assistantTools,
             model: "gpt-4o", // Or another suitable model like "gpt-4-turbo"
           });
           assistantId = assistant.id;
