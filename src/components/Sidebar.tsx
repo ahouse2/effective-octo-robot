@@ -1,13 +1,31 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Home, FolderKanban, Scale, Settings, Gavel, FileText, BotMessageSquare, User } from "lucide-react"; // Import User icon
+import { Home, FolderKanban, Scale, Settings, Gavel, FileText, BotMessageSquare, User, LogOut } from "lucide-react"; // Import LogOut icon
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./ThemeToggle";
+import { supabase } from "@/integrations/supabase/client"; // Import supabase client
+import { toast } from "sonner"; // Import toast for notifications
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {}
 
 export function Sidebar({ className }: SidebarProps) {
+  const handleSignOut = async () => {
+    const loadingToastId = toast.loading("Signing out...");
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        throw new Error(error.message);
+      }
+      toast.success("Signed out successfully!");
+    } catch (err: any) {
+      console.error("Sign out error:", err);
+      toast.error(err.message || "Failed to sign out. Please try again.");
+    } finally {
+      toast.dismiss(loadingToastId);
+    }
+  };
+
   return (
     <div className={cn("pb-12 h-full flex flex-col", className)}>
       <div className="space-y-4 py-4 flex-1">
@@ -53,7 +71,7 @@ export function Sidebar({ className }: SidebarProps) {
             Settings
           </h2>
           <div className="space-y-1">
-            <Link to="/profile"> {/* Add the new link here */}
+            <Link to="/profile">
               <Button variant="ghost" className="w-full justify-start">
                 <User className="mr-2 h-4 w-4" />
                 Profile
@@ -64,6 +82,10 @@ export function Sidebar({ className }: SidebarProps) {
               App Settings
             </Button>
             <ThemeToggle />
+            <Button variant="ghost" className="w-full justify-start text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300" onClick={handleSignOut}>
+              <LogOut className="mr-2 h-4 w-4" />
+              Sign Out
+            </Button>
           </div>
         </div>
       </div>
