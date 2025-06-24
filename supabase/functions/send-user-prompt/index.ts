@@ -49,12 +49,37 @@ serve(async (req) => {
       throw new Error('Failed to record user prompt.');
     }
 
-    // 2. Forward the prompt to the AI service
+    // Check for specific commands
+    let aiServicePayload: any = {
+      caseId: caseId,
+      userId: userId,
+      prompt: promptContent,
+    };
+
+    if (promptContent.startsWith('/search ')) {
+      const query = promptContent.substring('/search '.length).trim();
+      console.log(`Detected /search command with query: "${query}"`);
+      aiServicePayload.command = 'file_search';
+      aiServicePayload.query = query;
+
+      // Log an activity indicating the search command was received
+      await supabaseClient.from('agent_activities').insert({
+        case_id: caseId,
+        agent_name: 'Command Interpreter',
+        agent_role: 'System',
+        activity_type: 'Command Received',
+        content: `User requested a file search for: "${query}"`,
+        status: 'processing',
+      });
+    }
+    // Add more commands here if needed (e.g., /summarize, /analyze)
+
+    // 2. Forward the prompt (or command) to the AI service
     const aiServiceEndpoint = Deno.env.get('AI_SERVICE_ENDPOINT');
     const aiServiceApiKey = Deno.env.get('AI_SERVICE_API_KEY');
 
     if (aiServiceEndpoint) {
-      console.log(`Forwarding user prompt to AI service at: ${aiServiceEndpoint}`);
+      console.log(`Forwarding user prompt/command to AI service at: ${aiServiceEndpoint}`);
       try {
         const aiResponse = await fetch(aiServiceEndpoint, {
           method: 'POST',
@@ -62,18 +87,12 @@ serve(async (req) => {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${aiServiceApiKey}`,
           },
-          body: JSON.stringify({
-            caseId: caseId,
-            userId: userId,
-            prompt: promptContent,
-            // You might include other context like current case theory, recent activities etc.
-          }),
+          body: JSON.stringify(aiServicePayload), // Send the parsed payload
         });
 
         if (!aiResponse.ok) {
           const errorBody = await aiResponse.text();
           console.error('AI Service prompt forwarding failed:', aiResponse.status, errorBody);
-          // Optionally, log an error activity if AI service fails to receive prompt
           await supabaseClient.from('agent_activities').insert({
             case_id: caseId,
             agent_name: 'AI Orchestrator',
@@ -88,9 +107,9 @@ serve(async (req) => {
         const aiResult = await aiResponse.json();
         console.log('AI Service response to prompt:', aiResult);
         // The AI service is expected to update agent_activities and case_theories directly
-        // based on the prompt.
+        // based on the prompt/command.
 
-      } catch (aiCallError) {
+      } catch (aiCallError: any) {
         console.error('Error during AI service prompt invocation:', aiCallError);
         await supabaseClient.from('agent_activities').insert({
           case_id: caseId,
@@ -103,13 +122,13 @@ serve(async (req) => {
         throw new Error(`Error invoking AI analysis service with user prompt: ${aiCallError.message}`);
       }
     } else {
-      console.warn('AI_SERVICE_ENDPOINT not set. User prompt will not be forwarded to AI.');
+      console.warn('AI_SERVICE_ENDPOINT not set. User prompt/command will not be forwarded to AI.');
       await supabaseClient.from('agent_activities').insert({
         case_id: caseId,
         agent_name: 'AI Orchestrator',
         agent_role: 'Warning',
         activity_type: 'AI Service Not Configured',
-        content: 'AI_SERVICE_ENDPOINT environment variable is not set. User prompt will not be forwarded to AI.',
+        content: 'AI_SERVICE_ENDPOINT environment variable is not set. User prompt/command will not be forwarded to AI.',
         status: 'completed',
       });
     }
@@ -119,7 +138,7 @@ serve(async (req) => {
       status: 200,
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Edge Function error:', error.message);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
