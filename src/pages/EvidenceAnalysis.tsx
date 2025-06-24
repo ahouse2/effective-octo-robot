@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/components/SessionContextProvider";
 import { useNavigate } from "react-router-dom";
-import { Textarea } from "@/components/ui/textarea"; // Import Textarea
+import { Textarea } from "@/components/ui/textarea";
 
 const formSchema = z.object({
   caseType: z.string().min(2, {
@@ -21,7 +21,8 @@ const formSchema = z.object({
   partiesInvolved: z.string().min(2, {
     message: "Parties involved must be at least 2 characters.",
   }),
-  caseGoals: z.string().optional(), // New field for case goals
+  caseGoals: z.string().optional(),
+  systemInstruction: z.string().optional(), // New field for system instruction
 });
 
 const EvidenceAnalysis = () => {
@@ -35,7 +36,8 @@ const EvidenceAnalysis = () => {
     defaultValues: {
       caseType: "",
       partiesInvolved: "",
-      caseGoals: "", // Initialize caseGoals
+      caseGoals: "",
+      systemInstruction: "", // Initialize systemInstruction
     },
   });
 
@@ -72,7 +74,8 @@ const EvidenceAnalysis = () => {
             type: values.caseType,
             status: "In Progress",
             user_id: user.id,
-            case_goals: values.caseGoals, // Save case goals
+            case_goals: values.caseGoals,
+            system_instruction: values.systemInstruction, // Save system instruction
           },
         ])
         .select();
@@ -113,7 +116,8 @@ const EvidenceAnalysis = () => {
           body: JSON.stringify({
             caseId: newCase.id,
             fileNames: uploadedFileNames,
-            caseGoals: values.caseGoals, // Pass case goals to edge function
+            caseGoals: values.caseGoals,
+            systemInstruction: values.systemInstruction, // Pass system instruction to edge function
           }),
           headers: { 'Content-Type': 'application/json' },
         }
@@ -194,6 +198,26 @@ const EvidenceAnalysis = () => {
                       </FormControl>
                       <FormDescription>
                         Clearly outlining your goals will help the AI agents focus their analysis.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="systemInstruction"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>System Instructions (for AI Agents)</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="Provide specific instructions or context for the AI agents. E.g., 'Focus heavily on financial documents for discrepancies.', 'Prioritize evidence related to child's welfare.', 'Ignore documents older than 2020.'"
+                          className="min-h-[120px]"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Use this field to give the AI agents detailed directives on how to approach the analysis.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
