@@ -6,10 +6,10 @@ import { AgentInteractionDisplay } from "@/components/AgentInteractionDisplay";
 import { CaseTheorySummary } from "@/components/CaseTheorySummary";
 import { CaseInsightsCard } from "@/components/CaseInsightsCard";
 import { CaseTimeline } from "@/components/CaseTimeline";
-import { CaseFilesDisplay } from "@/components/CaseFilesDisplay"; // Import the new component
+import { CaseFilesDisplay } from "@/components/CaseFilesDisplay";
 import { useParams } from "react-router-dom";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Terminal, Send } from "lucide-react";
+import { Terminal, Send, Lightbulb } from "lucide-react"; // Added Lightbulb icon
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
@@ -95,6 +95,32 @@ const AgentInteraction = () => {
                 <AgentInteractionDisplay caseId={caseId} />
               </ScrollArea>
               {/* User Input for Agent Interaction */}
+              <Card className="mb-4">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base flex items-center">
+                    <Lightbulb className="h-4 w-4 mr-2 text-yellow-500" />
+                    Agent Interaction Tips
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="text-sm text-muted-foreground">
+                  <p className="mb-2">You can send direct messages or use special commands:</p>
+                  <ul className="list-disc list-inside space-y-1">
+                    <li>
+                      <span className="font-semibold">/search [query]</span>: Search within uploaded case files.
+                      <br />
+                      <span className="text-xs italic">Example: /search "financial statements for 2022"</span>
+                    </li>
+                    <li>
+                      <span className="font-semibold">/websearch [query]</span>: Perform a web search for external information.
+                      <br />
+                      <span className="text-xs italic">Example: /websearch "California child support guidelines"</span>
+                    </li>
+                    <li>
+                      <span className="font-semibold">Any other message</span>: Will be interpreted as a general instruction or question for the agents.
+                    </li>
+                  </ul>
+                </CardContent>
+              </Card>
               <div className="flex items-center space-x-2 mt-auto">
                 <Textarea
                   placeholder="Send a message or prompt to the agents... (e.g., /search 'financial records', /websearch 'California family law')"
@@ -121,7 +147,7 @@ const AgentInteraction = () => {
           <div className="lg:col-span-1 flex flex-col space-y-8">
             <CaseTheorySummary caseId={caseId} />
             <CaseInsightsCard caseId={caseId} />
-            <CaseFilesDisplay caseId={caseId} /> {/* Add the new component here */}
+            <CaseFilesDisplay caseId={caseId} />
             <CaseTimeline caseId={caseId} />
           </div>
         </div>
