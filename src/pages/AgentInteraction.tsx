@@ -9,16 +9,22 @@ import { CaseTimeline } from "@/components/CaseTimeline";
 import { CaseFilesDisplay } from "@/components/CaseFilesDisplay";
 import { useParams } from "react-router-dom";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Terminal, Send, Lightbulb } from "lucide-react"; // Added Lightbulb icon
+import { Terminal, Send, Lightbulb, Upload } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { useSession } from "@/components/SessionContextProvider";
 
 const AgentInteraction = () => {
   const { caseId } = useParams<{ caseId: string }>();
   const [userPrompt, setUserPrompt] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [filesToUpload, setFilesToUpload] = useState<File[]>([]);
+  const [isUploadingFiles, setIsUploadingFiles] = useState(false);
+  const { user } = useSession();
 
   const handleSendPrompt = async () => {
     if (!userPrompt.trim()) {
@@ -51,13 +57,87 @@ const AgentInteraction = () => {
 
       console.log("Prompt sent response:", data);
       toast.success("Prompt sent successfully!");
-      setUserPrompt(""); // Clear input field
+      setUserPrompt("");
 
     } catch (err: any) {
       console.error("Error sending prompt:", err);
       toast.error(err.message || "Failed to send prompt. Please try again.");
     } finally {
       setIsSending(false);
+      toast.dismiss(loadingToastId);
+    }
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files) {
+      const fileList = Array.from(files);
+      setFilesToUpload(fileList);
+      toast.info(`Selected ${fileList.length} files for upload.`);
+    }
+  };
+
+  const handleUploadFiles = async () => {
+    if (!user) {
+      toast.error("You must be logged in to upload files.");
+      return;
+    }
+    if (!caseId) {
+      toast.error("Case ID is missing. Cannot upload files.");
+      return;
+    }
+    if (filesToUpload.length === 0) {
+      toast.info("Please select files to upload.");
+      return;
+    }
+
+    setIsUploadingFiles(true);
+    const loadingToastId = toast.loading(`Uploading ${filesToUpload.length} files...`);
+
+    try {
+      const uploadPromises = filesToUpload.map(async (file) => {
+        const filePath = `${user.id}/${caseId}/${file.name}`;
+        const { error: uploadError } = await supabase.storage
+          .from('evidence-files')
+          .upload(filePath, file, {
+            cacheControl: '3600',
+            upsert: false,
+          });
+
+        if (uploadError) {
+          console.error(`Error uploading file ${file.name}:`, uploadError);
+          throw new Error(`Failed to upload file ${file.name}: ${uploadError.message}`);
+        }
+        return file.name;
+      });
+
+      const uploadedFileNames = await Promise.all(uploadPromises);
+      toast.success(`Successfully uploaded ${uploadedFileNames.length} files.`);
+
+      const { data: edgeFunctionData, error: edgeFunctionError } = await supabase.functions.invoke(
+        'process-additional-files',
+        {
+          body: JSON.stringify({
+            caseId: caseId,
+            newFileNames: uploadedFileNames,
+          }),
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+
+      if (edgeFunctionError) {
+        throw new Error("Failed to invoke additional file processing function: " + edgeFunctionError.message);
+      }
+
+      console.log("Additional file processing function response:", edgeFunctionData);
+      toast.success("New files submitted for analysis!");
+      setFilesToUpload([]);
+
+    } catch (err: any) {
+      console.error("File upload error:", err);
+      toast.error(err.message || "An unexpected error occurred during file upload.");
+    } finally {
+      setIsUploadingFiles(false);
       toast.dismiss(loadingToastId);
     }
   };
@@ -148,6 +228,44 @@ const AgentInteraction = () => {
             <CaseTheorySummary caseId={caseId} />
             <CaseInsightsCard caseId={caseId} />
             <CaseFilesDisplay caseId={caseId} />
+            {/* New Card for File Upload */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Upload More Evidence</CardTitle>
+                <CardDescription>Add additional files to this case for analysis.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid w-full items-center gap-1.5 mb-4">
+                  <Label htmlFor="additional-evidence-files">Select Files</Label>
+                  <Input
+                    id="additional-evidence-files"
+                    type="file"
+                    multiple
+                    onChange={handleFileChange}
+                    className="cursor-pointer"
+                    disabled={isUploadingFiles}
+                  />
+                  {filesToUpload.length > 0 && (
+                    <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                      <p className="font-semibold">Selected Files ({filesToUpload.length}):</p>
+                      <ul className="list-disc list-inside max-h-24 overflow-y-auto">
+                        {filesToUpload.map((file, index) => (
+                          <li key={index}>{file.name} ({ (file.size / 1024 / 1024).toFixed(2) } MB)</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+                <Button
+                  onClick={handleUploadFiles}
+                  disabled={isUploadingFiles || filesToUpload.length === 0}
+                  className="w-full"
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  {isUploadingFiles ? "Uploading..." : "Upload Files for Analysis"}
+                </Button>
+              </CardContent>
+            </Card>
             <CaseTimeline caseId={caseId} />
           </div>
         </div>
