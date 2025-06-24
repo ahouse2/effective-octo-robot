@@ -8,7 +8,8 @@ import Dashboard from "./pages/Dashboard";
 import EvidenceAnalysis from "./pages/EvidenceAnalysis";
 import CaseManagement from "./pages/CaseManagement";
 import AgentInteraction from "./pages/AgentInteraction";
-import UserProfile from "./pages/UserProfile"; // Import the new UserProfile page
+import UserProfile from "./pages/UserProfile";
+import AppSettings from "./pages/AppSettings"; // Import the new AppSettings page
 import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
 import { ThemeProvider } from "next-themes";
@@ -31,7 +32,8 @@ const App = () => (
               <Route path="/evidence-analysis" element={<EvidenceAnalysis />} />
               <Route path="/case-management" element={<CaseManagement />} />
               <Route path="/agent-interaction/:caseId" element={<AgentInteraction />} />
-              <Route path="/profile" element={<UserProfile />} /> {/* Add the new route here */}
+              <Route path="/profile" element={<UserProfile />} />
+              <Route path="/app-settings" element={<AppSettings />} /> {/* Add the new route here */}
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>

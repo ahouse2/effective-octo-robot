@@ -1,11 +1,11 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Home, FolderKanban, Scale, Settings, Gavel, FileText, BotMessageSquare, User, LogOut } from "lucide-react"; // Import LogOut icon
+import { Home, FolderKanban, Scale, Settings, Gavel, FileText, BotMessageSquare, User, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./ThemeToggle";
-import { supabase } from "@/integrations/supabase/client"; // Import supabase client
-import { toast } from "sonner"; // Import toast for notifications
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {}
 
@@ -77,10 +77,12 @@ export function Sidebar({ className }: SidebarProps) {
                 Profile
               </Button>
             </Link>
-            <Button variant="ghost" className="w-full justify-start">
-              <Settings className="mr-2 h-4 w-4" />
-              App Settings
-            </Button>
+            <Link to="/app-settings"> {/* Updated Link */}
+              <Button variant="ghost" className="w-full justify-start">
+                <Settings className="mr-2 h-4 w-4" />
+                App Settings
+              </Button>
+            </Link>
             <ThemeToggle />
             <Button variant="ghost" className="w-full justify-start text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300" onClick={handleSignOut}>
               <LogOut className="mr-2 h-4 w-4" />
