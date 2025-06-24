@@ -3,10 +3,21 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { FileText, Download } from "lucide-react";
+import { FileText, Download, Trash } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/components/SessionContextProvider";
 import { format } from "date-fns";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface FileMetadata {
   id: string;
@@ -128,6 +139,45 @@ export const CaseFilesDisplay: React.FC<CaseFilesDisplayProps> = ({ caseId }) =>
     }
   };
 
+  const handleDeleteFile = async (fileId: string, filePath: string, fileName: string) => {
+    if (!user) {
+      toast.error("You must be logged in to delete files.");
+      return;
+    }
+
+    const loadingToastId = toast.loading(`Deleting ${fileName}...`);
+
+    try {
+      // 1. Delete file from Supabase Storage
+      const { error: storageError } = await supabase.storage
+        .from('evidence-files')
+        .remove([filePath]);
+
+      if (storageError) {
+        console.error(`Error deleting file ${fileName} from storage:`, storageError);
+        throw new Error(`Failed to delete file from storage: ${storageError.message}`);
+      }
+
+      // 2. Delete file metadata from the database
+      const { error: dbError } = await supabase
+        .from('case_files_metadata')
+        .delete()
+        .eq('id', fileId);
+
+      if (dbError) {
+        console.error(`Error deleting file metadata for ${fileName}:`, dbError);
+        throw new Error(`Failed to delete file metadata: ${dbError.message}`);
+      }
+
+      toast.success(`${fileName} deleted successfully!`);
+    } catch (err: any) {
+      console.error("File deletion error:", err);
+      toast.error(err.message || "An unexpected error occurred during file deletion.");
+    } finally {
+      toast.dismiss(loadingToastId);
+    }
+  };
+
   if (loading) {
     return <div className="text-center py-8">Loading files...</div>;
   }
@@ -169,14 +219,39 @@ export const CaseFilesDisplay: React.FC<CaseFilesDisplayProps> = ({ caseId }) =>
                       </p>
                     </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleDownload(file.file_path, file.file_name)}
-                    className="ml-2 flex-shrink-0"
-                  >
-                    <Download className="h-4 w-4" />
-                  </Button>
+                  <div className="flex items-center space-x-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDownload(file.file_path, file.file_name)}
+                      className="ml-2 flex-shrink-0"
+                    >
+                      <Download className="h-4 w-4" />
+                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600">
+                          <Trash className="h-4 w-4" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This action cannot be undone. This will permanently delete the file
+                            <span className="font-bold text-foreground"> "{file.file_name}" </span>
+                            from storage and remove its record from this case.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => handleDeleteFile(file.id, file.file_path, file.file_name)}>
+                            Delete File
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
                 </li>
               ))}
             </ul>
