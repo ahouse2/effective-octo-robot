@@ -40,13 +40,33 @@ const AgentInteraction = () => {
     setIsSending(true);
     const loadingToastId = toast.loading("Sending prompt to agents...");
 
+    let command = 'user_prompt';
+    let payload: any = { promptContent: userPrompt };
+
+    if (userPrompt.startsWith('/websearch ')) {
+      command = 'web_search';
+      payload = { query: userPrompt.substring('/websearch '.length).trim() };
+      if (!payload.query) {
+        toast.error("Please provide a query for websearch (e.g., /websearch 'California family law').");
+        setIsSending(false);
+        toast.dismiss(loadingToastId);
+        return;
+      }
+    } else if (userPrompt.startsWith('/search ')) {
+      // This command is currently handled by the AI assistant's file_search tool.
+      // The prompt will be sent as a regular user prompt, and the assistant will interpret it.
+      // If direct client-side file search invocation is needed, this block would be expanded.
+      toast.info("'/search' command will be processed by the AI assistant's file search tool.");
+    }
+
     try {
       const { data, error } = await supabase.functions.invoke(
-        'send-user-prompt',
+        'ai-orchestrator', // Invoke the orchestrator for all AI-related commands
         {
           body: JSON.stringify({
             caseId: caseId,
-            promptContent: userPrompt,
+            command: command,
+            payload: payload,
           }),
           headers: { 'Content-Type': 'application/json' },
         }
