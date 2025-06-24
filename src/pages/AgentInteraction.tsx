@@ -10,7 +10,7 @@ import { CaseFilesDisplay } from "@/components/CaseFilesDisplay";
 import { CaseChatDisplay } from "@/components/CaseChatDisplay";
 import { useParams, useNavigate } from "react-router-dom";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Terminal, Send, Lightbulb, Upload, Edit } from "lucide-react";
+import { Terminal, Send, Lightbulb, Upload, Edit, Search } from "lucide-react"; // Added Search icon
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +18,7 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useSession } from "@/components/SessionContextProvider";
-import { EditCaseDetailsDialog } from "@/components/EditCaseDetailsDialog"; // Import the new dialog
+import { EditCaseDetailsDialog } from "@/components/EditCaseDetailsDialog";
 
 interface CaseDetails {
   name: string;
@@ -33,7 +33,9 @@ const AgentInteraction = () => {
   const { caseId } = useParams<{ caseId: string }>();
   const navigate = useNavigate();
   const [userPrompt, setUserPrompt] = useState("");
+  const [webSearchQuery, setWebSearchQuery] = useState(""); // New state for web search query
   const [isSending, setIsSending] = useState(false);
+  const [isSearchingWeb, setIsSearchingWeb] = useState(false); // New state for web search loading
   const [filesToUpload, setFilesToUpload] = useState<File[]>([]);
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const { user } = useSession();
@@ -84,27 +86,19 @@ const AgentInteraction = () => {
     let command = 'user_prompt';
     let payload: any = { promptContent: userPrompt };
 
-    if (userPrompt.startsWith('/websearch ')) {
-      command = 'web_search';
-      payload = { query: userPrompt.substring('/websearch '.length).trim() };
-      if (!payload.query) {
-        toast.error("Please provide a query for websearch (e.g., /websearch 'California family law').");
-        setIsSending(false);
-        toast.dismiss(loadingToastId);
-        return;
-      }
-    } else if (userPrompt.startsWith('/search ')) {
+    if (userPrompt.startsWith('/search ')) {
       toast.info("'/search' command will be processed by the AI assistant's file search tool.");
+      // The AI Orchestrator will handle the /search command internally via OpenAI's file_search tool.
+      // No need to change the command or payload here.
     }
 
     try {
       const { data, error } = await supabase.functions.invoke(
-        'ai-orchestrator',
+        'send-user-prompt', // Use send-user-prompt for general user prompts
         {
           body: JSON.stringify({
             caseId: caseId,
-            command: command,
-            payload: payload,
+            promptContent: userPrompt, // send the raw prompt content
           }),
           headers: { 'Content-Type': 'application/json' },
         }
@@ -123,6 +117,49 @@ const AgentInteraction = () => {
       toast.error(err.message || "Failed to send prompt. Please try again.");
     } finally {
       setIsSending(false);
+      toast.dismiss(loadingToastId);
+    }
+  };
+
+  const handleWebSearch = async () => {
+    if (!webSearchQuery.trim()) {
+      toast.info("Please enter a query for web search.");
+      return;
+    }
+    if (!caseId) {
+      toast.error("Case ID is missing. Cannot perform web search.");
+      return;
+    }
+
+    setIsSearchingWeb(true);
+    const loadingToastId = toast.loading(`Performing web search for "${webSearchQuery}"...`);
+
+    try {
+      const { data, error } = await supabase.functions.invoke(
+        'ai-orchestrator',
+        {
+          body: JSON.stringify({
+            caseId: caseId,
+            command: 'web_search',
+            payload: { query: webSearchQuery },
+          }),
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      console.log("Web search initiated response:", data);
+      toast.success("Web search initiated successfully! Results will appear in chat.");
+      setWebSearchQuery("");
+
+    } catch (err: any) {
+      console.error("Error performing web search:", err);
+      toast.error(err.message || "Failed to perform web search. Please try again.");
+    } finally {
+      setIsSearchingWeb(false);
       toast.dismiss(loadingToastId);
     }
   };
@@ -243,11 +280,6 @@ const AgentInteraction = () => {
                       <span className="text-xs italic">Example: /search "financial statements for 2022"</span>
                     </li>
                     <li>
-                      <span className="font-semibold">/websearch [query]</span>: Perform a web search for external information.
-                      <br />
-                      <span className="text-xs italic">Example: /websearch "California child support guidelines"</span>
-                    </li>
-                    <li>
                       <span className="font-semibold">Any other message</span>: Will be interpreted as a general instruction or question for the agents.
                     </li>
                   </ul>
@@ -255,7 +287,7 @@ const AgentInteraction = () => {
               </Card>
               <div className="flex items-center space-x-2 mt-auto">
                 <Textarea
-                  placeholder="Send a message or prompt to the agents... (e.g., /search 'financial records', /websearch 'California family law')"
+                  placeholder="Send a message or prompt to the agents... (e.g., /search 'financial records')"
                   value={userPrompt}
                   onChange={(e) => setUserPrompt(e.target.value)}
                   onKeyPress={(e) => {
@@ -348,6 +380,41 @@ const AgentInteraction = () => {
                 </Button>
               </CardContent>
             </Card>
+
+            {/* New Card for Web Search */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Perform Web Search</CardTitle>
+                <CardDescription>Search the web for external information relevant to the case.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid w-full items-center gap-1.5 mb-4">
+                  <Label htmlFor="web-search-query">Search Query</Label>
+                  <Input
+                    id="web-search-query"
+                    placeholder="e.g., 'California family law updates 2023'"
+                    value={webSearchQuery}
+                    onChange={(e) => setWebSearchQuery(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleWebSearch();
+                      }
+                    }}
+                    disabled={isSearchingWeb}
+                  />
+                </div>
+                <Button
+                  onClick={handleWebSearch}
+                  disabled={isSearchingWeb || !webSearchQuery.trim()}
+                  className="w-full"
+                >
+                  <Search className="h-4 w-4 mr-2" />
+                  {isSearchingWeb ? "Searching..." : "Search Web"}
+                </Button>
+              </CardContent>
+            </Card>
+
             <CaseTimeline caseId={caseId} />
             {/* Moved Agent Activity Log to the sidebar */}
             <Card>
