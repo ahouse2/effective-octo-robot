@@ -49,7 +49,32 @@ serve(async (req) => {
       throw new Error('Failed to record new file upload activity.');
     }
 
-    // 2. Update the case status to 'In Progress' if it was 'Analysis Complete'
+    // 2. Record file metadata in the new case_files_metadata table
+    const fileMetadataInserts = newFileNames.map((fileName: string) => ({
+      case_id: caseId,
+      file_name: fileName,
+      file_path: `${userId}/${caseId}/${fileName}`,
+      description: `Additional file uploaded for case ${caseId}`,
+    }));
+
+    const { error: metadataError } = await supabaseClient
+      .from('case_files_metadata')
+      .insert(fileMetadataInserts);
+
+    if (metadataError) {
+      console.error('Error inserting additional file metadata:', metadataError);
+      // Do not throw, allow analysis to proceed even if metadata insertion fails
+      await supabaseClient.from('agent_activities').insert({
+        case_id: caseId,
+        agent_name: 'System',
+        agent_role: 'Database Error',
+        activity_type: 'File Metadata Error',
+        content: `Failed to record metadata for some additional files: ${metadataError.message}`,
+        status: 'error',
+      });
+    }
+
+    // 3. Update the case status to 'In Progress' if it was 'Analysis Complete'
     const { data: caseData, error: caseFetchError } = await supabaseClient
       .from('cases')
       .select('status')
@@ -81,7 +106,7 @@ serve(async (req) => {
       }
     }
 
-    // 3. Invoke the AI Orchestrator Edge Function
+    // 4. Invoke the AI Orchestrator Edge Function
     console.log(`Invoking AI Orchestrator for new files on case: ${caseId}`);
     const { data: orchestratorResponse, error: orchestratorError } = await supabaseClient.functions.invoke(
       'ai-orchestrator',

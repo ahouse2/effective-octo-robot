@@ -67,6 +67,33 @@ serve(async (req) => {
       throw new Error('Failed to insert initial case theory.');
     }
 
+    // 3. Record file metadata in the new case_files_metadata table
+    if (fileNames && fileNames.length > 0) {
+      const fileMetadataInserts = fileNames.map((fileName: string) => ({
+        case_id: caseId,
+        file_name: fileName,
+        file_path: `${userId}/${caseId}/${fileName}`,
+        description: `Initial upload for case ${caseId}`,
+      }));
+
+      const { error: metadataError } = await supabaseClient
+        .from('case_files_metadata')
+        .insert(fileMetadataInserts);
+
+      if (metadataError) {
+        console.error('Error inserting file metadata:', metadataError);
+        // Do not throw, allow analysis to proceed even if metadata insertion fails
+        await supabaseClient.from('agent_activities').insert({
+          case_id: caseId,
+          agent_name: 'System',
+          agent_role: 'Database Error',
+          activity_type: 'File Metadata Error',
+          content: `Failed to record metadata for some files: ${metadataError.message}`,
+          status: 'error',
+        });
+      }
+    }
+
     let openaiThreadId: string | undefined;
     let openaiAssistantId: string | undefined;
 
