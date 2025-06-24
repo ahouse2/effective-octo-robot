@@ -11,10 +11,14 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/components/SessionContextProvider";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const profileFormSchema = z.object({
   firstName: z.string().min(1, { message: "First name is required." }).max(50, { message: "First name too long." }),
   lastName: z.string().min(1, { message: "Last name is required." }).max(50, { message: "Last name too long." }),
+  defaultAiModel: z.enum(["openai", "gemini"], { // New field for default AI model
+    required_error: "Please select a default AI model.",
+  }),
 });
 
 type ProfileFormValues = z.infer<typeof profileFormSchema>;
@@ -29,6 +33,7 @@ const UserProfile = () => {
     defaultValues: {
       firstName: "",
       lastName: "",
+      defaultAiModel: "openai", // Default to OpenAI if no preference is set
     },
   });
 
@@ -42,7 +47,7 @@ const UserProfile = () => {
       setLoadingProfile(true);
       const { data, error } = await supabase
         .from('profiles')
-        .select('first_name, last_name')
+        .select('first_name, last_name, default_ai_model') // Select default_ai_model
         .eq('id', user.id)
         .single();
 
@@ -53,6 +58,7 @@ const UserProfile = () => {
         form.reset({
           firstName: data.first_name || "",
           lastName: data.last_name || "",
+          defaultAiModel: (data.default_ai_model as "openai" | "gemini") || "openai", // Set default from fetched data
         });
       }
       setLoadingProfile(false);
@@ -78,6 +84,7 @@ const UserProfile = () => {
         .update({
           first_name: values.firstName,
           last_name: values.lastName,
+          default_ai_model: values.defaultAiModel, // Save the default AI model
         })
         .eq('id', user.id);
 
@@ -131,7 +138,7 @@ const UserProfile = () => {
         <Card className="max-w-2xl mx-auto">
           <CardHeader>
             <CardTitle>Profile Information</CardTitle>
-            <CardDescription>Manage your personal details.</CardDescription>
+            <CardDescription>Manage your personal details and preferences.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="mb-6">
@@ -163,6 +170,30 @@ const UserProfile = () => {
                       <FormControl>
                         <Input placeholder="Your last name" {...field} disabled={isSubmitting} />
                       </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="defaultAiModel"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Default AI Model for New Cases</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isSubmitting}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select your preferred AI model" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="openai">OpenAI (GPT-4o)</SelectItem>
+                          <SelectItem value="gemini">Google Gemini</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>
+                        This model will be pre-selected when you create new cases or start new analyses.
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Layout from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +13,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/components/SessionContextProvider";
 import { useNavigate } from "react-router-dom";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"; // Import Select components
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const formSchema = z.object({
   caseType: z.string().min(2, {
@@ -24,7 +24,7 @@ const formSchema = z.object({
   }),
   caseGoals: z.string().optional(),
   systemInstruction: z.string().optional(),
-  aiModel: z.enum(["openai", "gemini"], { // New field for AI model choice
+  aiModel: z.enum(["openai", "gemini"], {
     required_error: "Please select an AI model.",
   }),
 });
@@ -32,7 +32,7 @@ const formSchema = z.object({
 const EvidenceAnalysis = () => {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { user } = useSession();
+  const { user, loading: sessionLoading } = useSession();
   const navigate = useNavigate();
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -42,9 +42,27 @@ const EvidenceAnalysis = () => {
       partiesInvolved: "",
       caseGoals: "",
       systemInstruction: "",
-      aiModel: "openai", // Default to OpenAI
+      aiModel: "openai",
     },
   });
+
+  useEffect(() => {
+    const fetchDefaultAiModel = async () => {
+      if (user && !sessionLoading) {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('default_ai_model')
+          .eq('id', user.id)
+          .single();
+
+        if (data?.default_ai_model) {
+          form.setValue("aiModel", data.default_ai_model as "openai" | "gemini");
+        }
+      }
+    };
+
+    fetchDefaultAiModel();
+  }, [user, sessionLoading, form]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -81,7 +99,7 @@ const EvidenceAnalysis = () => {
             user_id: user.id,
             case_goals: values.caseGoals,
             system_instruction: values.systemInstruction,
-            ai_model: values.aiModel, // Save the selected AI model
+            ai_model: values.aiModel,
           },
         ])
         .select();
@@ -99,7 +117,7 @@ const EvidenceAnalysis = () => {
       const uploadPromises = selectedFiles.map(async (file) => {
         const filePath = `${user.id}/${newCase.id}/${file.name}`;
         const { error: uploadError } = await supabase.storage
-          .from('evidence-files') // You might need to create this bucket in Supabase
+          .from('evidence-files')
           .upload(filePath, file, {
             cacheControl: '3600',
             upsert: false,
@@ -124,7 +142,7 @@ const EvidenceAnalysis = () => {
             fileNames: uploadedFileNames,
             caseGoals: values.caseGoals,
             systemInstruction: values.systemInstruction,
-            aiModel: values.aiModel, // Pass the selected AI model to the edge function
+            aiModel: values.aiModel,
           }),
           headers: { 'Content-Type': 'application/json' },
         }
@@ -236,7 +254,7 @@ const EvidenceAnalysis = () => {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Choose AI Model</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isSubmitting}>
+                      <Select onValueChange={field.onChange} value={field.value} disabled={isSubmitting}>
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue placeholder="Select an AI model" />

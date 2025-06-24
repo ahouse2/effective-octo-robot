@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -20,7 +20,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/components/SessionContextProvider";
 import { useNavigate } from "react-router-dom";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"; // Import Select components
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface NewCaseDialogProps {
   onCaseCreated?: (caseId: string) => void;
@@ -35,7 +35,7 @@ const formSchema = z.object({
   }),
   caseGoals: z.string().optional(),
   systemInstruction: z.string().optional(),
-  aiModel: z.enum(["openai", "gemini"], { // New field for AI model choice
+  aiModel: z.enum(["openai", "gemini"], {
     required_error: "Please select an AI model.",
   }),
 });
@@ -43,7 +43,7 @@ const formSchema = z.object({
 export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { user } = useSession();
+  const { user, loading: sessionLoading } = useSession();
   const navigate = useNavigate();
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -53,9 +53,29 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
       partiesInvolved: "",
       caseGoals: "",
       systemInstruction: "",
-      aiModel: "openai", // Default to OpenAI
+      aiModel: "openai",
     },
   });
+
+  useEffect(() => {
+    const fetchDefaultAiModel = async () => {
+      if (user && !sessionLoading) {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('default_ai_model')
+          .eq('id', user.id)
+          .single();
+
+        if (data?.default_ai_model) {
+          form.setValue("aiModel", data.default_ai_model as "openai" | "gemini");
+        }
+      }
+    };
+
+    if (isOpen) { // Only fetch when dialog opens
+      fetchDefaultAiModel();
+    }
+  }, [isOpen, user, sessionLoading, form]);
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     if (!user) {
@@ -77,7 +97,7 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
             user_id: user.id,
             case_goals: values.caseGoals,
             system_instruction: values.systemInstruction,
-            ai_model: values.aiModel, // Save the selected AI model
+            ai_model: values.aiModel,
           },
         ])
         .select();
@@ -93,12 +113,12 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
 
       toast.success("New case created successfully!");
       form.reset();
-      setIsOpen(false); // Close the dialog
+      setIsOpen(false);
 
       if (onCaseCreated) {
         onCaseCreated(newCase.id);
       } else {
-        navigate(`/agent-interaction/${newCase.id}`); // Navigate to agent interaction for the new case
+        navigate(`/agent-interaction/${newCase.id}`);
       }
 
     } catch (err: any) {
@@ -198,7 +218,7 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Choose AI Model</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isSubmitting}>
+                  <Select onValueChange={field.onChange} value={field.value} disabled={isSubmitting}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Select an AI model" />
