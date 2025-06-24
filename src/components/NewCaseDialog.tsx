@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -43,7 +43,7 @@ const formSchema = z.object({
 export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { user, loading: sessionLoading } = useSession();
+  const { user } = useSession();
   const navigate = useNavigate();
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -53,27 +53,9 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
       partiesInvolved: "",
       caseGoals: "",
       systemInstruction: "",
-      aiModel: "openai", // Default to OpenAI, will be overridden by user profile
+      aiModel: "openai", // Default to OpenAI
     },
   });
-
-  useEffect(() => {
-    const fetchDefaultAiModel = async () => {
-      if (user && !sessionLoading) {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('default_ai_model')
-          .eq('id', user.id)
-          .single();
-
-        if (data?.default_ai_model) {
-          form.setValue("aiModel", data.default_ai_model as "openai" | "gemini");
-        }
-      }
-    };
-
-    fetchDefaultAiModel();
-  }, [user, sessionLoading, form]);
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     if (!user) {
@@ -216,7 +198,7 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Choose AI Model</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value} disabled={isSubmitting}>
+                  <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isSubmitting}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Select an AI model" />

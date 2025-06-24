@@ -11,14 +11,10 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/components/SessionContextProvider";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const profileFormSchema = z.object({
   firstName: z.string().min(1, { message: "First name is required." }).max(50, { message: "First name too long." }),
   lastName: z.string().min(1, { message: "Last name is required." }).max(50, { message: "Last name too long." }),
-  defaultAiModel: z.enum(["openai", "gemini"], {
-    required_error: "Please select a default AI model.",
-  }),
 });
 
 type ProfileFormValues = z.infer<typeof profileFormSchema>;
@@ -33,7 +29,6 @@ const UserProfile = () => {
     defaultValues: {
       firstName: "",
       lastName: "",
-      defaultAiModel: "openai", // Default to OpenAI if not set
     },
   });
 
@@ -47,7 +42,7 @@ const UserProfile = () => {
       setLoadingProfile(true);
       const { data, error } = await supabase
         .from('profiles')
-        .select('first_name, last_name, default_ai_model')
+        .select('first_name, last_name')
         .eq('id', user.id)
         .single();
 
@@ -58,7 +53,6 @@ const UserProfile = () => {
         form.reset({
           firstName: data.first_name || "",
           lastName: data.last_name || "",
-          defaultAiModel: (data.default_ai_model as "openai" | "gemini") || "openai",
         });
       }
       setLoadingProfile(false);
@@ -84,7 +78,6 @@ const UserProfile = () => {
         .update({
           first_name: values.firstName,
           last_name: values.lastName,
-          default_ai_model: values.defaultAiModel,
         })
         .eq('id', user.id);
 
@@ -170,30 +163,6 @@ const UserProfile = () => {
                       <FormControl>
                         <Input placeholder="Your last name" {...field} disabled={isSubmitting} />
                       </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="defaultAiModel"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Default AI Model</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isSubmitting}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select your preferred AI model" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="openai">OpenAI (GPT-4o)</SelectItem>
-                          <SelectItem value="gemini">Google Gemini</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormDescription>
-                        This will be the default AI model pre-selected when creating new cases.
-                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
