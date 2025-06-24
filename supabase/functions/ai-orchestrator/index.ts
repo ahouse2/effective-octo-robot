@@ -400,7 +400,7 @@ serve(async (req) => {
 
         // For Gemini, direct file analysis requires a RAG setup (e.g., embedding files and querying a vector store).
         // This is a placeholder to acknowledge the files and inform the user.
-        const content = `New files (${newFileNames.join(', ')}) uploaded. For Google Gemini to analyze documents, a RAG (Retrieval Augmented Generation) setup with a vector store is required. This functionality is not yet fully integrated for Gemini.`;
+        const content = `New files (${newFileNames.join(', ')}) have been uploaded to storage for this case. Google Gemini currently does not support direct document analysis without a Retrieval Augmented Generation (RAG) setup. These files are available for future RAG integration but will not be analyzed by Gemini at this time.`;
         
         await supabaseClient.from('agent_activities').insert({
           case_id: caseId,
