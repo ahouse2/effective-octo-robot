@@ -117,8 +117,10 @@ async function handleToolCall(
     }
   } else if (toolCall.function.name === 'file_search') {
     console.log('OpenAI requested file_search tool:', toolCall.function.arguments);
-    await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'Tool Executor', 'File Search Note', `File search tool requested but not fully implemented. Query: ${toolCall.function.arguments}`, 'processing');
-    return { tool_call_id: toolCall.id, output: `File search tool not fully implemented yet. Query: ${toolCall.function.arguments}` };
+    // OpenAI's file_search tool is handled internally by the Assistant.
+    // We just need to acknowledge the tool call and return an empty output.
+    await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'Tool Executor', 'File Search Initiated', `OpenAI Assistant is performing an internal file search. Query: ${toolCall.function.arguments}`, 'processing');
+    return { tool_call_id: toolCall.id, output: "" }; // Empty output for internal tools
   } else {
     console.warn(`Unknown tool call: ${toolCall.function.name}`);
     return { tool_call_id: toolCall.id, output: `Unknown tool: ${toolCall.function.name}` };
