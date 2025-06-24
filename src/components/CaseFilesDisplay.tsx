@@ -6,27 +6,25 @@ import { toast } from "sonner";
 import { FileText, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/components/SessionContextProvider";
+import { format } from "date-fns";
+
+interface FileMetadata {
+  id: string;
+  case_id: string;
+  file_name: string;
+  file_path: string; // Full path in storage bucket (e.g., user_id/case_id/filename.pdf)
+  description: string | null;
+  tags: string[] | null;
+  uploaded_at: string;
+  last_modified_at: string;
+}
 
 interface CaseFilesDisplayProps {
   caseId: string;
 }
 
-interface FileObject {
-  name: string;
-  id: string;
-  created_at: string;
-  last_accessed_at: string;
-  metadata: {
-    size: number;
-    mimetype: string;
-    [key: string]: any;
-  };
-  path: string;
-  signedUrl?: string; // Optional, if we generate signed URLs
-}
-
 export const CaseFilesDisplay: React.FC<CaseFilesDisplayProps> = ({ caseId }) => {
-  const [files, setFiles] = useState<FileObject[]>([]);
+  const [files, setFiles] = useState<FileMetadata[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { user } = useSession();
@@ -38,49 +36,66 @@ export const CaseFilesDisplay: React.FC<CaseFilesDisplayProps> = ({ caseId }) =>
       return;
     }
 
-    const fetchFiles = async () => {
+    const fetchFilesMetadata = async () => {
       setLoading(true);
       setError(null);
       try {
-        const { data, error } = await supabase.storage
-          .from('evidence-files')
-          .list(`${user.id}/${caseId}/`, {
-            limit: 100,
-            offset: 0,
-            sortBy: { column: 'name', order: 'asc' },
-          });
+        const { data, error } = await supabase
+          .from('case_files_metadata')
+          .select('*')
+          .eq('case_id', caseId)
+          .order('uploaded_at', { ascending: false });
 
         if (error) {
           throw error;
         }
 
-        // Filter out the directory itself if it appears in the list
-        const actualFiles = data?.filter(item => item.name !== '.emptyFolderPlaceholder') || [];
-        setFiles(actualFiles as FileObject[]);
+        setFiles(data || []);
 
       } catch (err: any) {
-        console.error("Error fetching files:", err);
-        setError("Failed to load files. Please ensure the 'evidence-files' bucket exists and has RLS policies configured for 'select' access by authenticated users.");
+        console.error("Error fetching file metadata:", err);
+        setError("Failed to load files metadata. Please ensure RLS policies are correctly configured for 'case_files_metadata'.");
         toast.error("Failed to load case files.");
       } finally {
         setLoading(false);
       }
     };
 
-    fetchFiles();
+    fetchFilesMetadata();
 
-    // Note: Real-time updates for storage buckets are not directly supported by Supabase
-    // so new uploads won't appear automatically without re-fetching.
-    // For a production app, you might trigger a re-fetch via a database webhook or polling.
+    // Real-time subscription for file metadata changes
+    const channel = supabase
+      .channel(`case_files_metadata_for_case_${caseId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'case_files_metadata', filter: `case_id=eq.${caseId}` },
+        (payload) => {
+          console.log('File metadata change received!', payload);
+          if (payload.eventType === 'INSERT') {
+            setFiles((prev) => [payload.new as FileMetadata, ...prev].sort((a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime()));
+          } else if (payload.eventType === 'UPDATE') {
+            setFiles((prev) =>
+              prev.map((file) =>
+                file.id === payload.old.id ? (payload.new as FileMetadata) : file
+              ).sort((a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime())
+            );
+          } else if (payload.eventType === 'DELETE') {
+            setFiles((prev) => prev.filter((file) => file.id !== payload.old.id));
+          }
+        }
+      )
+      .subscribe();
 
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [caseId, user]);
 
-  const handleDownload = async (fileName: string) => {
+  const handleDownload = async (filePath: string, fileName: string) => {
     if (!user) {
       toast.error("You must be logged in to download files.");
       return;
     }
-    const filePath = `${user.id}/${caseId}/${fileName}`;
     const loadingToastId = toast.loading(`Downloading ${fileName}...`);
 
     try {
@@ -130,21 +145,35 @@ export const CaseFilesDisplay: React.FC<CaseFilesDisplayProps> = ({ caseId }) =>
       <CardContent>
         <ScrollArea className="h-[200px] pr-4">
           {files.length > 0 ? (
-            <ul className="space-y-2">
+            <ul className="space-y-3">
               {files.map((file) => (
-                <li key={file.id} className="flex items-center justify-between text-sm text-muted-foreground">
-                  <div className="flex items-center space-x-2">
-                    <FileText className="h-4 w-4 flex-shrink-0" />
-                    <span>{file.name}</span>
-                    {file.metadata?.size && (
-                      <span className="text-xs text-gray-500">({(file.metadata.size / 1024 / 1024).toFixed(2)} MB)</span>
-                    )}
+                <li key={file.id} className="flex items-start justify-between text-sm">
+                  <div className="flex items-start space-x-2">
+                    <FileText className="h-4 w-4 flex-shrink-0 mt-1 text-muted-foreground" />
+                    <div>
+                      <p className="font-medium text-foreground">{file.file_name}</p>
+                      {file.description && (
+                        <p className="text-xs text-muted-foreground mt-0.5">{file.description}</p>
+                      )}
+                      {file.tags && file.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {file.tags.map((tag, idx) => (
+                            <span key={idx} className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded-full dark:bg-blue-900 dark:text-blue-200">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Uploaded: {format(new Date(file.uploaded_at), "MMM dd, yyyy HH:mm")}
+                      </p>
+                    </div>
                   </div>
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => handleDownload(file.name)}
-                    className="ml-2"
+                    onClick={() => handleDownload(file.file_path, file.file_name)}
+                    className="ml-2 flex-shrink-0"
                   >
                     <Download className="h-4 w-4" />
                   </Button>
