@@ -7,7 +7,7 @@ import Index from "./pages/Index";
 import Dashboard from "./pages/Dashboard";
 import EvidenceAnalysis from "./pages/EvidenceAnalysis";
 import CaseManagement from "./pages/CaseManagement";
-import AgentInteraction from "./pages/AgentInteraction"; // Import the new AgentInteraction page
+import AgentInteraction from "./pages/AgentInteraction";
 import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
 import { ThemeProvider } from "next-themes";
@@ -29,7 +29,7 @@ const App = () => (
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/evidence-analysis" element={<EvidenceAnalysis />} />
               <Route path="/case-management" element={<CaseManagement />} />
-              <Route path="/agent-interaction" element={<AgentInteraction />} /> {/* Add the new route */}
+              <Route path="/agent-interaction/:caseId" element={<AgentInteraction />} /> {/* Updated route */}
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>

@@ -3,9 +3,30 @@ import Layout from "@/components/Layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { AgentInteractionDisplay } from "@/components/AgentInteractionDisplay";
-import { CaseTheorySummary } from "@/components/CaseTheorySummary"; // Import the new component
+import { CaseTheorySummary } from "@/components/CaseTheorySummary";
+import { useParams } from "react-router-dom";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Terminal } from "lucide-react";
 
 const AgentInteraction = () => {
+  const { caseId } = useParams<{ caseId: string }>();
+
+  if (!caseId) {
+    return (
+      <Layout>
+        <div className="container mx-auto py-8">
+          <Alert variant="destructive">
+            <Terminal className="h-4 w-4" />
+            <AlertTitle>Error</AlertTitle>
+            <AlertDescription>
+              No case ID provided. Please navigate to this page from a specific case.
+            </AlertDescription>
+          </Alert>
+        </div>
+      </Layout>
+    );
+  }
+
   return (
     <Layout>
       <div className="container mx-auto py-8">
@@ -20,13 +41,13 @@ const AgentInteraction = () => {
             </CardHeader>
             <CardContent>
               <ScrollArea className="h-[600px] pr-4">
-                <AgentInteractionDisplay />
+                <AgentInteractionDisplay caseId={caseId} />
               </ScrollArea>
             </CardContent>
           </Card>
 
           {/* Case Theory Summary */}
-          <CaseTheorySummary /> {/* Use the new component here */}
+          <CaseTheorySummary caseId={caseId} />
         </div>
       </div>
     </Layout>

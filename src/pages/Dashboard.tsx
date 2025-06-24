@@ -116,7 +116,9 @@ const Dashboard = () => {
                           <p className="font-medium">{activity.status}: <span className="text-primary">{activity.name}</span></p>
                           <p className="text-sm text-muted-foreground">{new Date(activity.last_updated).toLocaleDateString()}</p>
                         </div>
-                        <Button variant="outline" size="sm">View Case</Button>
+                        <Link to={`/agent-interaction/${activity.id}`}> {/* Updated Link */}
+                          <Button variant="outline" size="sm">View Analysis</Button>
+                        </Link>
                       </li>
                     ))}
                   </ul>
