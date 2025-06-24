@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Layout from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,7 +32,7 @@ const formSchema = z.object({
 const EvidenceAnalysis = () => {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { user } = useSession();
+  const { user, loading: sessionLoading } = useSession();
   const navigate = useNavigate();
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -42,9 +42,27 @@ const EvidenceAnalysis = () => {
       partiesInvolved: "",
       caseGoals: "",
       systemInstruction: "",
-      aiModel: "openai", // Default to OpenAI
+      aiModel: "openai", // Default to OpenAI, will be overridden by user profile
     },
   });
+
+  useEffect(() => {
+    const fetchDefaultAiModel = async () => {
+      if (user && !sessionLoading) {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('default_ai_model')
+          .eq('id', user.id)
+          .single();
+
+        if (data?.default_ai_model) {
+          form.setValue("aiModel", data.default_ai_model as "openai" | "gemini");
+        }
+      }
+    };
+
+    fetchDefaultAiModel();
+  }, [user, sessionLoading, form]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -236,7 +254,7 @@ const EvidenceAnalysis = () => {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Choose AI Model</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isSubmitting}>
+                      <Select onValueChange={field.onChange} value={field.value} disabled={isSubmitting}>
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue placeholder="Select an AI model" />
