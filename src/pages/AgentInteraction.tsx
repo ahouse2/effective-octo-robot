@@ -97,7 +97,7 @@ const AgentInteraction = () => {
               {/* User Input for Agent Interaction */}
               <div className="flex items-center space-x-2 mt-auto">
                 <Textarea
-                  placeholder="Send a message or prompt to the agents... (e.g., /search 'financial records')"
+                  placeholder="Send a message or prompt to the agents... (e.g., /search 'financial records', /websearch 'California family law')"
                   value={userPrompt}
                   onChange={(e) => setUserPrompt(e.target.value)}
                   onKeyPress={(e) => {
