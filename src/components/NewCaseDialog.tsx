@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/components/SessionContextProvider";
@@ -38,6 +38,7 @@ const formSchema = z.object({
   aiModel: z.enum(["openai", "gemini"], {
     required_error: "Please select an AI model.",
   }),
+  openaiAssistantId: z.string().optional(), // Add this field to the schema
 });
 
 export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) => {
@@ -54,26 +55,28 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
       caseGoals: "",
       systemInstruction: "",
       aiModel: "openai",
+      openaiAssistantId: "", // Initialize with empty string
     },
   });
 
   useEffect(() => {
-    const fetchDefaultAiModel = async () => {
+    const fetchDefaultSettings = async () => {
       if (user && !sessionLoading) {
         const { data, error } = await supabase
           .from('profiles')
-          .select('default_ai_model')
+          .select('default_ai_model, openai_assistant_id')
           .eq('id', user.id)
           .single();
 
-        if (data?.default_ai_model) {
+        if (data) {
           form.setValue("aiModel", data.default_ai_model as "openai" | "gemini");
+          form.setValue("openaiAssistantId", data.openai_assistant_id || "");
         }
       }
     };
 
     if (isOpen) { // Only fetch when dialog opens
-      fetchDefaultAiModel();
+      fetchDefaultSettings();
     }
   }, [isOpen, user, sessionLoading, form]);
 
@@ -98,6 +101,7 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
             case_goals: values.caseGoals,
             system_instruction: values.systemInstruction,
             ai_model: values.aiModel,
+            openai_assistant_id: values.openaiAssistantId || null, // Save the assistant ID
           },
         ])
         .select();
@@ -231,6 +235,27 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
                   </Select>
                   <FormDescription>
                     Select the AI model to power your case analysis. Note: Gemini integration for document analysis requires a separate RAG (Retrieval Augmented Generation) setup.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="openaiAssistantId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>OpenAI Assistant ID (Optional)</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="asst_..."
+                      {...field}
+                      disabled={isSubmitting || form.watch("aiModel") === "gemini"} // Disable if Gemini is selected
+                      value={field.value || ""}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    If using OpenAI, you can specify a pre-configured Assistant ID. If left blank, a new one will be created for this case if needed.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
