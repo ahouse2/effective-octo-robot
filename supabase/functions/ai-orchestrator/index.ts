@@ -8,6 +8,21 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Helper function to extract JSON from markdown code blocks
+function extractJsonFromMarkdown(text: string): any | null {
+  const jsonBlockRegex = /```json\n([\s\S]*?)\n```/;
+  const match = text.match(jsonBlockRegex);
+  if (match && match[1]) {
+    try {
+      return JSON.parse(match[1]);
+    } catch (e) {
+      console.error("Failed to parse JSON from markdown:", e);
+      return null;
+    }
+  }
+  return null;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -34,10 +49,10 @@ serve(async (req) => {
       }
     );
 
-    // Fetch case details to determine AI model
+    // Fetch case details to determine AI model and retrieve existing data
     const { data: caseData, error: caseError } = await supabaseClient
       .from('cases')
-      .select('ai_model, openai_thread_id, openai_assistant_id')
+      .select('ai_model, openai_thread_id, openai_assistant_id, gemini_chat_history')
       .eq('id', caseId)
       .single();
 
@@ -46,7 +61,7 @@ serve(async (req) => {
       throw new Error('Case not found or error fetching case details.');
     }
 
-    const { ai_model, openai_thread_id, openai_assistant_id } = caseData;
+    const { ai_model, openai_thread_id, openai_assistant_id, gemini_chat_history } = caseData;
 
     let responseMessage = 'AI Orchestration initiated.';
 
@@ -121,6 +136,39 @@ serve(async (req) => {
               }
               return '';
             }).join('\n');
+
+            // Attempt to parse structured data from the response
+            const structuredData = extractJsonFromMarkdown(assistantResponse);
+
+            if (structuredData) {
+              if (structuredData.theory_update) {
+                const { error: theoryUpdateError } = await supabaseClient
+                  .from('case_theories')
+                  .update({
+                    fact_patterns: structuredData.theory_update.fact_patterns,
+                    legal_arguments: structuredData.theory_update.legal_arguments,
+                    potential_outcomes: structuredData.theory_update.potential_outcomes,
+                    status: structuredData.theory_update.status,
+                    last_updated: new Date().toISOString(),
+                  })
+                  .eq('case_id', caseId);
+                if (theoryUpdateError) console.error('Error updating case theory:', theoryUpdateError);
+              }
+              if (structuredData.insights && Array.isArray(structuredData.insights)) {
+                for (const insight of structuredData.insights) {
+                  const { error: insightInsertError } = await supabaseClient
+                    .from('case_insights')
+                    .insert({
+                      case_id: caseId,
+                      title: insight.title,
+                      description: insight.description,
+                      insight_type: insight.insight_type || 'general',
+                      timestamp: new Date().toISOString(),
+                    });
+                  if (insightInsertError) console.error('Error inserting case insight:', insightInsertError);
+                }
+              }
+            }
 
             await supabaseClient.from('agent_activities').insert({
               case_id: caseId,
@@ -265,20 +313,64 @@ serve(async (req) => {
 
     } else if (ai_model === 'gemini') {
       const genAI = new GoogleGenerativeAI(Deno.env.get('GOOGLE_GEMINI_API_KEY') ?? '');
-      const model = genAI.getGenerativeModel({ model: "gemini-pro" }); // Using gemini-pro for text-only interactions
+      const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
-      // For Gemini, we'll need to manage chat history manually or via a database table
-      // For now, we'll treat each interaction as a new one for simplicity,
-      // but a production Gemini integration would need persistent chat sessions.
+      // Initialize chat session with history if available
+      const chat = model.startChat({
+        history: gemini_chat_history || [],
+        generationConfig: {
+          maxOutputTokens: 2048,
+        },
+      });
 
       if (command === 'user_prompt') {
         const { promptContent } = payload;
         console.log(`Gemini: Processing user prompt for case ${caseId}: "${promptContent}"`);
 
         try {
-          const result = await model.generateContent(promptContent);
+          const result = await chat.sendMessage(promptContent);
           const response = await result.response;
           const text = response.text();
+
+          // Update chat history in the database
+          const updatedChatHistory = [...(gemini_chat_history || []),
+            { role: 'user', parts: [{ text: promptContent }] },
+            { role: 'model', parts: [{ text: text }] }
+          ];
+          await supabaseClient.from('cases').update({ gemini_chat_history: updatedChatHistory }).eq('id', caseId);
+
+          // Attempt to parse structured data from the response
+          const structuredData = extractJsonFromMarkdown(text);
+
+          if (structuredData) {
+            if (structuredData.theory_update) {
+              const { error: theoryUpdateError } = await supabaseClient
+                .from('case_theories')
+                .update({
+                  fact_patterns: structuredData.theory_update.fact_patterns,
+                  legal_arguments: structuredData.theory_update.legal_arguments,
+                  potential_outcomes: structuredData.theory_update.potential_outcomes,
+                  status: structuredData.theory_update.status,
+                  last_updated: new Date().toISOString(),
+                })
+                .eq('case_id', caseId);
+              if (theoryUpdateError) console.error('Error updating case theory:', theoryUpdateError);
+            }
+            if (structuredData.insights && Array.isArray(structuredData.insights)) {
+              for (const insight of structuredData.insights) {
+                const { error: insightInsertError } = await supabaseClient
+                  .from('case_insights')
+                  .insert({
+                    case_id: caseId,
+                    title: insight.title,
+                    description: insight.description,
+                    insight_type: insight.insight_type || 'general',
+                    timestamp: new Date().toISOString(),
+                  });
+                if (insightInsertError) console.error('Error inserting case insight:', insightInsertError);
+              }
+            }
+          }
 
           await supabaseClient.from('agent_activities').insert({
             case_id: caseId,
@@ -308,14 +400,23 @@ serve(async (req) => {
 
         // For Gemini, direct file analysis requires a RAG setup (e.g., embedding files and querying a vector store).
         // This is a placeholder to acknowledge the files and inform the user.
+        const content = `New files (${newFileNames.join(', ')}) uploaded. For Google Gemini to analyze documents, a RAG (Retrieval Augmented Generation) setup with a vector store is required. This functionality is not yet fully integrated for Gemini.`;
+        
         await supabaseClient.from('agent_activities').insert({
           case_id: caseId,
           agent_name: 'Google Gemini',
           agent_role: 'File Processor',
           activity_type: 'File Processing Note',
-          content: `New files (${newFileNames.join(', ')}) uploaded. For Google Gemini to analyze documents, a RAG (Retrieval Augmented Generation) setup with a vector store is required. This functionality is not yet fully integrated for Gemini.`,
+          content: content,
           status: 'completed',
         });
+
+        // Also add this to chat history
+        const updatedChatHistory = [...(gemini_chat_history || []),
+          { role: 'model', parts: [{ text: content }] }
+        ];
+        await supabaseClient.from('cases').update({ gemini_chat_history: updatedChatHistory }).eq('id', caseId);
+
         responseMessage = 'Gemini noted new files, RAG setup required for analysis.';
       } else {
         throw new Error(`Unsupported command for Gemini: ${command}`);
