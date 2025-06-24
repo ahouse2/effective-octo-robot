@@ -70,6 +70,41 @@ serve(async (req) => {
     let openaiThreadId: string | undefined;
     let openaiAssistantId: string | undefined;
 
+    const structuredOutputInstruction = `
+    When providing updates or summaries, especially after processing new information or a user prompt, please include structured JSON data within a markdown code block (e.g., \`\`\`json{...}\`\`\`). This JSON should contain updates to the case theory and/or new insights.
+
+    **Case Theory Update Schema (optional, include if theory changes):**
+    \`\`\`json
+    {
+      "theory_update": {
+        "fact_patterns": ["Updated fact 1", "Updated fact 2"],
+        "legal_arguments": ["Updated argument 1", "Updated argument 2"],
+        "potential_outcomes": ["Updated outcome 1", "Updated outcome 2"],
+        "status": "developing" | "refined" | "complete"
+      }
+    }
+    \`\`\`
+
+    **Case Insights Schema (optional, include if new insights are generated):**
+    \`\`\`json
+    {
+      "insights": [
+        {
+          "title": "Insight Title",
+          "description": "Detailed description of the insight.",
+          "insight_type": "key_fact" | "risk_assessment" | "outcome_trend" | "general"
+        },
+        {
+          "title": "Another Insight",
+          "description": "More details.",
+          "insight_type": "general"
+        }
+      ]
+    }
+    \`\`\`
+    You can combine both "theory_update" and "insights" in a single JSON block if applicable.
+    `;
+
     if (aiModel === 'openai') {
       const openai = new OpenAI({
         apiKey: Deno.env.get('OPENAI_API_KEY'),
@@ -140,16 +175,20 @@ serve(async (req) => {
         }
       }
 
-      if (!assistantId) {
-        try {
-          assistant = await openai.beta.assistants.create({
-            name: "Family Law AI Assistant",
-            instructions: `You are a specialized AI assistant for California family law cases. Your primary goal is to analyze evidence, identify key facts, legal arguments, and potential outcomes. You should be precise, objective, and focus on the legal implications of the provided documents. Always cite the source document when making claims.
+      const assistantInstructions = `You are a specialized AI assistant for California family law cases. Your primary goal is to analyze evidence, identify key facts, legal arguments, and potential outcomes. You should be precise, objective, and focus on the legal implications of the provided documents. Always cite the source document when making claims.
             
             User's Case Goals: ${caseGoals || 'Not specified.'}
             User's System Instruction: ${systemInstruction || 'None provided.'}
             
-            When responding, provide updates on your analysis progress, key findings, and any questions you have. Structure your output clearly for legal professionals.`,
+            When responding, provide updates on your analysis progress, key findings, and any questions you have. Structure your output clearly for legal professionals.
+            
+            ${structuredOutputInstruction}`; // Add structured output instruction
+
+      if (!assistantId) {
+        try {
+          assistant = await openai.beta.assistants.create({
+            name: "Family Law AI Assistant",
+            instructions: assistantInstructions,
             tools: [{ type: "file_search" }],
             model: "gpt-4o", // Or another suitable model like "gpt-4-turbo"
           });
@@ -174,6 +213,16 @@ serve(async (req) => {
             status: 'error',
           });
           throw new Error('Failed to create OpenAI Assistant.');
+        }
+      } else {
+        // If using an existing assistant, update its instructions to include the structured output guidance
+        try {
+          await openai.beta.assistants.update(assistantId, {
+            instructions: assistantInstructions,
+          });
+          console.log('Updated existing OpenAI Assistant instructions.');
+        } catch (updateError: any) {
+          console.warn(`Failed to update existing Assistant instructions for ID ${assistantId}: ${updateError.message}. Proceeding without update.`);
         }
       }
 
@@ -233,6 +282,9 @@ serve(async (req) => {
       });
 
     } else if (aiModel === 'gemini') {
+      const genAI = new GoogleGenerativeAI(Deno.env.get('GOOGLE_GEMINI_API_KEY') ?? '');
+      const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+
       // For Gemini, we don't have a direct "Assistant" or "Thread" concept like OpenAI.
       // The interaction will be more direct via the model.generateContent or chat methods.
       // File analysis for Gemini typically requires a RAG setup (embeddings + vector store).
@@ -241,21 +293,35 @@ serve(async (req) => {
       // No need to upload files to Gemini directly here, as it's handled by RAG later.
       // Just acknowledge the files and inform the user about RAG requirement.
 
+      const geminiInitialPrompt = `You are a specialized AI assistant for California family law cases. Your primary goal is to analyze evidence, identify key facts, legal arguments, and potential outcomes. You should be precise, objective, and focus on the legal implications of the provided documents.
+            
+            User's Case Goals: ${caseGoals || 'Not specified.'}
+            User's System Instruction: ${systemInstruction || 'None provided.'}
+            
+            When responding, provide updates on your analysis progress, key findings, and any questions you have. Structure your output clearly for legal professionals.
+            
+            ${structuredOutputInstruction}
+            
+            Analysis initiated for case. Files received: ${fileNames.join(', ')}. Note: For full document analysis with Gemini, a RAG (Retrieval Augmented Generation) setup is required. These files are uploaded to storage but not directly to Gemini for analysis at this stage.`;
+
+      // Initialize empty chat history for Gemini and add the initial prompt as the first model message
+      const initialChatHistory = [{ role: 'model', parts: [{ text: geminiInitialPrompt }] }];
+
       await supabaseClient.from('agent_activities').insert({
         case_id: caseId,
         agent_name: 'Google Gemini Integration',
         agent_role: 'Orchestrator',
         activity_type: 'AI Analysis Started',
-        content: `Google Gemini analysis initiated. Note: For full document analysis with Gemini, a RAG (Retrieval Augmented Generation) setup is required. Files (${fileNames.join(', ')}) are uploaded to storage but not directly to Gemini for analysis at this stage.`,
+        content: geminiInitialPrompt, // Log the full initial prompt
         status: 'processing',
       });
 
-      // Update case status to In Progress
+      // Update case status to In Progress and save initial chat history
       const { error: updateCaseError } = await supabaseClient
         .from('cases')
         .update({
           status: 'In Progress',
-          gemini_chat_history: [], // Initialize empty chat history for Gemini
+          gemini_chat_history: initialChatHistory, // Initialize with the system prompt
         })
         .eq('id', caseId);
 
