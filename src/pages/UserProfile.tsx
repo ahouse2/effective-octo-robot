@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/components/SessionContextProvider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator"; // Import Separator
 
 const profileFormSchema = z.object({
   firstName: z.string().min(1, { message: "First name is required." }).max(50, { message: "First name too long." }),
@@ -139,7 +140,7 @@ const UserProfile = () => {
       <div className="container mx-auto py-8">
         <h1 className="text-4xl font-bold mb-8 text-center">Your Profile</h1>
 
-        <Card className="max-w-2xl mx-auto">
+        <Card className="max-w-2xl mx-auto mb-8">
           <CardHeader>
             <CardTitle>Profile Information</CardTitle>
             <CardDescription>Manage your personal details and preferences.</CardDescription>
@@ -212,7 +213,7 @@ const UserProfile = () => {
                         <Input
                           placeholder="asst_..."
                           {...field}
-                          disabled={isSubmitting}
+                          disabled={isSubmitting || form.watch("aiModel") === "gemini"} // Disable if Gemini is selected
                           value={field.value || ""} // Ensure controlled component
                         />
                       </FormControl>
@@ -228,6 +229,30 @@ const UserProfile = () => {
                 </Button>
               </form>
             </Form>
+          </CardContent>
+        </Card>
+
+        <Card className="max-w-2xl mx-auto">
+          <CardHeader>
+            <CardTitle>API Key Management</CardTitle>
+            <CardDescription>Information on how AI service API keys are handled.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground mb-4">
+              For security reasons, AI service API keys (e.g., OpenAI API Key, Google Gemini API Key) are managed as secrets directly within your Supabase project.
+            </p>
+            <p className="text-sm text-muted-foreground mb-4">
+              If you need to configure or update these keys, please do so in the Supabase Console.
+            </p>
+            <Button asChild variant="outline">
+              <a
+                href="https://supabase.com/dashboard/project/cjjwyvxnjrmqrajayjus/functions/secrets"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Go to Supabase Secrets Management
+              </a>
+            </Button>
           </CardContent>
         </Card>
       </div>
