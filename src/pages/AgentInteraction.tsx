@@ -3,6 +3,7 @@ import Layout from "@/components/Layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { AgentInteractionDisplay } from "@/components/AgentInteractionDisplay";
+import { CaseTheorySummary } from "@/components/CaseTheorySummary"; // Import the new component
 
 const AgentInteraction = () => {
   return (
@@ -25,29 +26,7 @@ const AgentInteraction = () => {
           </Card>
 
           {/* Case Theory Summary */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Current Case Theory</CardTitle>
-              <CardDescription>The evolving legal theory compiled by the agents.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4 text-sm text-muted-foreground">
-                <p>
-                  As the agents process information, the case theory will be dynamically built here.
-                  This section will summarize the key facts, legal arguments, and potential outcomes.
-                </p>
-                <p>
-                  <strong>Fact Patterns:</strong> [Awaiting analysis...]
-                </p>
-                <p>
-                  <strong>Legal Arguments:</strong> [Awaiting analysis...]
-                </p>
-                <p>
-                  <strong>Potential Outcomes:</strong> [Awaiting analysis...]
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+          <CaseTheorySummary /> {/* Use the new component here */}
         </div>
       </div>
     </Layout>
