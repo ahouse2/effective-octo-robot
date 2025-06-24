@@ -11,7 +11,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/components/SessionContextProvider";
-import { useNavigate } from "react-router-dom"; // Import useNavigate
+import { useNavigate } from "react-router-dom";
 
 const formSchema = z.object({
   caseType: z.string().min(2, {
@@ -24,8 +24,9 @@ const formSchema = z.object({
 
 const EvidenceAnalysis = () => {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { user } = useSession();
-  const navigate = useNavigate(); // Initialize useNavigate
+  const navigate = useNavigate();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -50,9 +51,17 @@ const EvidenceAnalysis = () => {
       return;
     }
 
-    console.log("Attempting to submit guided questions and create case:", values);
+    if (selectedFiles.length === 0) {
+      toast.error("Please select at least one file to upload.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    const loadingToastId = toast.loading("Creating case and initiating analysis...");
+
     try {
-      const { data, error } = await supabase
+      // 1. Create the case in the database
+      const { data: caseData, error: caseError } = await supabase
         .from("cases")
         .insert([
           {
@@ -64,22 +73,61 @@ const EvidenceAnalysis = () => {
         ])
         .select();
 
-      if (error) {
-        console.error("Error creating case:", error);
-        toast.error("Failed to create case: " + error.message);
-      } else {
-        console.log("Case created successfully:", data);
-        toast.success("New case created successfully!");
-        form.reset();
-        setSelectedFiles([]);
-        if (data && data.length > 0) {
-          // Navigate to the AgentInteraction page for the newly created case
-          navigate(`/agent-interaction/${data[0].id}`);
-        }
+      if (caseError) {
+        throw new Error("Failed to create case: " + caseError.message);
       }
-    } catch (err) {
-      console.error("Unexpected error during case creation:", err);
-      toast.error("An unexpected error occurred.");
+
+      const newCase = caseData[0];
+      if (!newCase) {
+        throw new Error("Case data not returned after creation.");
+      }
+
+      // 2. Upload files to Supabase Storage
+      const uploadPromises = selectedFiles.map(async (file) => {
+        const filePath = `${user.id}/${newCase.id}/${file.name}`;
+        const { error: uploadError } = await supabase.storage
+          .from('evidence-files') // You might need to create this bucket in Supabase
+          .upload(filePath, file, {
+            cacheControl: '3600',
+            upsert: false,
+          });
+
+        if (uploadError) {
+          console.error(`Error uploading file ${file.name}:`, uploadError);
+          throw new Error(`Failed to upload file ${file.name}: ${uploadError.message}`);
+        }
+        return file.name;
+      });
+
+      const uploadedFileNames = await Promise.all(uploadPromises);
+      toast.success(`Uploaded ${uploadedFileNames.length} files.`);
+
+      // 3. Invoke the Edge Function to start analysis
+      const { data: edgeFunctionData, error: edgeFunctionError } = await supabase.functions.invoke(
+        'start-analysis',
+        {
+          body: JSON.stringify({ caseId: newCase.id, fileNames: uploadedFileNames }),
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+
+      if (edgeFunctionError) {
+        throw new Error("Failed to invoke analysis function: " + edgeFunctionError.message);
+      }
+
+      console.log("Analysis function response:", edgeFunctionData);
+      toast.success("Analysis initiated successfully!");
+
+      form.reset();
+      setSelectedFiles([]);
+      navigate(`/agent-interaction/${newCase.id}`);
+
+    } catch (err: any) {
+      console.error("Submission error:", err);
+      toast.error(err.message || "An unexpected error occurred during submission.");
+    } finally {
+      setIsSubmitting(false);
+      toast.dismiss(loadingToastId);
     }
   };
 
@@ -123,45 +171,34 @@ const EvidenceAnalysis = () => {
                     </FormItem>
                   )}
                 />
-                <Button type="submit" className="w-full">Submit Information</Button>
+                <div className="grid w-full items-center gap-1.5">
+                  <Label htmlFor="evidence-folder">Evidence Folder</Label>
+                  <Input
+                    id="evidence-folder"
+                    type="file"
+                    // @ts-ignore - webkitdirectory is a non-standard but widely supported attribute
+                    webkitdirectory=""
+                    directory=""
+                    onChange={handleFileChange}
+                    className="cursor-pointer"
+                    disabled={isSubmitting}
+                  />
+                  {selectedFiles.length > 0 && (
+                    <div className="mt-4 text-sm text-gray-600 dark:text-gray-400">
+                      <p className="font-semibold">Selected Files ({selectedFiles.length}):</p>
+                      <ul className="list-disc list-inside max-h-40 overflow-y-auto">
+                        {selectedFiles.map((file, index) => (
+                          <li key={index}>{file.name} ({ (file.size / 1024 / 1024).toFixed(2) } MB)</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+                <Button type="submit" className="w-full" disabled={isSubmitting}>
+                  {isSubmitting ? "Initiating Analysis..." : "Submit Information & Start Analysis"}
+                </Button>
               </form>
             </Form>
-          </CardContent>
-        </Card>
-
-        {/* File Ingestion Section */}
-        <Card className="max-w-2xl mx-auto">
-          <CardHeader>
-            <CardTitle>Upload Evidence Folder</CardTitle>
-            <CardDescription>Select a folder containing all your evidence files for analysis.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid w-full max-w-sm items-center gap-1.5">
-              <Label htmlFor="evidence-folder">Evidence Folder</Label>
-              <Input
-                id="evidence-folder"
-                type="file"
-                // @ts-ignore - webkitdirectory is a non-standard but widely supported attribute
-                webkitdirectory=""
-                directory=""
-                onChange={handleFileChange}
-                className="cursor-pointer"
-              />
-              {selectedFiles.length > 0 && (
-                <div className="mt-4 text-sm text-gray-600 dark:text-gray-400">
-                  <p className="font-semibold">Selected Files ({selectedFiles.length}):</p>
-                  <ul className="list-disc list-inside max-h-40 overflow-y-auto">
-                    {selectedFiles.map((file, index) => (
-                      <li key={index}>{file.name} ({ (file.size / 1024 / 1024).toFixed(2) } MB)</li>
-                    ))}
-                  </ul>
-                  <p className="mt-2 text-xs text-gray-500">
-                    Note: File content is not processed on the frontend. This UI is for selection only.
-                    Actual analysis requires a backend service.
-                  </p>
-                </div>
-              )}
-            </div>
           </CardContent>
         </Card>
       </div>
