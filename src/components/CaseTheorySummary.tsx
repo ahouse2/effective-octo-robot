@@ -3,8 +3,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Separator } from "@/components/ui/separator";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { EmptyPlaceholder } from "./EmptyPlaceholder"; // Import EmptyPlaceholder
-import { Lightbulb } from "lucide-react"; // Example icon for theory
 
 interface CaseTheory {
   id: string;
@@ -93,59 +91,51 @@ export const CaseTheorySummary: React.FC<CaseTheorySummaryProps> = ({ caseId }) 
         <CardDescription>The evolving legal theory compiled by the agents.</CardDescription>
       </CardHeader>
       <CardContent>
-        {caseTheory ? (
-          <div className="space-y-4 text-sm text-muted-foreground">
-            <div>
-              <h3 className="font-semibold text-foreground mb-1">Fact Patterns:</h3>
-              {caseTheory.fact_patterns && caseTheory.fact_patterns.length > 0 ? (
-                <ul className="list-disc list-inside space-y-1">
-                  {caseTheory.fact_patterns.map((fact, index) => (
-                    <li key={index}>{fact}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p>[Awaiting analysis...]</p>
-              )}
-            </div>
-            <Separator />
-            <div>
-              <h3 className="font-semibold text-foreground mb-1">Legal Arguments:</h3>
-              {caseTheory.legal_arguments && caseTheory.legal_arguments.length > 0 ? (
-                <ul className="list-disc list-inside space-y-1">
-                  {caseTheory.legal_arguments.map((arg, index) => (
-                    <li key={index}>{arg}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p>[Awaiting analysis...]</p>
-              )}
-            </div>
-            <Separator />
-            <div>
-              <h3 className="font-semibold text-foreground mb-1">Potential Outcomes:</h3>
-              {caseTheory.potential_outcomes && caseTheory.potential_outcomes.length > 0 ? (
-                <ul className="list-disc list-inside space-y-1">
-                  {caseTheory.potential_outcomes.map((outcome, index) => (
-                    <li key={index}>{outcome}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p>[Awaiting analysis...]</p>
-              )}
-            </div>
-            {caseTheory && (
-              <p className="text-xs text-right text-muted-foreground mt-4">
-                Last Updated: {new Date(caseTheory.last_updated).toLocaleString()}
-              </p>
+        <div className="space-y-4 text-sm text-muted-foreground">
+          <div>
+            <h3 className="font-semibold text-foreground mb-1">Fact Patterns:</h3>
+            {caseTheory?.fact_patterns && caseTheory.fact_patterns.length > 0 ? (
+              <ul className="list-disc list-inside space-y-1">
+                {caseTheory.fact_patterns.map((fact, index) => (
+                  <li key={index}>{fact}</li>
+                ))}
+              </ul>
+            ) : (
+              <p>[Awaiting analysis...]</p>
             )}
           </div>
-        ) : (
-          <EmptyPlaceholder
-            icon={Lightbulb}
-            title="No Case Theory Yet"
-            description="The AI agents will develop a case theory as they analyze evidence."
-          />
-        )}
+          <Separator />
+          <div>
+            <h3 className="font-semibold text-foreground mb-1">Legal Arguments:</h3>
+            {caseTheory?.legal_arguments && caseTheory.legal_arguments.length > 0 ? (
+              <ul className="list-disc list-inside space-y-1">
+                {caseTheory.legal_arguments.map((arg, index) => (
+                  <li key={index}>{arg}</li>
+                ))}
+              </ul>
+            ) : (
+              <p>[Awaiting analysis...]</p>
+            )}
+          </div>
+          <Separator />
+          <div>
+            <h3 className="font-semibold text-foreground mb-1">Potential Outcomes:</h3>
+            {caseTheory?.potential_outcomes && caseTheory.potential_outcomes.length > 0 ? (
+              <ul className="list-disc list-inside space-y-1">
+                {caseTheory.potential_outcomes.map((outcome, index) => (
+                  <li key={index}>{outcome}</li>
+                ))}
+              </ul>
+            ) : (
+              <p>[Awaiting analysis...]</p>
+            )}
+          </div>
+          {caseTheory && (
+            <p className="text-xs text-right text-muted-foreground mt-4">
+              Last Updated: {new Date(caseTheory.last_updated).toLocaleString()}
+            </p>
+          )}
+        </div>
       </CardContent>
     </Card>
   );

@@ -2,8 +2,6 @@ import React, { useEffect, useState } from "react";
 import { AgentActivityCard } from "./AgentActivityCard";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { EmptyPlaceholder } from "./EmptyPlaceholder"; // Import EmptyPlaceholder
-import { Activity } from "lucide-react"; // Example icon for activities
 
 interface AgentActivity {
   id: string;
@@ -87,13 +85,7 @@ export const AgentInteractionDisplay: React.FC<AgentInteractionDisplayProps> = (
   }
 
   if (activities.length === 0) {
-    return (
-      <EmptyPlaceholder
-        icon={Activity}
-        title="No Agent Activity Yet"
-        description="Agent activities will appear here as the analysis progresses."
-      />
-    );
+    return <div className="text-center py-8 text-muted-foreground">No agent activities found for this case.</div>;
   }
 
   return (

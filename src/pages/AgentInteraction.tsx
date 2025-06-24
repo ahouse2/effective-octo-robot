@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState } from "react";
 import Layout from "@/components/Layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -8,9 +8,9 @@ import { CaseInsightsCard } from "@/components/CaseInsightsCard";
 import { CaseTimeline } from "@/components/CaseTimeline";
 import { CaseFilesDisplay } from "@/components/CaseFilesDisplay";
 import { CaseChatDisplay } from "@/components/CaseChatDisplay";
-import { useParams, useNavigate } from "react-router-dom"; // Import useNavigate
+import { useParams } from "react-router-dom";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Terminal, Send, Lightbulb, Upload, Edit } from "lucide-react";
+import { Terminal, Send, Lightbulb, Upload } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,56 +18,14 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useSession } from "@/components/SessionContextProvider";
-import { EditCaseDetailsDialog } from "@/components/EditCaseDetailsDialog"; // Import the new dialog
-
-interface CaseDetails {
-  name: string;
-  type: string;
-  status: string;
-  case_goals: string | null;
-  system_instruction: string | null;
-  ai_model: "openai" | "gemini";
-}
 
 const AgentInteraction = () => {
   const { caseId } = useParams<{ caseId: string }>();
-  const navigate = useNavigate(); // Initialize useNavigate
   const [userPrompt, setUserPrompt] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [filesToUpload, setFilesToUpload] = useState<File[]>([]);
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const { user } = useSession();
-  const [caseDetails, setCaseDetails] = useState<CaseDetails | null>(null);
-  const [loadingCaseDetails, setLoadingCaseDetails] = useState(true);
-
-  const fetchCaseDetails = async () => {
-    if (!caseId) {
-      // If caseId is missing, redirect to case management
-      toast.error("No case selected. Please select a case to interact with agents.");
-      navigate("/case-management");
-      return;
-    }
-    setLoadingCaseDetails(true);
-    const { data, error } = await supabase
-      .from('cases')
-      .select('name, type, status, case_goals, system_instruction, ai_model')
-      .eq('id', caseId)
-      .single();
-
-    if (error) {
-      console.error("Error fetching case details for AgentInteraction:", error);
-      toast.error("Failed to load case details.");
-      setCaseDetails(null);
-      navigate("/case-management"); // Redirect on error
-    } else {
-      setCaseDetails(data as CaseDetails);
-    }
-    setLoadingCaseDetails(false);
-  };
-
-  useEffect(() => {
-    fetchCaseDetails();
-  }, [caseId, navigate]); // Add navigate to dependency array
 
   const handleSendPrompt = async () => {
     if (!userPrompt.trim()) {
@@ -205,13 +163,17 @@ const AgentInteraction = () => {
     }
   };
 
-  // If caseId is missing, the useEffect will handle the redirect.
-  // We can return a simple loading state here to avoid rendering the full page before redirect.
-  if (!caseId || loadingCaseDetails) {
+  if (!caseId) {
     return (
       <Layout>
-        <div className="container mx-auto py-8 text-center">
-          <p className="text-lg text-gray-700 dark:text-gray-300">Loading case details...</p>
+        <div className="container mx-auto py-8">
+          <Alert variant="destructive">
+            <Terminal className="h-4 w-4" />
+            <AlertTitle>Error</AlertTitle>
+            <AlertDescription>
+              No case ID provided. Please navigate to this page from a specific case.
+            </AlertDescription>
+          </Alert>
         </div>
       </Layout>
     );
@@ -283,36 +245,6 @@ const AgentInteraction = () => {
 
           {/* Right Sidebar for Summaries, Insights, Timeline, Files, and Activity Log */}
           <div className="lg:col-span-1 flex flex-col space-y-8">
-            {/* New Card for Case Goals and System Instructions */}
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-lg">Case Directives</CardTitle>
-                {caseDetails && (
-                  <EditCaseDetailsDialog
-                    caseId={caseId}
-                    initialCaseGoals={caseDetails.case_goals || ""}
-                    initialSystemInstruction={caseDetails.system_instruction || ""}
-                    initialAiModel={caseDetails.ai_model}
-                    onSaveSuccess={fetchCaseDetails} // Re-fetch details on successful save
-                  />
-                )}
-              </CardHeader>
-              <CardContent className="text-sm text-muted-foreground space-y-3">
-                <div>
-                  <h3 className="font-semibold text-foreground mb-1">Primary Case Goals:</h3>
-                  <p className="whitespace-pre-wrap">{caseDetails?.case_goals || "Not specified."}</p>
-                </div>
-                <div>
-                  <h3 className="font-semibold text-foreground mb-1">System Instructions:</h3>
-                  <p className="whitespace-pre-wrap">{caseDetails?.system_instruction || "None provided."}</p>
-                </div>
-                <div>
-                  <h3 className="font-semibold text-foreground mb-1">AI Model:</h3>
-                  <p className="whitespace-pre-wrap">{caseDetails?.ai_model === 'openai' ? 'OpenAI (GPT-4o)' : 'Google Gemini'}</p>
-                </div>
-              </CardContent>
-            </Card>
-
             <CaseTheorySummary caseId={caseId} />
             <CaseInsightsCard caseId={caseId} />
             <CaseFilesDisplay caseId={caseId} />
@@ -321,7 +253,7 @@ const AgentInteraction = () => {
               <CardHeader>
                 <CardTitle>Upload More Evidence</CardTitle>
                 <CardDescription>Add additional files to this case for analysis.</CardDescription>
-              </CardDescription>
+              </CardHeader>
               <CardContent>
                 <div className="grid w-full items-center gap-1.5 mb-4">
                   <Label htmlFor="additional-evidence-files">Select Files</Label>
