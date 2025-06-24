@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/components/SessionContextProvider";
 import { useNavigate } from "react-router-dom";
+import { Textarea } from "@/components/ui/textarea"; // Import Textarea
 
 interface NewCaseDialogProps {
   onCaseCreated?: (caseId: string) => void;
@@ -31,6 +32,7 @@ const formSchema = z.object({
   partiesInvolved: z.string().min(2, {
     message: "Parties involved must be at least 2 characters.",
   }),
+  caseGoals: z.string().optional(), // New field for case goals
 });
 
 export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) => {
@@ -44,6 +46,7 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
     defaultValues: {
       caseType: "",
       partiesInvolved: "",
+      caseGoals: "", // Initialize caseGoals
     },
   });
 
@@ -65,6 +68,7 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
             type: values.caseType,
             status: "Initial Setup", // New cases start with 'Initial Setup' status
             user_id: user.id,
+            case_goals: values.caseGoals, // Save case goals
           },
         ])
         .select();
@@ -133,6 +137,27 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
                   <FormControl>
                     <Input placeholder="e.g., John Doe vs. Jane Smith" {...field} disabled={isSubmitting} />
                   </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="caseGoals"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Primary Case Goals</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      placeholder="e.g., Prove financial misconduct, Establish primary custody"
+                      className="min-h-[80px]"
+                      {...field}
+                      disabled={isSubmitting}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Clearly outlining your goals will help the AI agents focus their analysis.
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}

@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/components/SessionContextProvider";
 import { useNavigate } from "react-router-dom";
+import { Textarea } from "@/components/ui/textarea"; // Import Textarea
 
 const formSchema = z.object({
   caseType: z.string().min(2, {
@@ -20,6 +21,7 @@ const formSchema = z.object({
   partiesInvolved: z.string().min(2, {
     message: "Parties involved must be at least 2 characters.",
   }),
+  caseGoals: z.string().optional(), // New field for case goals
 });
 
 const EvidenceAnalysis = () => {
@@ -33,6 +35,7 @@ const EvidenceAnalysis = () => {
     defaultValues: {
       caseType: "",
       partiesInvolved: "",
+      caseGoals: "", // Initialize caseGoals
     },
   });
 
@@ -69,6 +72,7 @@ const EvidenceAnalysis = () => {
             type: values.caseType,
             status: "In Progress",
             user_id: user.id,
+            case_goals: values.caseGoals, // Save case goals
           },
         ])
         .select();
@@ -106,7 +110,11 @@ const EvidenceAnalysis = () => {
       const { data: edgeFunctionData, error: edgeFunctionError } = await supabase.functions.invoke(
         'start-analysis',
         {
-          body: JSON.stringify({ caseId: newCase.id, fileNames: uploadedFileNames }),
+          body: JSON.stringify({
+            caseId: newCase.id,
+            fileNames: uploadedFileNames,
+            caseGoals: values.caseGoals, // Pass case goals to edge function
+          }),
           headers: { 'Content-Type': 'application/json' },
         }
       );
@@ -167,6 +175,26 @@ const EvidenceAnalysis = () => {
                       <FormControl>
                         <Input placeholder="e.g., John Doe vs. Jane Smith" {...field} />
                       </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="caseGoals"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>What are your primary case goals?</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="e.g., Prove financial misconduct, Establish primary custody, Identify hidden assets"
+                          className="min-h-[100px]"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Clearly outlining your goals will help the AI agents focus their analysis.
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
