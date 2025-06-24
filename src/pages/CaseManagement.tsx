@@ -13,8 +13,9 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { NewCaseDialog } from "@/components/NewCaseDialog"; // Import the new dialog component
-import { Link } from "react-router-dom"; // Import Link for navigation
+import { NewCaseDialog } from "@/components/NewCaseDialog";
+import { Link } from "react-router-dom";
+import { DeleteCaseDialog } from "@/components/DeleteCaseDialog"; // Import the new delete dialog
 
 interface Case {
   id: string;
@@ -132,10 +133,11 @@ const CaseManagement = () => {
                         </Badge>
                       </TableCell>
                       <TableCell>{new Date(caseItem.last_updated).toLocaleDateString()}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-right flex items-center justify-end space-x-2">
                         <Link to={`/agent-interaction/${caseItem.id}`}>
                           <Button variant="outline" size="sm">View Analysis</Button>
                         </Link>
+                        <DeleteCaseDialog caseId={caseItem.id} caseName={caseItem.name} />
                       </TableCell>
                     </TableRow>
                   ))}
