@@ -9,6 +9,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client"; // Import supabase client
 
 const formSchema = z.object({
   caseType: z.string().min(2, {
@@ -39,10 +40,33 @@ const EvidenceAnalysis = () => {
     }
   };
 
-  const onSubmit = (values: z.infer<typeof formSchema>) => {
-    console.log("Guided questions submitted:", values);
-    toast.success("Guided questions submitted!");
-    // In a real application, you would send this data to your backend
+  const onSubmit = async (values: z.infer<typeof formSchema>) => {
+    console.log("Attempting to submit guided questions and create case:", values);
+    try {
+      const { data, error } = await supabase
+        .from("cases")
+        .insert([
+          {
+            name: values.partiesInvolved, // Using partiesInvolved as case name
+            type: values.caseType,
+            status: "In Progress", // Default status for new cases
+          },
+        ])
+        .select(); // Select the inserted data to confirm
+
+      if (error) {
+        console.error("Error creating case:", error);
+        toast.error("Failed to create case: " + error.message);
+      } else {
+        console.log("Case created successfully:", data);
+        toast.success("New case created successfully!");
+        form.reset(); // Clear the form after successful submission
+        setSelectedFiles([]); // Clear selected files as well
+      }
+    } catch (err) {
+      console.error("Unexpected error during case creation:", err);
+      toast.error("An unexpected error occurred.");
+    }
   };
 
   return (
