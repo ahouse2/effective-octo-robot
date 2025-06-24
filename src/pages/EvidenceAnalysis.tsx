@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/components/SessionContextProvider";
@@ -27,6 +27,7 @@ const formSchema = z.object({
   aiModel: z.enum(["openai", "gemini"], {
     required_error: "Please select an AI model.",
   }),
+  openaiAssistantId: z.string().optional(), // Add this field to the schema
 });
 
 const EvidenceAnalysis = () => {
@@ -43,6 +44,7 @@ const EvidenceAnalysis = () => {
       caseGoals: "",
       systemInstruction: "",
       aiModel: "openai",
+      openaiAssistantId: "", // Initialize with empty string
     },
   });
 
@@ -51,12 +53,13 @@ const EvidenceAnalysis = () => {
       if (user && !sessionLoading) {
         const { data, error } = await supabase
           .from('profiles')
-          .select('default_ai_model')
+          .select('default_ai_model, openai_assistant_id') // Fetch openai_assistant_id
           .eq('id', user.id)
           .single();
 
-        if (data?.default_ai_model) {
+        if (data) {
           form.setValue("aiModel", data.default_ai_model as "openai" | "gemini");
+          form.setValue("openaiAssistantId", data.openai_assistant_id || ""); // Set the value
         }
       }
     };
@@ -100,6 +103,7 @@ const EvidenceAnalysis = () => {
             case_goals: values.caseGoals,
             system_instruction: values.systemInstruction,
             ai_model: values.aiModel,
+            openai_assistant_id: values.openaiAssistantId || null, // Save the assistant ID
           },
         ])
         .select();
@@ -143,6 +147,7 @@ const EvidenceAnalysis = () => {
             caseGoals: values.caseGoals,
             systemInstruction: values.systemInstruction,
             aiModel: values.aiModel,
+            openaiAssistantId: values.openaiAssistantId || null, // Pass the assistant ID to the edge function
           }),
           headers: { 'Content-Type': 'application/json' },
         }
@@ -267,6 +272,27 @@ const EvidenceAnalysis = () => {
                       </Select>
                       <FormDescription>
                         Select the AI model to power your case analysis. Note: Gemini integration for document analysis requires a separate RAG (Retrieval Augmented Generation) setup.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="openaiAssistantId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>OpenAI Assistant ID (Optional)</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="asst_..."
+                          {...field}
+                          disabled={isSubmitting || form.watch("aiModel") === "gemini"} // Disable if Gemini is selected
+                          value={field.value || ""}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        If using OpenAI, you can specify a pre-configured Assistant ID. If left blank, a new one will be created for this case if needed.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
