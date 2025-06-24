@@ -9,7 +9,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client"; // Import supabase client
+import { supabase } from "@/integrations/supabase/client";
+import { useSession } from "@/components/SessionContextProvider"; // Import useSession
 
 const formSchema = z.object({
   caseType: z.string().min(2, {
@@ -22,6 +23,7 @@ const formSchema = z.object({
 
 const EvidenceAnalysis = () => {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const { user } = useSession(); // Get the current user from the session context
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -41,18 +43,24 @@ const EvidenceAnalysis = () => {
   };
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
+    if (!user) {
+      toast.error("You must be logged in to create a case.");
+      return;
+    }
+
     console.log("Attempting to submit guided questions and create case:", values);
     try {
       const { data, error } = await supabase
         .from("cases")
         .insert([
           {
-            name: values.partiesInvolved, // Using partiesInvolved as case name
+            name: values.partiesInvolved,
             type: values.caseType,
-            status: "In Progress", // Default status for new cases
+            status: "In Progress",
+            user_id: user.id, // Associate the case with the current user
           },
         ])
-        .select(); // Select the inserted data to confirm
+        .select();
 
       if (error) {
         console.error("Error creating case:", error);
@@ -60,8 +68,8 @@ const EvidenceAnalysis = () => {
       } else {
         console.log("Case created successfully:", data);
         toast.success("New case created successfully!");
-        form.reset(); // Clear the form after successful submission
-        setSelectedFiles([]); // Clear selected files as well
+        form.reset();
+        setSelectedFiles([]);
       }
     } catch (err) {
       console.error("Unexpected error during case creation:", err);

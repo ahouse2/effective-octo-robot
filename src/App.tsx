@@ -8,25 +8,30 @@ import Dashboard from "./pages/Dashboard";
 import EvidenceAnalysis from "./pages/EvidenceAnalysis";
 import CaseManagement from "./pages/CaseManagement";
 import NotFound from "./pages/NotFound";
-import { ThemeProvider } from "next-themes"; // Import ThemeProvider
+import Login from "./pages/Login"; // Import the new Login page
+import { ThemeProvider } from "next-themes";
+import { SessionContextProvider } from "@/components/SessionContextProvider"; // Import SessionContextProvider
 
 const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem> {/* Add ThemeProvider */}
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
       <TooltipProvider>
         <Toaster />
         <Sonner />
         <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/evidence-analysis" element={<EvidenceAnalysis />} />
-            <Route path="/case-management" element={<CaseManagement />} />
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+          <SessionContextProvider> {/* Wrap the entire app with SessionContextProvider */}
+            <Routes>
+              <Route path="/login" element={<Login />} /> {/* Add the Login route */}
+              <Route path="/" element={<Index />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/evidence-analysis" element={<EvidenceAnalysis />} />
+              <Route path="/case-management" element={<CaseManagement />} />
+              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </SessionContextProvider>
         </BrowserRouter>
       </TooltipProvider>
     </ThemeProvider>
