@@ -1,8 +1,9 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Home, FolderKanban, Scale, Settings, Gavel, FileText } from "lucide-react"; // Added FileText icon
+import { Home, FolderKanban, Scale, Settings, Gavel, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ThemeToggle } from "./ThemeToggle"; // Import ThemeToggle
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {}
 
@@ -33,7 +34,7 @@ export function Sidebar({ className }: SidebarProps) {
                 Evidence Analysis
               </Button>
             </Link>
-            <Link to="/case-management"> {/* Updated link */}
+            <Link to="/case-management">
               <Button variant="ghost" className="w-full justify-start">
                 <Gavel className="mr-2 h-4 w-4" />
                 Case Management
@@ -50,6 +51,7 @@ export function Sidebar({ className }: SidebarProps) {
               <Settings className="mr-2 h-4 w-4" />
               App Settings
             </Button>
+            <ThemeToggle /> {/* Add the ThemeToggle here */}
           </div>
         </div>
       </div>
