@@ -6,13 +6,14 @@ import { AgentInteractionDisplay } from "@/components/AgentInteractionDisplay";
 import { CaseTheorySummary } from "@/components/CaseTheorySummary";
 import { CaseInsightsCard } from "@/components/CaseInsightsCard";
 import { CaseTimeline } from "@/components/CaseTimeline";
+import { CaseFilesDisplay } from "@/components/CaseFilesDisplay"; // Import the new component
 import { useParams } from "react-router-dom";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Terminal, Send } from "lucide-react"; // Import Send icon
-import { Textarea } from "@/components/ui/textarea"; // Import Textarea
-import { Button } from "@/components/ui/button"; // Import Button
-import { supabase } from "@/integrations/supabase/client"; // Import supabase client
-import { toast } from "sonner"; // Import toast
+import { Terminal, Send } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 const AgentInteraction = () => {
   const { caseId } = useParams<{ caseId: string }>();
@@ -90,13 +91,13 @@ const AgentInteraction = () => {
               <CardDescription>Observe the agents collaborating on your case analysis.</CardDescription>
             </CardHeader>
             <CardContent className="flex-1 flex flex-col">
-              <ScrollArea className="h-[500px] pr-4 mb-4"> {/* Adjusted height to make space for input */}
+              <ScrollArea className="h-[500px] pr-4 mb-4">
                 <AgentInteractionDisplay caseId={caseId} />
               </ScrollArea>
               {/* User Input for Agent Interaction */}
               <div className="flex items-center space-x-2 mt-auto">
                 <Textarea
-                  placeholder="Send a message or prompt to the agents..."
+                  placeholder="Send a message or prompt to the agents... (e.g., /search 'financial records')"
                   value={userPrompt}
                   onChange={(e) => setUserPrompt(e.target.value)}
                   onKeyPress={(e) => {
@@ -116,10 +117,11 @@ const AgentInteraction = () => {
             </CardContent>
           </Card>
 
-          {/* Right Sidebar for Summaries, Insights, and Timeline */}
+          {/* Right Sidebar for Summaries, Insights, Timeline, and Files */}
           <div className="lg:col-span-1 flex flex-col space-y-8">
             <CaseTheorySummary caseId={caseId} />
             <CaseInsightsCard caseId={caseId} />
+            <CaseFilesDisplay caseId={caseId} /> {/* Add the new component here */}
             <CaseTimeline caseId={caseId} />
           </div>
         </div>
