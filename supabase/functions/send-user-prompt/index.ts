@@ -71,6 +71,21 @@ serve(async (req) => {
         content: `User requested a file search for: "${query}"`,
         status: 'processing',
       });
+    } else if (promptContent.startsWith('/websearch ')) { // New command for web search
+      const query = promptContent.substring('/websearch '.length).trim();
+      console.log(`Detected /websearch command with query: "${query}"`);
+      aiServicePayload.command = 'web_search';
+      aiServicePayload.query = query;
+
+      // Log an activity indicating the web search command was received
+      await supabaseClient.from('agent_activities').insert({
+        case_id: caseId,
+        agent_name: 'Command Interpreter',
+        agent_role: 'System',
+        activity_type: 'Web Search Request', // New activity type
+        content: `User requested a web search for: "${query}"`,
+        status: 'processing',
+      });
     }
     // Add more commands here if needed (e.g., /summarize, /analyze)
 
