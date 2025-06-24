@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI } from 'https://esm.sh/@google/generative-ai@0.15.0';
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-import { insertAgentActivity, updateCaseData } from './commonUtils.ts'; // Corrected import path
+import { insertAgentActivity, updateCaseData } from '../commonUtils.ts'; // Corrected import path
 
 // Main Gemini Handler
 export async function handleGeminiCommand(
