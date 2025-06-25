@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import Layout from "@/components/Layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { AgentActivityLog } from "@/components/AgentActivityLog"; // Updated import
+import { AgentActivityLog } from "@/components/AgentActivityLog";
 import { CaseTheorySummary } from "@/components/CaseTheorySummary";
 import { CaseInsightsCard } from "@/components/CaseInsightsCard";
 import { CaseTimeline } from "@/components/CaseTimeline";
@@ -10,7 +10,7 @@ import { CaseFilesDisplay } from "@/components/CaseFilesDisplay";
 import { CaseChatDisplay } from "@/components/CaseChatDisplay";
 import { useParams, useNavigate } from "react-router-dom";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Terminal, Send, Lightbulb, Upload, Edit, Search } from "lucide-react"; // Added Search icon
+import { Terminal, Send, Lightbulb, Upload, Edit, Search, RefreshCw } from "lucide-react"; // Added RefreshCw icon
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,11 +33,12 @@ const AgentInteraction = () => {
   const { caseId } = useParams<{ caseId: string }>();
   const navigate = useNavigate();
   const [userPrompt, setUserPrompt] = useState("");
-  const [webSearchQuery, setWebSearchQuery] = useState(""); // New state for web search query
+  const [webSearchQuery, setWebSearchQuery] = useState("");
   const [isSending, setIsSending] = useState(false);
-  const [isSearchingWeb, setIsSearchingWeb] = useState(false); // New state for web search loading
+  const [isSearchingWeb, setIsSearchingWeb] = useState(false);
   const [filesToUpload, setFilesToUpload] = useState<File[]>([]);
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
+  const [isReanalyzing, setIsReanalyzing] = useState(false); // New state for re-analysis loading
   const { user } = useSession();
   const [caseDetails, setCaseDetails] = useState<CaseDetails | null>(null);
   const [loadingCaseDetails, setLoadingCaseDetails] = useState(true);
@@ -83,22 +84,13 @@ const AgentInteraction = () => {
     setIsSending(true);
     const loadingToastId = toast.loading("Sending prompt to agents...");
 
-    let command = 'user_prompt';
-    let payload: any = { promptContent: userPrompt };
-
-    if (userPrompt.startsWith('/search ')) {
-      toast.info("'/search' command will be processed by the AI assistant's file search tool.");
-      // The AI Orchestrator will handle the /search command internally via OpenAI's file_search tool.
-      // No need to change the command or payload here.
-    }
-
     try {
       const { data, error } = await supabase.functions.invoke(
-        'send-user-prompt', // Use send-user-prompt for general user prompts
+        'send-user-prompt',
         {
           body: JSON.stringify({
             caseId: caseId,
-            promptContent: userPrompt, // send the raw prompt content
+            promptContent: userPrompt,
           }),
           headers: { 'Content-Type': 'application/json' },
         }
@@ -234,6 +226,48 @@ const AgentInteraction = () => {
       toast.error(err.message || "An unexpected error occurred during file upload.");
     } finally {
       setIsUploadingFiles(false);
+      toast.dismiss(loadingToastId);
+    }
+  };
+
+  const handleReanalyzeCase = async () => {
+    if (!caseId) {
+      toast.error("Case ID is missing. Cannot re-analyze.");
+      return;
+    }
+    if (!user) {
+      toast.error("You must be logged in to re-analyze a case.");
+      return;
+    }
+
+    setIsReanalyzing(true);
+    const loadingToastId = toast.loading("Initiating full case re-analysis...");
+
+    try {
+      const { data, error } = await supabase.functions.invoke(
+        'ai-orchestrator',
+        {
+          body: JSON.stringify({
+            caseId: caseId,
+            command: 're_run_analysis',
+            payload: {}, // No specific payload needed, orchestrator will fetch data
+          }),
+          headers: { 'Content-Type': 'application/json', 'x-supabase-user-id': user.id },
+        }
+      );
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      console.log("Re-analysis initiated response:", data);
+      toast.success("Case re-analysis initiated successfully!");
+
+    } catch (err: any) {
+      console.error("Error re-analyzing case:", err);
+      toast.error(err.message || "Failed to re-analyze case. Please try again.");
+    } finally {
+      setIsReanalyzing(false);
       toast.dismiss(loadingToastId);
     }
   };
@@ -412,6 +446,27 @@ const AgentInteraction = () => {
                   <Search className="h-4 w-4 mr-2" />
                   {isSearchingWeb ? "Searching..." : "Search Web"}
                 </Button>
+              </CardContent>
+            </Card>
+
+            {/* New Card for Re-analyze Case */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Re-analyze Case</CardTitle>
+                <CardDescription>Trigger a full re-analysis of the case by the AI agents.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button
+                  onClick={handleReanalyzeCase}
+                  disabled={isReanalyzing}
+                  className="w-full"
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  {isReanalyzing ? "Re-analyzing..." : "Re-run Full Analysis"}
+                </Button>
+                <p className="text-sm text-muted-foreground mt-2">
+                  This will prompt the AI to re-evaluate all current case data, including updated directives and files.
+                </p>
               </CardContent>
             </Card>
 
