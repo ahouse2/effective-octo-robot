@@ -125,8 +125,19 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({ caseId }) => {
     }
     const loadingToastId = toast.loading(`Deleting ${fileName}...`);
     try {
-      await supabase.storage.from('evidence-files').remove([filePath]);
-      await supabase.from('case_files_metadata').delete().eq('id', fileId);
+      // First, delete the file from storage
+      const { error: storageError } = await supabase.storage.from('evidence-files').remove([filePath]);
+      if (storageError) {
+        // If the file doesn't exist in storage, we can still proceed to delete the metadata
+        if (storageError.message !== 'The resource was not found') {
+          throw storageError;
+        }
+      }
+      
+      // Then, delete the metadata record
+      const { error: dbError } = await supabase.from('case_files_metadata').delete().eq('id', fileId);
+      if (dbError) throw dbError;
+
       toast.success(`${fileName} deleted successfully!`);
     } catch (err: any) {
       console.error("File deletion error:", err);
