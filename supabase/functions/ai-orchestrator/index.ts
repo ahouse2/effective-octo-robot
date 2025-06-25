@@ -8,6 +8,35 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Helper function to get user ID from either JWT (client-side) or custom header (server-side)
+async function getUserIdFromRequest(req: Request, supabaseClient: SupabaseClient): Promise<string | null> {
+  try {
+    // 1. Try to get user from Authorization header (standard for client calls)
+    const authHeader = req.headers.get('Authorization');
+    if (authHeader) {
+      const { data: { user }, error } = await supabaseClient.auth.getUser(authHeader.replace('Bearer ', ''));
+      if (error) {
+        console.warn("getUserIdFromRequest: Failed to get user from JWT:", error.message);
+        // Don't throw, fallback to custom header
+      }
+      if (user) {
+        return user.id;
+      }
+    }
+
+    // 2. Fallback to custom header (for server-to-server calls)
+    const userIdFromHeader = req.headers.get('x-supabase-user-id');
+    if (userIdFromHeader) {
+      return userIdFromHeader;
+    }
+
+    return null;
+  } catch (e) {
+    console.error("getUserIdFromRequest: Error getting user ID:", e);
+    return null;
+  }
+}
+
 // --- commonUtils.ts content (inlined) ---
 // Helper function to extract JSON from markdown code blocks
 function extractJsonFromMarkdown(text: string): any | null {
@@ -689,16 +718,6 @@ serve(async (req) => {
   }
 
   try {
-    const { caseId, command, payload } = await req.json();
-    const userId = req.headers.get('x-supabase-user-id');
-
-    if (!caseId || !userId || !command || !payload) {
-      return new Response(JSON.stringify({ error: 'caseId, userId, command, and payload are required' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400,
-      });
-    }
-
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
@@ -709,19 +728,23 @@ serve(async (req) => {
       }
     );
 
+    const { caseId, command, payload } = await req.json();
+    const userId = await getUserIdFromRequest(req, supabaseClient);
+
+    if (!caseId || !userId || !command || !payload) {
+      return new Response(JSON.stringify({ error: 'caseId, userId, command, and payload are required' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400,
+      });
+    }
+
     if (command === 'switch_ai_model') {
         const { newAiModel } = payload;
         await insertAgentActivity(supabaseClient, caseId, 'System', 'Configuration', 'AI Model Switch', `User switched AI model to ${newAiModel}.`, 'processing');
         
-        // Here you could add logic to tear down old model resources if necessary (e.g., delete old OpenAI thread)
-        // For now, we'll just set up the new one.
-        
         if (newAiModel === 'openai') {
-            // Check if an assistant already exists, if not, create one.
-            // This logic is simplified; a real app might want to reuse assistants.
             const { data: caseData } = await supabaseClient.from('cases').select('openai_assistant_id').eq('id', caseId).single();
             if (!caseData?.openai_assistant_id) {
-                // Re-using start-analysis logic to set up a new assistant and thread
                 await supabaseClient.functions.invoke('start-analysis', {
                     body: JSON.stringify({ caseId, userId, aiModel: 'openai', fileNames: [] }),
                 });
@@ -730,7 +753,7 @@ serve(async (req) => {
             await supabaseClient.from('cases').update({ gemini_chat_history: [] }).eq('id', caseId);
         }
 
-        // Trigger a re-analysis with the new model
+        // This is a recursive call, it needs the custom header.
         await supabaseClient.functions.invoke('ai-orchestrator', {
             body: JSON.stringify({ caseId, command: 're_run_analysis', payload: {} }),
             headers: { 'Content-Type': 'application/json', 'x-supabase-user-id': userId },

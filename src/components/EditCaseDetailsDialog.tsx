@@ -100,7 +100,6 @@ export const EditCaseDetailsDialog: React.FC<EditCaseDetailsDialogProps> = ({
             command: 'switch_ai_model',
             payload: { newAiModel: values.aiModel },
           }),
-          headers: { 'Content-Type': 'application/json', 'x-supabase-user-id': user.id },
         });
       } else {
         toast.info("AI assistant instructions are being updated.");
@@ -110,7 +109,6 @@ export const EditCaseDetailsDialog: React.FC<EditCaseDetailsDialogProps> = ({
             command: 'update_assistant_instructions',
             payload: {},
           }),
-          headers: { 'Content-Type': 'application/json', 'x-supabase-user-id': user.id },
         });
       }
 

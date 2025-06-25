@@ -88,10 +88,6 @@ const AgentInteraction = () => {
             caseId: caseId,
             promptContent: userPrompt,
           }),
-          headers: { 
-            'Content-Type': 'application/json',
-            'x-supabase-user-id': user.id
-          },
         }
       );
 
@@ -134,10 +130,6 @@ const AgentInteraction = () => {
             command: 'web_search',
             payload: { query: webSearchQuery },
           }),
-          headers: { 
-            'Content-Type': 'application/json',
-            'x-supabase-user-id': user.id
-          },
         }
       );
 
@@ -211,10 +203,6 @@ const AgentInteraction = () => {
             caseId: caseId,
             newFileNames: uploadedFileNames,
           }),
-          headers: { 
-            'Content-Type': 'application/json',
-            'x-supabase-user-id': user.id
-          },
         }
       );
 
@@ -255,9 +243,8 @@ const AgentInteraction = () => {
           body: JSON.stringify({
             caseId: caseId,
             command: 're_run_analysis',
-            payload: {}, // No specific payload needed, orchestrator will fetch data
+            payload: {},
           }),
-          headers: { 'Content-Type': 'application/json', 'x-supabase-user-id': user.id },
         }
       );
 
