@@ -77,8 +77,8 @@ const AgentInteraction = () => {
       toast.info("Please enter a message to send.");
       return;
     }
-    if (!caseId) {
-      toast.error("Case ID is missing. Cannot send prompt.");
+    if (!caseId || !user) {
+      toast.error("Case ID or user is missing. Cannot send prompt.");
       return;
     }
 
@@ -93,7 +93,10 @@ const AgentInteraction = () => {
             caseId: caseId,
             promptContent: userPrompt,
           }),
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-supabase-user-id': user.id
+          },
         }
       );
 
@@ -119,8 +122,8 @@ const AgentInteraction = () => {
       toast.info("Please enter a query for web search.");
       return;
     }
-    if (!caseId) {
-      toast.error("Case ID is missing. Cannot perform web search.");
+    if (!caseId || !user) {
+      toast.error("Case ID or user is missing. Cannot perform web search.");
       return;
     }
 
@@ -136,7 +139,10 @@ const AgentInteraction = () => {
             command: 'web_search',
             payload: { query: webSearchQuery },
           }),
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-supabase-user-id': user.id
+          },
         }
       );
 
@@ -210,7 +216,10 @@ const AgentInteraction = () => {
             caseId: caseId,
             newFileNames: uploadedFileNames,
           }),
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-supabase-user-id': user.id
+          },
         }
       );
 

@@ -126,7 +126,10 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
             aiModel: values.aiModel,
             openaiAssistantId: values.openaiAssistantId || null,
           }),
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-supabase-user-id': user.id
+          },
         }
       );
 
@@ -293,7 +296,7 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
         </ScrollArea>
         <DialogFooter>
           <Button type="submit" form="new-case-form" disabled={isSubmitting}>
-            {isSubmitting ? "Creating..." : "Create Case"}
+            {isSubmitting ? "Creating..." : "Creating Case"}
           </Button>
         </DialogFooter>
       </DialogContent>

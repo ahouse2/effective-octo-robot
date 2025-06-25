@@ -149,7 +149,10 @@ const EvidenceAnalysis = () => {
             aiModel: values.aiModel,
             openaiAssistantId: values.openaiAssistantId || null, // Pass the assistant ID to the edge function
           }),
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-supabase-user-id': user.id
+          },
         }
       );
 
