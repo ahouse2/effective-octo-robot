@@ -40,16 +40,20 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
       if (skippedCount > 0) {
         toastMessage += ` Skipped ${skippedCount} temporary or system file(s).`;
       }
+      console.log(`[CaseTools] Files selected: ${validFiles.length}, Skipped: ${skippedCount}`);
       toast.info(toastMessage);
     }
   };
 
   const handleUploadFiles = async () => {
+    console.log("[CaseTools] handleUploadFiles started.");
     if (!user) {
+      console.error("[CaseTools] User not logged in.");
       toast.error("You must be logged in to upload files.");
       return;
     }
     if (filesToUpload.length === 0) {
+      console.warn("[CaseTools] No files selected for upload.");
       toast.info("Please select files to upload.");
       return;
     }
@@ -57,6 +61,7 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
     setIsUploadingFiles(true);
     const totalFiles = filesToUpload.length;
     const loadingToastId = toast.loading(`Starting upload of ${totalFiles} files...`);
+    console.log(`[CaseTools] Starting upload for ${totalFiles} files. Case ID: ${caseId}`);
     
     const BATCH_SIZE = 20;
     const allUploadedFilePaths: string[] = [];
@@ -66,6 +71,7 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
       for (let i = 0; i < totalFiles; i += BATCH_SIZE) {
         const batch = filesToUpload.slice(i, i + BATCH_SIZE);
         const currentProgress = i + batch.length;
+        console.log(`[CaseTools] Processing batch ${Math.floor(i / BATCH_SIZE) + 1}. Files: ${currentProgress}/${totalFiles}`);
         toast.loading(`Uploading files... (${currentProgress}/${totalFiles})`, { id: loadingToastId });
 
         const uploadPromises = batch.map(async (file) => {
@@ -78,15 +84,20 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
               upsert: true,
             });
 
-          if (uploadError) throw new Error(`Failed to upload file ${relativePath}: ${uploadError.message}`);
+          if (uploadError) {
+            console.error(`[CaseTools] Storage upload error for ${filePath}:`, uploadError);
+            throw new Error(`Failed to upload file ${relativePath}: ${uploadError.message}`);
+          }
           return relativePath;
         });
 
         const uploadedPathsInBatch = await Promise.all(uploadPromises);
         allUploadedFilePaths.push(...uploadedPathsInBatch);
+        console.log(`[CaseTools] Batch ${Math.floor(i / BATCH_SIZE) + 1} uploaded successfully.`);
       }
 
       // Step 2: After all files are uploaded, make a single call to process them
+      console.log(`[CaseTools] All ${totalFiles} files uploaded to storage. Invoking 'process-additional-files' function.`);
       toast.loading(`All ${totalFiles} files uploaded. Initiating analysis...`, { id: loadingToastId });
       
       const { error: edgeFunctionError } = await supabase.functions.invoke(
@@ -100,22 +111,26 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
       );
 
       if (edgeFunctionError) {
+        console.error("[CaseTools] 'process-additional-files' function invocation error:", edgeFunctionError);
         throw new Error(`Failed to start analysis process: ${edgeFunctionError.message}`);
       }
 
+      console.log("[CaseTools] 'process-additional-files' function invoked successfully.");
       toast.success(`Successfully uploaded and queued all ${totalFiles} files for analysis.`, { id: loadingToastId });
       setFilesToUpload([]);
 
     } catch (err: any) {
-      console.error("File upload error:", err);
+      console.error("[CaseTools] An error occurred in handleUploadFiles:", err);
       toast.error(err.message || "An error occurred during upload.", { id: loadingToastId });
     } finally {
+      console.log("[CaseTools] handleUploadFiles finished.");
       setIsUploadingFiles(false);
       setTimeout(() => toast.dismiss(loadingToastId), 4000);
     }
   };
 
   const handleReanalyzeCase = async () => {
+    // ... (logging can be added here if needed)
     if (!user) {
       toast.error("You must be logged in to re-analyze a case.");
       return;

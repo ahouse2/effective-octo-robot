@@ -81,7 +81,9 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
   }, [isOpen, user, sessionLoading, form]);
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
+    console.log("[NewCaseDialog] onSubmit started.");
     if (!user) {
+      console.error("[NewCaseDialog] User not logged in.");
       toast.error("You must be logged in to create a case.");
       return;
     }
@@ -90,7 +92,8 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
     const loadingToastId = toast.loading("Creating new case...");
 
     try {
-      // Step 1: Create the case record in the database. This is a fast operation.
+      // Step 1: Create the case record in the database.
+      console.log("[NewCaseDialog] Step 1: Inserting case into database with values:", values);
       const { data: caseData, error: caseError } = await supabase
         .from("cases")
         .insert([
@@ -108,16 +111,19 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
         .select();
 
       if (caseError) {
+        console.error("[NewCaseDialog] Database insert error:", caseError);
         throw new Error("Failed to create case: " + caseError.message);
       }
 
       const newCase = caseData[0];
       if (!newCase) {
+        console.error("[NewCaseDialog] Case data not returned after creation.");
         throw new Error("Case data not returned after creation.");
       }
+      console.log(`[NewCaseDialog] Database insert successful. New case ID: ${newCase.id}`);
 
       // Step 2: Asynchronously invoke the analysis function.
-      // We DO NOT await this. This is a "fire-and-forget" call to the background process.
+      console.log("[NewCaseDialog] Step 2: Invoking 'start-analysis' function (fire-and-forget).");
       supabase.functions.invoke(
         'start-analysis',
         {
@@ -132,11 +138,12 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
         }
       ).catch(analysisError => {
         // Log the error but don't fail the user-facing flow.
-        console.error("Error initiating AI for new case:", analysisError);
+        console.error("[NewCaseDialog] 'start-analysis' function invocation failed in background:", analysisError);
         toast.error("Failed to initialize AI for the new case. The case has been created, but you may need to trigger analysis manually.");
       });
 
       // Step 3: Provide immediate feedback to the user.
+      console.log("[NewCaseDialog] Step 3: Providing immediate feedback and navigating.");
       toast.success("New case created successfully! AI analysis is starting in the background.", { id: loadingToastId });
       form.reset();
       setIsOpen(false);
@@ -148,11 +155,11 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
       }
 
     } catch (err: any) {
-      console.error("Submission error:", err);
+      console.error("[NewCaseDialog] An error occurred in onSubmit:", err);
       toast.error(err.message || "An unexpected error occurred during case creation.", { id: loadingToastId });
     } finally {
+      console.log("[NewCaseDialog] onSubmit finished.");
       setIsSubmitting(false);
-      // The toast is managed above, so we don't need a final dismiss here.
     }
   };
 
