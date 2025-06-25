@@ -17,6 +17,7 @@ import { NewCaseDialog } from "@/components/NewCaseDialog";
 import { Link } from "react-router-dom";
 import { DeleteCaseDialog } from "@/components/DeleteCaseDialog"; // Import the new delete dialog
 import { Settings } from "lucide-react"; // Import Settings icon
+import { Input } from "@/components/ui/input"; // Import Input for search bar
 
 interface Case {
   id: string;
@@ -30,6 +31,7 @@ const CaseManagement = () => {
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState(""); // New state for search term
 
   const fetchCases = async () => {
     setLoading(true);
@@ -87,12 +89,27 @@ const CaseManagement = () => {
     // The NewCaseDialog already handles navigation, but if you wanted to do something else here, you could.
   };
 
+  // Filtered cases based on search term
+  const filteredCases = cases.filter(
+    (caseItem) =>
+      caseItem.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      caseItem.type.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   return (
     <Layout>
       <div className="container mx-auto py-8">
-        <div className="flex justify-between items-center mb-8">
+        <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
           <h1 className="text-4xl font-bold">Case Management</h1>
-          <NewCaseDialog onCaseCreated={handleCaseCreated} />
+          <div className="flex items-center space-x-4 w-full md:w-auto">
+            <Input
+              placeholder="Search cases by name or type..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="max-w-sm"
+            />
+            <NewCaseDialog onCaseCreated={handleCaseCreated} />
+          </div>
         </div>
 
         <Card className="max-w-4xl mx-auto">
@@ -105,8 +122,10 @@ const CaseManagement = () => {
               <div className="text-center py-8">Loading cases...</div>
             ) : error ? (
               <div className="text-center py-8 text-red-500">{error}</div>
-            ) : cases.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">No cases found. Click "Create New Case" to add one!</div>
+            ) : filteredCases.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                {searchTerm ? "No cases found matching your search." : "No cases found. Click 'Create New Case' to add one!"}
+              </div>
             ) : (
               <Table>
                 <TableHeader>
@@ -119,7 +138,7 @@ const CaseManagement = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {cases.map((caseItem) => (
+                  {filteredCases.map((caseItem) => (
                     <TableRow key={caseItem.id}>
                       <TableCell className="font-medium">{caseItem.name}</TableCell>
                       <TableCell>{caseItem.type}</TableCell>
