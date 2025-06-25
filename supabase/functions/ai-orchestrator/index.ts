@@ -110,7 +110,8 @@ async function handleOpenAIToolCall(
         throw new Error(`Web search failed: ${searchError.message}`);
       }
       const output = JSON.stringify(searchResult?.results || []);
-      await insertAgentActivity(supabaseClient, caseId, 'Web Search Agent', 'Tool Executor', 'Web Search Completed', `Web search completed. Results: ${output.substring(0, 200)}...`, 'completed');
+      // Log the full JSON output for the frontend to parse and display
+      await insertAgentActivity(supabaseClient, caseId, 'Web Search Agent', 'Tool Executor', 'Web Search Completed', output, 'completed');
       return { tool_call_id: toolCall.id, output: output };
     } catch (toolError: any) {
       console.error('Error executing web_search tool:', toolError);
