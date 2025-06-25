@@ -131,8 +131,9 @@ serve(async (req) => {
         .eq('id', caseId);
     }
 
-    // 5. Invoke the AI Orchestrator to handle the AI-side processing asynchronously
-    const { error: orchestratorError } = await supabaseClient.functions.invoke(
+    // 5. Asynchronously invoke the AI Orchestrator to do the heavy lifting.
+    // We DO NOT await this call. This is a "fire-and-forget" invocation.
+    supabaseClient.functions.invoke(
       'ai-orchestrator',
       {
         body: JSON.stringify({
@@ -142,12 +143,12 @@ serve(async (req) => {
         }),
         headers: { 'Content-Type': 'application/json', 'x-supabase-user-id': userId },
       }
-    );
+    ).catch(orchestratorError => {
+        // Log the error but don't fail the main function, as the user-facing part is done.
+        console.error(`Failed to invoke AI Orchestrator for new files, but user-facing tasks complete. Error: ${orchestratorError.message}`);
+    });
 
-    if (orchestratorError) {
-      console.error(`Failed to invoke AI Orchestrator for new files, but user-facing tasks complete. Error: ${orchestratorError.message}`);
-    }
-
+    // 6. Return a success response to the client immediately.
     return new Response(JSON.stringify({ message: 'New files are being processed by the AI.', caseId }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
