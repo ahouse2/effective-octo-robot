@@ -7,10 +7,11 @@ import { CaseTheorySummary } from "@/components/CaseTheorySummary";
 import { CaseInsightsCard } from "@/components/CaseInsightsCard";
 import { CaseTimeline } from "@/components/CaseTimeline";
 import { CaseFilesDisplay } from "@/components/CaseFilesDisplay";
+import { OrganizedFilesCard } from "@/components/OrganizedFilesCard"; // Import the new component
 import { CaseChatDisplay } from "@/components/CaseChatDisplay";
 import { useParams, useNavigate } from "react-router-dom";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Terminal, Send, Lightbulb, Upload, Edit, Search, RefreshCw } from "lucide-react"; // Added RefreshCw icon
+import { Terminal, Send, Lightbulb, Upload, Edit, Search, RefreshCw } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,7 +39,7 @@ const AgentInteraction = () => {
   const [isSearchingWeb, setIsSearchingWeb] = useState(false);
   const [filesToUpload, setFilesToUpload] = useState<File[]>([]);
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
-  const [isReanalyzing, setIsReanalyzing] = useState(false); // New state for re-analysis loading
+  const [isReanalyzing, setIsReanalyzing] = useState(false);
   const { user } = useSession();
   const [caseDetails, setCaseDetails] = useState<CaseDetails | null>(null);
   const [loadingCaseDetails, setLoadingCaseDetails] = useState(true);
@@ -375,6 +376,7 @@ const AgentInteraction = () => {
 
             <CaseTheorySummary caseId={caseId} />
             <CaseInsightsCard caseId={caseId} />
+            <OrganizedFilesCard caseId={caseId} /> {/* Added new component */}
             <CaseFilesDisplay caseId={caseId} />
             {/* New Card for File Upload */}
             <Card>

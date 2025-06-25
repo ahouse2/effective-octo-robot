@@ -49,7 +49,7 @@ serve(async (req) => {
       throw new Error('Failed to record new file upload activity.');
     }
 
-    // 2. Record file metadata in the new case_files_metadata table
+    // 2. Record file metadata and trigger categorization
     const fileMetadataInserts = newFileNames.map((fileName: string) => ({
       case_id: caseId,
       file_name: fileName,
@@ -57,13 +57,13 @@ serve(async (req) => {
       description: `Additional file uploaded for case ${caseId}`,
     }));
 
-    const { error: metadataError } = await supabaseClient
+    const { data: insertedMetadata, error: metadataError } = await supabaseClient
       .from('case_files_metadata')
-      .insert(fileMetadataInserts);
+      .insert(fileMetadataInserts)
+      .select('id, file_name, file_path');
 
     if (metadataError) {
       console.error('Error inserting additional file metadata:', metadataError);
-      // Do not throw, allow analysis to proceed even if metadata insertion fails
       await supabaseClient.from('agent_activities').insert({
         case_id: caseId,
         agent_name: 'System',
@@ -72,6 +72,23 @@ serve(async (req) => {
         content: `Failed to record metadata for some additional files: ${metadataError.message}`,
         status: 'error',
       });
+    } else if (insertedMetadata) {
+        const categorizationPromises = insertedMetadata.map(meta =>
+            supabaseClient.functions.invoke('file-categorizer', {
+                body: JSON.stringify({
+                    fileId: meta.id,
+                    fileName: meta.file_name,
+                    filePath: meta.file_path,
+                }),
+            })
+        );
+        Promise.allSettled(categorizationPromises).then(results => {
+            results.forEach(result => {
+                if (result.status === 'rejected') {
+                    console.error("A file categorization task failed:", result.reason);
+                }
+            });
+        });
     }
 
     // 3. Update the case status to 'In Progress' if it was 'Analysis Complete'

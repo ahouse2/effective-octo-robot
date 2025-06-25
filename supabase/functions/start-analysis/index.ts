@@ -67,7 +67,7 @@ serve(async (req) => {
       throw new Error('Failed to insert initial case theory.');
     }
 
-    // 3. Record file metadata in the new case_files_metadata table
+    // 3. Record file metadata and trigger categorization
     if (fileNames && fileNames.length > 0) {
       const fileMetadataInserts = fileNames.map((fileName: string) => ({
         case_id: caseId,
@@ -76,13 +76,13 @@ serve(async (req) => {
         description: `Initial upload for case ${caseId}`,
       }));
 
-      const { error: metadataError } = await supabaseClient
+      const { data: insertedMetadata, error: metadataError } = await supabaseClient
         .from('case_files_metadata')
-        .insert(fileMetadataInserts);
+        .insert(fileMetadataInserts)
+        .select('id, file_name, file_path');
 
       if (metadataError) {
         console.error('Error inserting file metadata:', metadataError);
-        // Do not throw, allow analysis to proceed even if metadata insertion fails
         await supabaseClient.from('agent_activities').insert({
           case_id: caseId,
           agent_name: 'System',
@@ -90,6 +90,23 @@ serve(async (req) => {
           activity_type: 'File Metadata Error',
           content: `Failed to record metadata for some files: ${metadataError.message}`,
           status: 'error',
+        });
+      } else if (insertedMetadata) {
+        const categorizationPromises = insertedMetadata.map(meta =>
+            supabaseClient.functions.invoke('file-categorizer', {
+                body: JSON.stringify({
+                    fileId: meta.id,
+                    fileName: meta.file_name,
+                    filePath: meta.file_path,
+                }),
+            })
+        );
+        Promise.allSettled(categorizationPromises).then(results => {
+            results.forEach(result => {
+                if (result.status === 'rejected') {
+                    console.error("A file categorization task failed:", result.reason);
+                }
+            });
         });
       }
     }
