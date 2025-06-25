@@ -61,7 +61,7 @@ serve(async (req) => {
       throw new Error(`Failed to record metadata for additional files: ${metadataError.message}`);
     }
 
-    // 3. Trigger categorization for new files
+    // 3. Trigger categorization and summarization for new files
     if (insertedMetadata) {
       const categorizationPromises = insertedMetadata.map(meta =>
           supabaseClient.functions.invoke('file-categorizer', {
@@ -72,10 +72,19 @@ serve(async (req) => {
               }),
           })
       );
-      Promise.allSettled(categorizationPromises).then(results => {
+      const summarizationPromises = insertedMetadata.map(meta =>
+          supabaseClient.functions.invoke('file-summarizer', {
+              body: JSON.stringify({
+                  fileId: meta.id,
+                  fileName: meta.file_name,
+                  filePath: meta.file_path,
+              }),
+          })
+      );
+      Promise.allSettled([...categorizationPromises, ...summarizationPromises]).then(results => {
           results.forEach(result => {
               if (result.status === 'rejected') {
-                  console.error("A file categorization task failed:", result.reason);
+                  console.error("A file processing task (categorization or summarization) failed:", result.reason);
               }
           });
       });

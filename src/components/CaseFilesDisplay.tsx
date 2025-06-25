@@ -203,7 +203,7 @@ export const CaseFilesDisplay: React.FC<CaseFilesDisplayProps> = ({ caseId }) =>
                     <div>
                       <p className="font-medium text-foreground">{file.file_name}</p>
                       {file.description && (
-                        <p className="text-xs text-muted-foreground mt-0.5">{file.description}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5 italic">"{file.description}"</p>
                       )}
                       {file.tags && file.tags.length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-1">
