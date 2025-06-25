@@ -40,97 +40,66 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
       if (skippedCount > 0) {
         toastMessage += ` Skipped ${skippedCount} temporary or system file(s).`;
       }
-      console.log(`[CaseTools] Files selected: ${validFiles.length}, Skipped: ${skippedCount}`);
       toast.info(toastMessage);
     }
   };
 
   const handleUploadFiles = async () => {
-    console.log("[CaseTools] handleUploadFiles started.");
     if (!user) {
-      console.error("[CaseTools] User not logged in.");
       toast.error("You must be logged in to upload files.");
       return;
     }
     if (filesToUpload.length === 0) {
-      console.warn("[CaseTools] No files selected for upload.");
       toast.info("Please select files to upload.");
       return;
     }
 
     setIsUploadingFiles(true);
-    const totalFiles = filesToUpload.length;
-    const loadingToastId = toast.loading(`Starting upload of ${totalFiles} files...`);
-    console.log(`[CaseTools] Starting upload for ${totalFiles} files. Case ID: ${caseId}`);
-    
-    const BATCH_SIZE = 20;
-    const allUploadedFilePaths: string[] = [];
+    const loadingToastId = toast.loading(`Uploading ${filesToUpload.length} files...`);
 
     try {
-      // Step 1: Upload all files to storage in batches
-      for (let i = 0; i < totalFiles; i += BATCH_SIZE) {
-        const batch = filesToUpload.slice(i, i + BATCH_SIZE);
-        const currentProgress = i + batch.length;
-        console.log(`[CaseTools] Processing batch ${Math.floor(i / BATCH_SIZE) + 1}. Files: ${currentProgress}/${totalFiles}`);
-        toast.loading(`Uploading files... (${currentProgress}/${totalFiles})`, { id: loadingToastId });
+      const uploadPromises = filesToUpload.map(async (file) => {
+        const relativePath = (file as any).webkitRelativePath || file.name;
+        const filePath = `${user.id}/${caseId}/${relativePath}`;
+        const { error: uploadError } = await supabase.storage
+          .from('evidence-files')
+          .upload(filePath, file, {
+            cacheControl: '3600',
+            upsert: true,
+          });
 
-        const uploadPromises = batch.map(async (file) => {
-          const relativePath = (file as any).webkitRelativePath || file.name;
-          const filePath = `${user.id}/${caseId}/${relativePath}`;
-          const { error: uploadError } = await supabase.storage
-            .from('evidence-files')
-            .upload(filePath, file, {
-              cacheControl: '3600',
-              upsert: true,
-            });
+        if (uploadError) throw new Error(`Failed to upload file ${relativePath}: ${uploadError.message}`);
+        return relativePath;
+      });
 
-          if (uploadError) {
-            console.error(`[CaseTools] Storage upload error for ${filePath}:`, uploadError);
-            throw new Error(`Failed to upload file ${relativePath}: ${uploadError.message}`);
-          }
-          return relativePath;
-        });
+      const uploadedFilePaths = await Promise.all(uploadPromises);
+      toast.success(`Successfully uploaded ${uploadedFilePaths.length} files.`);
 
-        const uploadedPathsInBatch = await Promise.all(uploadPromises);
-        allUploadedFilePaths.push(...uploadedPathsInBatch);
-        console.log(`[CaseTools] Batch ${Math.floor(i / BATCH_SIZE) + 1} uploaded successfully.`);
-      }
-
-      // Step 2: After all files are uploaded, make a single call to process them
-      console.log(`[CaseTools] All ${totalFiles} files uploaded to storage. Invoking 'process-additional-files' function.`);
-      toast.loading(`All ${totalFiles} files uploaded. Initiating analysis...`, { id: loadingToastId });
-      
       const { error: edgeFunctionError } = await supabase.functions.invoke(
         'process-additional-files',
         {
           body: JSON.stringify({
             caseId: caseId,
-            newFileNames: allUploadedFilePaths,
+            newFileNames: uploadedFilePaths,
           }),
         }
       );
 
-      if (edgeFunctionError) {
-        console.error("[CaseTools] 'process-additional-files' function invocation error:", edgeFunctionError);
-        throw new Error(`Failed to start analysis process: ${edgeFunctionError.message}`);
-      }
+      if (edgeFunctionError) throw new Error("Failed to invoke additional file processing function: " + edgeFunctionError.message);
 
-      console.log("[CaseTools] 'process-additional-files' function invoked successfully.");
-      toast.success(`Successfully uploaded and queued all ${totalFiles} files for analysis.`, { id: loadingToastId });
+      toast.success("New files submitted for analysis!");
       setFilesToUpload([]);
 
     } catch (err: any) {
-      console.error("[CaseTools] An error occurred in handleUploadFiles:", err);
-      toast.error(err.message || "An error occurred during upload.", { id: loadingToastId });
+      console.error("File upload error:", err);
+      toast.error(err.message || "An unexpected error occurred during file upload.");
     } finally {
-      console.log("[CaseTools] handleUploadFiles finished.");
       setIsUploadingFiles(false);
-      setTimeout(() => toast.dismiss(loadingToastId), 4000);
+      toast.dismiss(loadingToastId);
     }
   };
 
   const handleReanalyzeCase = async () => {
-    // ... (logging can be added here if needed)
     if (!user) {
       toast.error("You must be logged in to re-analyze a case.");
       return;
