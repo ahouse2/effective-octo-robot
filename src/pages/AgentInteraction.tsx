@@ -66,14 +66,30 @@ const AgentInteraction = () => {
   const handleSendPrompt = async () => {
     if (!userPrompt.trim() || !caseId || !user) return;
     setIsSending(true);
-    const loadingToastId = toast.loading("Sending prompt...");
+    const loadingToastId = toast.loading("Sending command...");
+
     try {
-      const { error } = await supabase.functions.invoke('send-user-prompt', { body: { caseId, promptContent: userPrompt } });
-      if (error) throw error;
-      toast.success("Prompt sent successfully!");
+      if (userPrompt.startsWith("/search ")) {
+        const searchQuery = userPrompt.substring(8);
+        toast.info(`Performing web search for: "${searchQuery}"`);
+        const { error } = await supabase.functions.invoke('ai-orchestrator', {
+          body: {
+            caseId,
+            command: 'web_search',
+            payload: { query: searchQuery },
+          },
+        });
+        if (error) throw error;
+        toast.success("Web search initiated. Results will appear in chat.");
+      } else {
+        // Default behavior for regular chat messages
+        const { error } = await supabase.functions.invoke('send-user-prompt', { body: { caseId, promptContent: userPrompt } });
+        if (error) throw error;
+        toast.success("Prompt sent successfully!");
+      }
       setUserPrompt("");
     } catch (err: any) {
-      toast.error(err.message || "Failed to send prompt.");
+      toast.error(err.message || "Failed to send command.");
     } finally {
       setIsSending(false);
       toast.dismiss(loadingToastId);
@@ -103,7 +119,7 @@ const AgentInteraction = () => {
         <div className="flex items-center space-x-2">
           <FileMentionInput
             caseId={caseId}
-            placeholder="Send a message, or type '@' to mention a file..."
+            placeholder="Send a message, or type '/search <query>' to search the web..."
             value={userPrompt}
             onChange={setUserPrompt}
             onKeyPress={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendPrompt(); }}}
