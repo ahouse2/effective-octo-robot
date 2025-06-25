@@ -25,6 +25,7 @@ const caseDetailsSchema = z.object({
   aiModel: z.enum(["openai", "gemini"], {
     required_error: "Please select an AI model.",
   }),
+  openaiAssistantId: z.string().optional(), // Add this field to the schema
 });
 
 type CaseDetailsFormValues = z.infer<typeof caseDetailsSchema>;
@@ -45,6 +46,7 @@ const CaseDetails = () => {
       caseGoals: "",
       systemInstruction: "",
       aiModel: "openai",
+      openaiAssistantId: "", // Initialize with empty string
     },
   });
 
@@ -74,6 +76,7 @@ const CaseDetails = () => {
           caseGoals: data.case_goals || "",
           systemInstruction: data.system_instruction || "",
           aiModel: (data.ai_model as "openai" | "gemini") || "openai",
+          openaiAssistantId: data.openai_assistant_id || "", // Set the value from fetched data
         });
         setCaseStatus(data.status);
       }
@@ -111,6 +114,7 @@ const CaseDetails = () => {
           case_goals: values.caseGoals,
           system_instruction: values.systemInstruction,
           ai_model: values.aiModel,
+          openai_assistant_id: values.aiModel === 'openai' ? (values.openaiAssistantId || null) : null, // Save assistant ID only if OpenAI is selected
           last_updated: new Date().toISOString(),
         })
         .eq('id', caseId);
@@ -119,12 +123,13 @@ const CaseDetails = () => {
         throw new Error("Failed to update case: " + updateError.message);
       }
 
-      // Check if AI-related instructions have changed and trigger orchestrator
+      // Check if AI-related instructions or model/assistant ID have changed and trigger orchestrator
       const goalsChanged = oldCaseData.case_goals !== values.caseGoals;
       const instructionsChanged = oldCaseData.system_instruction !== values.systemInstruction;
       const aiModelChanged = oldCaseData.ai_model !== values.aiModel;
+      const assistantIdChanged = oldCaseData.openai_assistant_id !== values.openaiAssistantId;
 
-      if (goalsChanged || instructionsChanged || aiModelChanged) {
+      if (goalsChanged || instructionsChanged || aiModelChanged || assistantIdChanged) {
         console.log("AI-related directives changed. Invoking AI Orchestrator to update assistant instructions.");
         const { data: orchestratorResponse, error: orchestratorError } = await supabase.functions.invoke(
           'ai-orchestrator',
@@ -290,6 +295,27 @@ const CaseDetails = () => {
                       </Select>
                       <FormDescription>
                         This model powers the AI analysis for this specific case.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="openaiAssistantId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>OpenAI Assistant ID (Optional)</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="asst_..."
+                          {...field}
+                          disabled={isSubmitting || form.watch("aiModel") === "gemini"} // Disable if Gemini is selected
+                          value={field.value || ""} // Ensure controlled component
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        If using OpenAI, you can specify a pre-configured Assistant ID. If left blank, the system will use the one created for this case or create a new one if needed. Changing this will switch the assistant used for future interactions.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
