@@ -14,7 +14,7 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Download } from "lucide-react";
 import { useSession } from "@/components/SessionContextProvider";
 
 const caseDetailsSchema = z.object({
@@ -38,6 +38,7 @@ const CaseDetails = () => {
   const [caseStatus, setCaseStatus] = useState<string | null>(null);
   const { user } = useSession();
   const [initialCaseData, setInitialCaseData] = useState<CaseDetailsFormValues | null>(null);
+  const [isDownloadingReport, setIsDownloadingReport] = useState(false);
 
   const form = useForm<CaseDetailsFormValues>({
     resolver: zodResolver(caseDetailsSchema),
@@ -144,7 +145,7 @@ const CaseDetails = () => {
       }
 
       toast.success("Case details updated successfully!");
-      setInitialCaseData(values); // Update initial data to prevent re-triggering on next save
+      setInitialCaseData(values);
 
     } catch (err: any) {
       console.error("Case update error:", err);
@@ -152,6 +153,44 @@ const CaseDetails = () => {
     } finally {
       setIsSubmitting(false);
       toast.dismiss(loadingToastId);
+    }
+  };
+
+  const handleDownloadReport = async () => {
+    if (!caseId) {
+        toast.error("Case ID is missing.");
+        return;
+    }
+    setIsDownloadingReport(true);
+    const loadingToastId = toast.loading("Generating case report...");
+
+    try {
+        const { data, error } = await supabase.functions.invoke('generate-case-report', {
+            body: JSON.stringify({ caseId }),
+            responseType: 'blob'
+        });
+
+        if (error) throw error;
+
+        const caseName = form.getValues("name").replace(/\s+/g, '_');
+        const fileName = `Case_Report_${caseName}_${caseId}.md`;
+
+        const url = URL.createObjectURL(data);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast.success("Report downloaded successfully!");
+
+    } catch (err: any) {
+        console.error("Error generating report:", err);
+        toast.error(err.message || "Failed to generate case report.");
+    } finally {
+        setIsDownloadingReport(false);
+        toast.dismiss(loadingToastId);
     }
   };
 
@@ -177,8 +216,16 @@ const CaseDetails = () => {
 
         <Card className="max-w-3xl mx-auto">
           <CardHeader>
-            <CardTitle>Manage Case Information</CardTitle>
-            <CardDescription>View and update the core details of this case.</CardDescription>
+            <div className="flex justify-between items-start">
+              <div>
+                <CardTitle>Manage Case Information</CardTitle>
+                <CardDescription>View and update the core details of this case.</CardDescription>
+              </div>
+              <Button onClick={handleDownloadReport} disabled={isDownloadingReport}>
+                <Download className="h-4 w-4 mr-2" />
+                {isDownloadingReport ? "Generating..." : "Download Report"}
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="mb-6 flex items-center justify-between">
