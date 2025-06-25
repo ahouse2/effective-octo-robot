@@ -412,6 +412,89 @@ ${structuredOutputInstruction}`;
       await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'Error Handler', 'Instructions Update Failed', `Failed to update OpenAI Assistant instructions: ${updateError.message}`, 'error');
       throw new Error(`Failed to update OpenAI Assistant instructions: ${updateError.message}`);
     }
+  } else if (command === 're_run_analysis') {
+    console.log(`OpenAI: Initiating full re-analysis for case ${caseId}`);
+
+    const { data: caseFiles, error: filesError } = await supabaseClient
+      .from('case_files_metadata')
+      .select('file_name')
+      .eq('case_id', caseId);
+
+    if (filesError) {
+      console.error('Error fetching case files for re-analysis:', filesError);
+      throw new Error('Failed to fetch case files for re-analysis.');
+    }
+
+    const fileNames = caseFiles?.map(f => f.file_name) || [];
+    const openaiFileIds = await uploadFilesToOpenAI(supabaseClient, openai, caseId, userId, fileNames);
+
+    const { data: caseData, error: caseFetchError } = await supabaseClient
+      .from('cases')
+      .select('case_goals, system_instruction')
+      .eq('id', caseId)
+      .single();
+
+    if (caseFetchError || !caseData) {
+      console.error('Error fetching case data for re-analysis prompt:', caseFetchError);
+      throw new Error('Case not found or error fetching case details for re-analysis prompt.');
+    }
+
+    const reanalysisPrompt = `Please perform a comprehensive re-analysis of all available evidence and information for this case.
+    
+    Current Case Goals: ${caseData.case_goals || 'Not specified.'}
+    Current System Instructions: ${caseData.system_instruction || 'None provided.'}
+    
+    Review all previously uploaded files and any new information. Provide updated fact patterns, legal arguments, and potential outcomes. Generate new insights as appropriate.
+    ${structuredOutputInstruction}`;
+
+    await openai.beta.threads.messages.create(
+      openaiThreadId,
+      {
+        role: "user",
+        content: reanalysisPrompt,
+        attachments: openaiFileIds.map(fileId => ({ file_id: fileId, tools: [{ type: "file_search" }] })),
+      }
+    );
+
+    const run = await openai.beta.threads.runs.create(
+      openaiThreadId,
+      {
+        assistant_id: openaiAssistantId,
+      }
+    );
+
+    const finalStatus = await pollOpenAIRun(openai, supabaseClient, caseId, openaiThreadId, run.id);
+
+    if (finalStatus === 'completed') {
+      const messages = await openai.beta.threads.messages.list(openaiThreadId, { order: 'desc', limit: 1 });
+      const latestMessage = messages.data[0];
+
+      if (latestMessage && latestMessage.role === 'assistant') {
+        const assistantResponse = latestMessage.content.map(block => {
+          if (block.type === 'text') {
+            return block.text.value;
+          }
+          return '';
+        }).join('\n');
+
+        await updateCaseData(supabaseClient, caseId, assistantResponse);
+        await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'AI', 'Re-analysis Completed', assistantResponse, 'completed');
+        responseMessage = 'OpenAI Assistant completed full re-analysis.';
+      } else {
+        await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'AI', 'Re-analysis Completed (No Response)', 'OpenAI Assistant completed re-analysis run but provided no visible response.', 'completed');
+        responseMessage = 'OpenAI Assistant completed full re-analysis but no response.';
+      }
+    } else {
+      await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'Error Handler', 'Re-analysis Failed', `OpenAI Assistant re-analysis run failed or ended with status: ${finalStatus}`, 'error');
+      throw new Error(`OpenAI Assistant re-analysis run failed with status: ${finalStatus}`);
+    }
+
+    // Update case status to 'In Progress'
+    await supabaseClient
+      .from('cases')
+      .update({ status: 'In Progress', last_updated: new Date().toISOString() })
+      .eq('id', caseId);
+
   } else {
     throw new Error(`Unsupported command for OpenAI: ${command}`);
   }
@@ -521,6 +604,67 @@ async function handleGeminiCommand(
     console.log(`Gemini: Case directives updated for case ${caseId}. Gemini's instructions are managed via chat history and will adapt to new prompts.`);
     await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'Configuration', 'Instructions Noted', 'Gemini instructions are dynamic via chat history; no direct assistant update needed.', 'completed');
     responseMessage = 'Gemini instructions noted.';
+  } else if (command === 're_run_analysis') {
+    console.log(`Gemini: Initiating full re-analysis for case ${caseId}`);
+
+    const { data: caseFiles, error: filesError } = await supabaseClient
+      .from('case_files_metadata')
+      .select('file_name')
+      .eq('case_id', caseId);
+
+    if (filesError) {
+      console.error('Error fetching case files for re-analysis:', filesError);
+      throw new Error('Failed to fetch case files for re-analysis.');
+    }
+
+    const fileNames = caseFiles?.map(f => f.file_name) || [];
+
+    const { data: caseData, error: caseFetchError } = await supabaseClient
+      .from('cases')
+      .select('case_goals, system_instruction')
+      .eq('id', caseId)
+      .single();
+
+    if (caseFetchError || !caseData) {
+      console.error('Error fetching case data for re-analysis prompt:', caseFetchError);
+      throw new Error('Case not found or error fetching case details for re-analysis prompt.');
+    }
+
+    const reanalysisPrompt = `Please perform a comprehensive re-analysis of all available evidence and information for this case.
+    
+    Current Case Goals: ${caseData.case_goals || 'Not specified.'}
+    Current System Instructions: ${caseData.system_instruction || 'None provided.'}
+    
+    Review all previously uploaded files (${fileNames.join(', ')}) and any new information. Provide updated fact patterns, legal arguments, and potential outcomes. Generate new insights as appropriate.
+    
+    Note: For full document analysis with Gemini, a RAG (Retrieval Augmented Generation) setup is required. These files are available in storage but will not be directly analyzed by Gemini without RAG.`;
+
+    try {
+      const result = await chat.sendMessage(reanalysisPrompt);
+      const response = await result.response;
+      const text = response.text();
+
+      const updatedChatHistory = [...(geminiChatHistory || []),
+        { role: 'user', parts: [{ text: reanalysisPrompt }] },
+        { role: 'model', parts: [{ text: text }] }
+      ];
+      await supabaseClient.from('cases').update({ gemini_chat_history: updatedChatHistory }).eq('id', caseId);
+
+      await updateCaseData(supabaseClient, caseId, text);
+      await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'AI', 'Re-analysis Completed', text, 'completed');
+      responseMessage = 'Google Gemini completed full re-analysis.';
+    } catch (geminiError: any) {
+      console.error('Error interacting with Gemini during re-analysis:', geminiError);
+      await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'Error Handler', 'Re-analysis Failed', `Failed to complete re-analysis with Gemini: ${geminiError.message}`, 'error');
+      throw new Error(`Failed to complete re-analysis with Gemini: ${geminiError.message}`);
+    }
+
+    // Update case status to 'In Progress'
+    await supabaseClient
+      .from('cases')
+      .update({ status: 'In Progress', last_updated: new Date().toISOString() })
+      .eq('id', caseId);
+
   } else {
     throw new Error(`Unsupported command for Gemini: ${command}`);
   }
@@ -584,8 +728,8 @@ serve(async (req) => {
         userId,
         command,
         payload,
-        openaiThreadId,
-        openaiAssistantId
+        openai_thread_id,
+        openai_assistant_id
       );
     } else if (ai_model === 'gemini') {
       responseMessage = await handleGeminiCommand(
