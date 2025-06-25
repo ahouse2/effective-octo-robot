@@ -51,6 +51,102 @@ const Dashboard = () => {
     fetchDashboardData();
   }, []);
 
+  const renderDashboardContent = () => {
+    if (totalCases === 0) {
+      return (
+        <div className="text-center py-16 max-w-2xl mx-auto">
+          <h2 className="text-3xl font-bold mb-4">Welcome to Family Law AI</h2>
+          <p className="text-xl text-muted-foreground mb-8">
+            Your specialized tool for evidence analysis in California family law cases.
+          </p>
+          <p className="mb-8">It looks like you don't have any cases yet. Get started by creating your first analysis.</p>
+          <Link to="/evidence-analysis">
+            <Button size="lg">Start Your First Analysis</Button>
+          </Link>
+        </div>
+      );
+    }
+
+    return (
+      <>
+        {/* Summary Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 max-w-4xl mx-auto">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Cases</CardTitle>
+              <Gavel className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{totalCases}</div>
+              <p className="text-xs text-muted-foreground">
+                All cases managed
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">In Progress</CardTitle>
+              <Clock className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{casesInProgress}</div>
+              <p className="text-xs text-muted-foreground">
+                Analyses currently running
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Completed Analyses</CardTitle>
+              <FileText className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{analysesCompleted}</div>
+              <p className="text-xs text-muted-foreground">
+                Analyses successfully finished
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Recent Activity Section */}
+        <Card className="max-w-4xl mx-auto">
+          <CardHeader>
+            <CardTitle>Recent Activity</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {recentActivities.length > 0 ? (
+              <ul className="space-y-4">
+                {recentActivities.map((activity) => (
+                  <li key={activity.id} className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium">{activity.status}: <span className="text-primary">{activity.name}</span></p>
+                      <p className="text-sm text-muted-foreground">{new Date(activity.last_updated).toLocaleDateString()}</p>
+                    </div>
+                    <Link to={`/agent-interaction/${activity.id}`}>
+                      <Button variant="outline" size="sm">View Analysis</Button>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">No recent activity.</div>
+            )}
+            <Separator className="my-6" />
+            <div className="flex justify-center space-x-4">
+              <Link to="/evidence-analysis">
+                <Button>Start New Analysis</Button>
+              </Link>
+              <Link to="/case-management">
+                <Button variant="outline">View All Cases</Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      </>
+    );
+  };
+
   return (
     <Layout>
       <div className="container mx-auto py-8">
@@ -61,82 +157,7 @@ const Dashboard = () => {
         ) : error ? (
           <div className="text-center py-8 text-red-500">{error}</div>
         ) : (
-          <>
-            {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 max-w-4xl mx-auto">
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Total Cases</CardTitle>
-                  <Gavel className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{totalCases}</div>
-                  <p className="text-xs text-muted-foreground">
-                    All cases managed
-                  </p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">In Progress</CardTitle>
-                  <Clock className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{casesInProgress}</div>
-                  <p className="text-xs text-muted-foreground">
-                    Analyses currently running
-                  </p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Completed Analyses</CardTitle>
-                  <FileText className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{analysesCompleted}</div>
-                  <p className="text-xs text-muted-foreground">
-                    Analyses successfully finished
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Recent Activity Section */}
-            <Card className="max-w-4xl mx-auto">
-              <CardHeader>
-                <CardTitle>Recent Activity</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {recentActivities.length > 0 ? (
-                  <ul className="space-y-4">
-                    {recentActivities.map((activity) => (
-                      <li key={activity.id} className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium">{activity.status}: <span className="text-primary">{activity.name}</span></p>
-                          <p className="text-sm text-muted-foreground">{new Date(activity.last_updated).toLocaleDateString()}</p>
-                        </div>
-                        <Link to={`/agent-interaction/${activity.id}`}> {/* Updated Link */}
-                          <Button variant="outline" size="sm">View Analysis</Button>
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <div className="text-center py-8 text-muted-foreground">No recent activity.</div>
-                )}
-                <Separator className="my-6" />
-                <div className="flex justify-center space-x-4">
-                  <Link to="/evidence-analysis">
-                    <Button>Start New Analysis</Button>
-                  </Link>
-                  <Link to="/case-management">
-                    <Button variant="outline">View All Cases</Button>
-                  </Link>
-                </div>
-              </CardContent>
-            </Card>
-          </>
+          renderDashboardContent()
         )}
       </div>
     </Layout>

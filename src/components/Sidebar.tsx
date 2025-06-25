@@ -1,7 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Home, FolderKanban, Scale, Settings, Gavel, FileText, BotMessageSquare, User, LogOut } from "lucide-react";
+import { FolderKanban, Settings, Gavel, FileText, BotMessageSquare, User, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./ThemeToggle";
 import { supabase } from "@/integrations/supabase/client";
@@ -34,12 +34,6 @@ export function Sidebar({ className }: SidebarProps) {
             Family Law AI
           </h2>
           <div className="space-y-1">
-            <Link to="/">
-              <Button variant="ghost" className="w-full justify-start">
-                <Home className="mr-2 h-4 w-4" />
-                Home
-              </Button>
-            </Link>
             <Link to="/dashboard">
               <Button variant="ghost" className="w-full justify-start">
                 <FolderKanban className="mr-2 h-4 w-4" />
@@ -77,7 +71,7 @@ export function Sidebar({ className }: SidebarProps) {
                 Profile
               </Button>
             </Link>
-            <Link to="/app-settings"> {/* Updated Link */}
+            <Link to="/app-settings">
               <Button variant="ghost" className="w-full justify-start">
                 <Settings className="mr-2 h-4 w-4" />
                 App Settings

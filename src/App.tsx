@@ -3,14 +3,13 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import Index from "./pages/Index";
 import Dashboard from "./pages/Dashboard";
 import EvidenceAnalysis from "./pages/EvidenceAnalysis";
 import CaseManagement from "./pages/CaseManagement";
 import AgentInteraction from "./pages/AgentInteraction";
 import UserProfile from "./pages/UserProfile";
 import AppSettings from "./pages/AppSettings";
-import CaseDetails from "./pages/CaseDetails"; // Import the new CaseDetails page
+import CaseDetails from "./pages/CaseDetails";
 import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
 import { ThemeProvider } from "next-themes";
@@ -28,12 +27,12 @@ const App = () => (
           <SessionContextProvider>
             <Routes>
               <Route path="/login" element={<Login />} />
-              <Route path="/" element={<Index />} />
+              <Route path="/" element={<Dashboard />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/evidence-analysis" element={<EvidenceAnalysis />} />
               <Route path="/case-management" element={<CaseManagement />} />
               <Route path="/agent-interaction/:caseId" element={<AgentInteraction />} />
-              <Route path="/case-details/:caseId" element={<CaseDetails />} /> {/* Add the new route here */}
+              <Route path="/case-details/:caseId" element={<CaseDetails />} />
               <Route path="/profile" element={<UserProfile />} />
               <Route path="/app-settings" element={<AppSettings />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
