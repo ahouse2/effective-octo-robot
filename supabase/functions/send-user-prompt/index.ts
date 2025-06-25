@@ -49,7 +49,20 @@ serve(async (req) => {
       throw new Error('Failed to record user prompt.');
     }
 
-    // 2. Invoke the AI Orchestrator Edge Function
+    // 2. Parse for @-mentioned filename
+    const mentionRegex = /@([\w.-]+)/;
+    const match = promptContent.match(mentionRegex);
+
+    let mentionedFilename = null;
+    let finalPrompt = promptContent;
+
+    if (match) {
+      mentionedFilename = match[1];
+      finalPrompt = promptContent.replace(mentionRegex, '').trim();
+      console.log(`User mentioned file: ${mentionedFilename}. Remaining prompt: "${finalPrompt}"`);
+    }
+
+    // 3. Invoke the AI Orchestrator Edge Function
     console.log(`Invoking AI Orchestrator for user prompt on case: ${caseId}`);
     const { data: orchestratorResponse, error: orchestratorError } = await supabaseClient.functions.invoke(
       'ai-orchestrator',
@@ -57,7 +70,10 @@ serve(async (req) => {
         body: JSON.stringify({
           caseId: caseId,
           command: 'user_prompt',
-          payload: { promptContent: promptContent },
+          payload: { 
+            promptContent: finalPrompt,
+            mentionedFilename: mentionedFilename // This can be null
+          },
         }),
         headers: { 'Content-Type': 'application/json', 'x-supabase-user-id': userId },
       }

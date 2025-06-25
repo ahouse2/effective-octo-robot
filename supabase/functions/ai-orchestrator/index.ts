@@ -156,45 +156,6 @@ async function pollOpenAIRun(
   return runStatus;
 }
 
-// Helper function to upload files to OpenAI
-async function uploadFilesToOpenAI(
-  supabaseClient: SupabaseClient,
-  openai: OpenAI,
-  caseId: string,
-  userId: string,
-  fileNames: string[]
-): Promise<string[]> {
-  const openaiFileIds: string[] = [];
-  for (const fileName of fileNames) {
-    const filePath = `${userId}/${caseId}/${fileName}`;
-    const { data: fileBlob, error: downloadError } = await supabaseClient.storage
-      .from('evidence-files')
-      .download(filePath);
-
-    if (downloadError) {
-      console.error(`Error downloading file ${fileName} from Supabase Storage:`, downloadError);
-      await insertAgentActivity(supabaseClient, caseId, 'File Processor', 'Error Handler', 'File Download Failed', `Failed to download ${fileName} from Supabase Storage: ${downloadError.message}`, 'error');
-      throw new Error(`Failed to download file ${fileName}.`);
-    }
-
-    if (fileBlob) {
-      try {
-        const openaiFile = await openai.files.create({
-          file: new File([fileBlob], fileName),
-          purpose: 'assistants',
-        });
-        openaiFileIds.push(openaiFile.id);
-        await insertAgentActivity(supabaseClient, caseId, 'File Processor', 'OpenAI Integration', 'File Uploaded to OpenAI', `Successfully uploaded ${fileName} to OpenAI (ID: ${openaiFile.id}).`, 'completed');
-      } catch (openaiUploadError: any) {
-        console.error(`Error uploading file ${fileName} to OpenAI:`, openaiUploadError);
-        await insertAgentActivity(supabaseClient, caseId, 'File Processor', 'Error Handler', 'OpenAI File Upload Failed', `Failed to upload ${fileName} to OpenAI: ${openaiUploadError.message}`, 'error');
-        throw new Error(`Failed to upload file ${fileName} to OpenAI.`);
-      }
-    }
-  }
-  return openaiFileIds;
-}
-
 // Main OpenAI Handler
 async function handleOpenAICommand(
   supabaseClient: SupabaseClient,
@@ -244,14 +205,36 @@ async function handleOpenAICommand(
     `;
 
   if (command === 'user_prompt') {
-    const { promptContent } = payload;
-    console.log(`OpenAI: Processing user prompt for case ${caseId}: "${promptContent}"`);
+    const { promptContent, mentionedFilename } = payload;
+    let attachments: { file_id: string; tools: { type: string }[] }[] = [];
+    let finalPromptContent = promptContent;
+
+    if (mentionedFilename) {
+      console.log(`User mentioned file: ${mentionedFilename}`);
+      const { data: fileMeta, error: metaError } = await supabaseClient
+        .from('case_files_metadata')
+        .select('openai_file_id')
+        .eq('case_id', caseId)
+        .or(`suggested_name.eq.${mentionedFilename},file_name.eq.${mentionedFilename}`)
+        .limit(1)
+        .single();
+      
+      if (metaError || !fileMeta || !fileMeta.openai_file_id) {
+        console.warn(`Could not find OpenAI file ID for mentioned file: ${mentionedFilename}. Error: ${metaError?.message}`);
+        finalPromptContent = `I tried to reference the file "${mentionedFilename}" but couldn't find it. Please answer this question generally: ${promptContent}`;
+      } else {
+        console.log(`Found OpenAI file ID: ${fileMeta.openai_file_id} for ${mentionedFilename}`);
+        attachments.push({ file_id: fileMeta.openai_file_id, tools: [{ type: "file_search" }] });
+        finalPromptContent = `The user is asking a question specifically about the attached file, "${mentionedFilename}". Please focus your answer on this file. The user's question is: ${promptContent}`;
+      }
+    }
 
     await openai.beta.threads.messages.create(
       openaiThreadId,
       {
         role: "user",
-        content: promptContent,
+        content: finalPromptContent,
+        attachments: attachments,
       }
     );
 
@@ -289,17 +272,15 @@ async function handleOpenAICommand(
     }
 
   } else if (command === 'process_additional_files') {
-    const { newFileNames } = payload;
+    const { newFileNames, attachments } = payload;
     console.log(`OpenAI: Processing additional files for case ${caseId}: ${newFileNames.join(', ')}`);
-
-    const openaiFileIds = await uploadFilesToOpenAI(supabaseClient, openai, caseId, userId, newFileNames);
 
     await openai.beta.threads.messages.create(
       openaiThreadId,
       {
         role: "user",
         content: `New files have been uploaded for analysis: ${newFileNames.join(', ')}. Please incorporate them into your ongoing analysis.`,
-        attachments: openaiFileIds.map(fileId => ({ file_id: fileId, tools: [{ type: "file_search" }] })),
+        attachments: attachments,
       }
     );
 
@@ -417,16 +398,16 @@ ${structuredOutputInstruction}`;
 
     const { data: caseFiles, error: filesError } = await supabaseClient
       .from('case_files_metadata')
-      .select('file_name')
-      .eq('case_id', caseId);
+      .select('openai_file_id')
+      .eq('case_id', caseId)
+      .not('openai_file_id', 'is', null);
 
     if (filesError) {
       console.error('Error fetching case files for re-analysis:', filesError);
       throw new Error('Failed to fetch case files for re-analysis.');
     }
 
-    const fileNames = caseFiles?.map(f => f.file_name) || [];
-    const openaiFileIds = await uploadFilesToOpenAI(supabaseClient, openai, caseId, userId, fileNames);
+    const attachments = caseFiles?.map(f => ({ file_id: f.openai_file_id, tools: [{ type: "file_search" }] })) || [];
 
     const { data: caseData, error: caseFetchError } = await supabaseClient
       .from('cases')
@@ -452,7 +433,7 @@ ${structuredOutputInstruction}`;
       {
         role: "user",
         content: reanalysisPrompt,
-        attachments: openaiFileIds.map(fileId => ({ file_id: fileId, tools: [{ type: "file_search" }] })),
+        attachments: attachments,
       }
     );
 
@@ -522,16 +503,44 @@ async function handleGeminiCommand(
   });
 
   if (command === 'user_prompt') {
-    const { promptContent } = payload;
-    console.log(`Gemini: Processing user prompt for case ${caseId}: "${promptContent}"`);
+    const { promptContent, mentionedFilename } = payload;
+    let finalPrompt = promptContent;
+
+    if (mentionedFilename) {
+      console.log(`Gemini: User mentioned file: ${mentionedFilename}`);
+      const { data: fileMeta, error: metaError } = await supabaseClient
+        .from('case_files_metadata')
+        .select('file_path')
+        .eq('case_id', caseId)
+        .or(`suggested_name.eq.${mentionedFilename},file_name.eq.${mentionedFilename}`)
+        .limit(1)
+        .single();
+      
+      if (metaError || !fileMeta) {
+        console.warn(`Could not find file path for mentioned file: ${mentionedFilename}. Error: ${metaError?.message}`);
+        finalPrompt = `I tried to reference the file "${mentionedFilename}" but couldn't find it. Please answer this question generally: ${promptContent}`;
+      } else {
+        const { data: fileBlob, error: downloadError } = await supabaseClient.storage
+          .from('evidence-files')
+          .download(fileMeta.file_path);
+        
+        if (downloadError || !fileBlob) {
+          console.error(`Failed to download file content for ${mentionedFilename}:`, downloadError);
+          finalPrompt = `I tried to reference the file "${mentionedFilename}" but couldn't download its content. Please answer this question generally: ${promptContent}`;
+        } else {
+          const fileText = await fileBlob.text();
+          finalPrompt = `The user is asking a question specifically about the file named "${mentionedFilename}". Here is the full content of that file:\n\n---FILE CONTENT START---\n${fileText}\n---FILE CONTENT END---\n\nNow, please answer the user's question based on the file's content. The question is: "${promptContent}"`;
+        }
+      }
+    }
 
     try {
-      const result = await chat.sendMessage(promptContent);
+      const result = await chat.sendMessage(finalPrompt);
       const response = await result.response;
       const text = response.text();
 
       const updatedChatHistory = [...(geminiChatHistory || []),
-        { role: 'user', parts: [{ text: promptContent }] },
+        { role: 'user', parts: [{ text: finalPrompt }] },
         { role: 'model', parts: [{ text: text }] }
       ];
       await supabaseClient.from('cases').update({ gemini_chat_history: updatedChatHistory }).eq('id', caseId);

@@ -67,6 +67,7 @@ serve(async (req) => {
       throw new Error('Failed to insert initial case theory.');
     }
 
+    let insertedMetadata: any[] | null = null;
     // 3. Record file metadata and trigger categorization
     if (fileNames && fileNames.length > 0) {
       const fileMetadataInserts = fileNames.map((fileName: string) => ({
@@ -76,10 +77,12 @@ serve(async (req) => {
         description: `Initial upload for case ${caseId}`,
       }));
 
-      const { data: insertedMetadata, error: metadataError } = await supabaseClient
+      const { data, error: metadataError } = await supabaseClient
         .from('case_files_metadata')
         .insert(fileMetadataInserts)
         .select('id, file_name, file_path');
+      
+      insertedMetadata = data;
 
       if (metadataError) {
         console.error('Error inserting file metadata:', metadataError);
@@ -154,53 +157,55 @@ serve(async (req) => {
         apiKey: Deno.env.get('OPENAI_API_KEY'),
       });
 
-      // Upload files to OpenAI and collect file_ids
-      const openaiFileIds: string[] = [];
-      for (const fileName of fileNames) {
-        const filePath = `${userId}/${caseId}/${fileName}`;
-        const { data: fileBlob, error: downloadError } = await supabaseClient.storage
-          .from('evidence-files')
-          .download(filePath);
+      // Upload files to OpenAI and update metadata
+      const openaiFileAttachments: { file_id: string; tools: { type: string }[] }[] = [];
+      if (insertedMetadata) {
+        for (const meta of insertedMetadata) {
+          const filePath = meta.file_path;
+          const fileName = meta.file_name;
+          
+          const { data: fileBlob, error: downloadError } = await supabaseClient.storage
+            .from('evidence-files')
+            .download(filePath);
 
-        if (downloadError) {
-          console.error(`Error downloading file ${fileName} from Supabase Storage:`, downloadError);
-          await supabaseClient.from('agent_activities').insert({
-            case_id: caseId,
-            agent_name: 'File Processor',
-            agent_role: 'Error Handler',
-            activity_type: 'File Download Failed',
-            content: `Failed to download ${fileName} from Supabase Storage: ${downloadError.message}`,
-            status: 'error',
-          });
-          throw new Error(`Failed to download file ${fileName}.`);
-        }
+          if (downloadError) {
+            console.error(`Error downloading file ${fileName} from Supabase Storage:`, downloadError);
+            await supabaseClient.from('agent_activities').insert({
+              case_id: caseId, agent_name: 'File Processor', agent_role: 'Error Handler',
+              activity_type: 'File Download Failed', content: `Failed to download ${fileName} from Supabase Storage: ${downloadError.message}`, status: 'error',
+            });
+            continue; // Skip this file
+          }
 
-        if (fileBlob) {
-          try {
-            const openaiFile = await openai.files.create({
-              file: new File([fileBlob], fileName),
-              purpose: 'assistants',
-            });
-            openaiFileIds.push(openaiFile.id);
-            await supabaseClient.from('agent_activities').insert({
-              case_id: caseId,
-              agent_name: 'File Processor',
-              agent_role: 'OpenAI Integration',
-              activity_type: 'File Uploaded to OpenAI',
-              content: `Successfully uploaded ${fileName} to OpenAI (ID: ${openaiFile.id}).`,
-              status: 'completed',
-            });
-          } catch (openaiUploadError: any) {
-            console.error(`Error uploading file ${fileName} to OpenAI:`, openaiUploadError);
-            await supabaseClient.from('agent_activities').insert({
-              case_id: caseId,
-              agent_name: 'File Processor',
-              agent_role: 'Error Handler',
-              activity_type: 'OpenAI File Upload Failed',
-              content: `Failed to upload ${fileName} to OpenAI: ${openaiUploadError.message}`,
-              status: 'error',
-            });
-            throw new Error(`Failed to upload file ${fileName} to OpenAI.`);
+          if (fileBlob) {
+            try {
+              const openaiFile = await openai.files.create({
+                file: new File([fileBlob], fileName),
+                purpose: 'assistants',
+              });
+              openaiFileAttachments.push({ file_id: openaiFile.id, tools: [{ type: "file_search" }] });
+
+              // Update the metadata row with the openai_file_id
+              const { error: updateMetaError } = await supabaseClient
+                .from('case_files_metadata')
+                .update({ openai_file_id: openaiFile.id })
+                .eq('id', meta.id);
+
+              if (updateMetaError) {
+                console.error(`Failed to update metadata for ${fileName} with OpenAI file ID:`, updateMetaError);
+              }
+
+              await supabaseClient.from('agent_activities').insert({
+                case_id: caseId, agent_name: 'File Processor', agent_role: 'OpenAI Integration',
+                activity_type: 'File Uploaded to OpenAI', content: `Successfully uploaded ${fileName} to OpenAI (ID: ${openaiFile.id}).`, status: 'completed',
+              });
+            } catch (openaiUploadError: any) {
+              console.error(`Error uploading file ${fileName} to OpenAI:`, openaiUploadError);
+              await supabaseClient.from('agent_activities').insert({
+                case_id: caseId, agent_name: 'File Processor', agent_role: 'Error Handler',
+                activity_type: 'OpenAI File Upload Failed', content: `Failed to upload ${fileName} to OpenAI: ${openaiUploadError.message}`, status: 'error',
+              });
+            }
           }
         }
       }
@@ -304,7 +309,7 @@ serve(async (req) => {
         {
           role: "user",
           content: initialMessageContent,
-          attachments: openaiFileIds.map(fileId => ({ file_id: fileId, tools: [{ type: "file_search" }] })),
+          attachments: openaiFileAttachments,
         }
       );
       console.log('Added initial message and files to thread.');

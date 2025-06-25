@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import OpenAI from 'https://esm.sh/openai@4.52.7';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,8 +16,8 @@ serve(async (req) => {
     const { caseId, newFileNames } = await req.json();
     const userId = req.headers.get('x-supabase-user-id'); // Get user ID from header
 
-    if (!caseId || !newFileNames || !Array.isArray(newFileNames) || newFileNames.length === 0) {
-      return new Response(JSON.stringify({ error: 'Case ID and new file names are required' }), {
+    if (!caseId || !userId || !newFileNames || !Array.isArray(newFileNames) || newFileNames.length === 0) {
+      return new Response(JSON.stringify({ error: 'Case ID, User ID, and new file names are required' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400,
       });
@@ -33,23 +34,16 @@ serve(async (req) => {
     );
 
     // 1. Record an agent activity for the new files being added
-    const { error: activityError } = await supabaseClient
-      .from('agent_activities')
-      .insert({
-        case_id: caseId,
-        agent_name: 'System',
-        agent_role: 'File Processor',
-        activity_type: 'New Evidence Uploaded',
-        content: `User uploaded new files for analysis: ${newFileNames.join(', ')}.`,
-        status: 'processing',
-      });
+    await supabaseClient.from('agent_activities').insert({
+      case_id: caseId,
+      agent_name: 'System',
+      agent_role: 'File Processor',
+      activity_type: 'New Evidence Uploaded',
+      content: `User uploaded new files for analysis: ${newFileNames.join(', ')}.`,
+      status: 'processing',
+    });
 
-    if (activityError) {
-      console.error('Error inserting new file activity:', activityError);
-      throw new Error('Failed to record new file upload activity.');
-    }
-
-    // 2. Record file metadata and trigger categorization
+    // 2. Record file metadata
     const fileMetadataInserts = newFileNames.map((fileName: string) => ({
       case_id: caseId,
       file_name: fileName,
@@ -64,93 +58,107 @@ serve(async (req) => {
 
     if (metadataError) {
       console.error('Error inserting additional file metadata:', metadataError);
-      await supabaseClient.from('agent_activities').insert({
-        case_id: caseId,
-        agent_name: 'System',
-        agent_role: 'Database Error',
-        activity_type: 'File Metadata Error',
-        content: `Failed to record metadata for some additional files: ${metadataError.message}`,
-        status: 'error',
-      });
-    } else if (insertedMetadata) {
-        const categorizationPromises = insertedMetadata.map(meta =>
-            supabaseClient.functions.invoke('file-categorizer', {
-                body: JSON.stringify({
-                    fileId: meta.id,
-                    fileName: meta.file_name,
-                    filePath: meta.file_path,
-                }),
-            })
-        );
-        Promise.allSettled(categorizationPromises).then(results => {
-            results.forEach(result => {
-                if (result.status === 'rejected') {
-                    console.error("A file categorization task failed:", result.reason);
-                }
-            });
-        });
+      throw new Error(`Failed to record metadata for additional files: ${metadataError.message}`);
     }
 
-    // 3. Update the case status to 'In Progress' if it was 'Analysis Complete'
+    // 3. Trigger categorization for new files
+    if (insertedMetadata) {
+      const categorizationPromises = insertedMetadata.map(meta =>
+          supabaseClient.functions.invoke('file-categorizer', {
+              body: JSON.stringify({
+                  fileId: meta.id,
+                  fileName: meta.file_name,
+                  filePath: meta.file_path,
+              }),
+          })
+      );
+      Promise.allSettled(categorizationPromises).then(results => {
+          results.forEach(result => {
+              if (result.status === 'rejected') {
+                  console.error("A file categorization task failed:", result.reason);
+              }
+          });
+      });
+    }
+
+    // 4. Fetch case AI model
     const { data: caseData, error: caseFetchError } = await supabaseClient
       .from('cases')
-      .select('status')
+      .select('ai_model, status')
       .eq('id', caseId)
       .single();
 
-    if (caseFetchError) {
-      console.error('Error fetching case status:', caseFetchError);
-      // Don't block, but log the error
-    } else if (caseData && caseData.status === 'Analysis Complete') {
-      const { error: updateCaseError } = await supabaseClient
-        .from('cases')
-        .update({ status: 'In Progress', last_updated: new Date().toISOString() })
-        .eq('id', caseId);
+    if (caseFetchError || !caseData) {
+      throw new Error('Failed to fetch case details to determine AI model.');
+    }
 
-      if (updateCaseError) {
-        console.error('Error updating case status to In Progress:', updateCaseError);
-        // Don't block, but log the error
-      } else {
-        // Log an activity for status change
-        await supabaseClient.from('agent_activities').insert({
-          case_id: caseId,
-          agent_name: 'System',
-          agent_role: 'Case Manager',
-          activity_type: 'Case Status Update',
-          content: 'Case status changed to "In Progress" due to new evidence upload.',
-          status: 'completed',
-        });
+    let attachments: { file_id: string; tools: { type: string }[] }[] = [];
+
+    // 5. If OpenAI, upload files to OpenAI and update metadata
+    if (caseData.ai_model === 'openai' && insertedMetadata) {
+      const openai = new OpenAI({ apiKey: Deno.env.get('OPENAI_API_KEY') });
+      for (const meta of insertedMetadata) {
+        const { data: fileBlob, error: downloadError } = await supabaseClient.storage
+          .from('evidence-files')
+          .download(meta.file_path);
+
+        if (downloadError || !fileBlob) {
+          console.error(`Failed to download ${meta.file_name} for OpenAI upload:`, downloadError);
+          continue;
+        }
+
+        try {
+          const openaiFile = await openai.files.create({
+            file: new File([fileBlob], meta.file_name),
+            purpose: 'assistants',
+          });
+          attachments.push({ file_id: openaiFile.id, tools: [{ type: "file_search" }] });
+
+          await supabaseClient
+            .from('case_files_metadata')
+            .update({ openai_file_id: openaiFile.id })
+            .eq('id', meta.id);
+        } catch (uploadError) {
+          console.error(`Failed to upload ${meta.file_name} to OpenAI:`, uploadError);
+        }
       }
     }
 
-    // 4. Invoke the AI Orchestrator Edge Function
-    console.log(`Invoking AI Orchestrator for new files on case: ${caseId}`);
-    const { data: orchestratorResponse, error: orchestratorError } = await supabaseClient.functions.invoke(
+    // 6. Update case status to 'In Progress' if it was 'Analysis Complete'
+    if (caseData.status === 'Analysis Complete') {
+      await supabaseClient
+        .from('cases')
+        .update({ status: 'In Progress', last_updated: new Date().toISOString() })
+        .eq('id', caseId);
+      await supabaseClient.from('agent_activities').insert({
+        case_id: caseId,
+        agent_name: 'System',
+        agent_role: 'Case Manager',
+        activity_type: 'Case Status Update',
+        content: 'Case status changed to "In Progress" due to new evidence upload.',
+        status: 'completed',
+      });
+    }
+
+    // 7. Invoke the AI Orchestrator Edge Function
+    const { error: orchestratorError } = await supabaseClient.functions.invoke(
       'ai-orchestrator',
       {
         body: JSON.stringify({
           caseId: caseId,
           command: 'process_additional_files',
-          payload: { newFileNames: newFileNames },
+          payload: { 
+            newFileNames: newFileNames,
+            attachments: attachments, // Pass the attachments for OpenAI
+          },
         }),
         headers: { 'Content-Type': 'application/json', 'x-supabase-user-id': userId },
       }
     );
 
     if (orchestratorError) {
-      console.error('Error invoking AI Orchestrator:', orchestratorError);
-      await supabaseClient.from('agent_activities').insert({
-        case_id: caseId,
-        agent_name: 'AI Orchestrator',
-        agent_role: 'Error Handler',
-        activity_type: 'Orchestrator Invocation Failed (New Files)',
-        content: `Failed to invoke AI Orchestrator for new files: ${orchestratorError.message}`,
-        status: 'error',
-      });
       throw new Error(`Failed to invoke AI Orchestrator: ${orchestratorError.message}`);
     }
-
-    console.log('AI Orchestrator response:', orchestratorResponse);
 
     return new Response(JSON.stringify({ message: 'Additional files sent to AI Orchestrator successfully', caseId }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

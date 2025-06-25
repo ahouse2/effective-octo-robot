@@ -7,12 +7,11 @@ import { CaseTheorySummary } from "@/components/CaseTheorySummary";
 import { CaseInsightsCard } from "@/components/CaseInsightsCard";
 import { CaseTimeline } from "@/components/CaseTimeline";
 import { CaseFilesDisplay } from "@/components/CaseFilesDisplay";
-import { OrganizedFilesCard } from "@/components/OrganizedFilesCard"; // Import the new component
+import { OrganizedFilesCard } from "@/components/OrganizedFilesCard";
 import { CaseChatDisplay } from "@/components/CaseChatDisplay";
 import { useParams, useNavigate } from "react-router-dom";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Terminal, Send, Lightbulb, Upload, Edit, Search, RefreshCw } from "lucide-react";
-import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,6 +19,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useSession } from "@/components/SessionContextProvider";
 import { EditCaseDetailsDialog } from "@/components/EditCaseDetailsDialog";
+import { FileMentionInput } from "@/components/FileMentionInput"; // Import the new component
 
 interface CaseDetails {
   name: string;
@@ -310,9 +310,9 @@ const AgentInteraction = () => {
                   <p className="mb-2">You can send direct messages or use special commands:</p>
                   <ul className="list-disc list-inside space-y-1">
                     <li>
-                      <span className="font-semibold">/search [query]</span>: Search within uploaded case files.
+                      <span className="font-semibold">@filename</span>: Ask a question about a specific file. Type '@' to see a list of available files.
                       <br />
-                      <span className="text-xs italic">Example: /search "financial statements for 2022"</span>
+                      <span className="text-xs italic">Example: @2023-Bank-Statement.pdf what was the total for October?</span>
                     </li>
                     <li>
                       <span className="font-semibold">Any other message</span>: Will be interpreted as a general instruction or question for the agents.
@@ -321,10 +321,11 @@ const AgentInteraction = () => {
                 </CardContent>
               </Card>
               <div className="flex items-center space-x-2 mt-auto">
-                <Textarea
-                  placeholder="Send a message or prompt to the agents... (e.g., /search 'financial records')"
+                <FileMentionInput
+                  caseId={caseId}
+                  placeholder="Send a message, or type '@' to mention a file..."
                   value={userPrompt}
-                  onChange={(e) => setUserPrompt(e.target.value)}
+                  onChange={setUserPrompt}
                   onKeyPress={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
@@ -376,7 +377,7 @@ const AgentInteraction = () => {
 
             <CaseTheorySummary caseId={caseId} />
             <CaseInsightsCard caseId={caseId} />
-            <OrganizedFilesCard caseId={caseId} /> {/* Added new component */}
+            <OrganizedFilesCard caseId={caseId} />
             <CaseFilesDisplay caseId={caseId} />
             {/* New Card for File Upload */}
             <Card>
