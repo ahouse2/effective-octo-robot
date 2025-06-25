@@ -77,24 +77,30 @@ async function handleOpenAIToolCall(supabaseClient: SupabaseClient, caseId: stri
 }
 
 async function pollOpenAIRun(openai: OpenAI, supabaseClient: SupabaseClient, caseId: string, threadId: string, runId: string): Promise<string> {
-  while (true) {
-    await new Promise(resolve => setTimeout(resolve, 2000));
+  const startTime = Date.now();
+  const TIMEOUT_MS = 55000; // 55 seconds, leaving a 5s buffer for the edge function to wrap up.
+
+  while (Date.now() - startTime < TIMEOUT_MS) {
     const retrievedRun = await openai.beta.threads.runs.retrieve(threadId, runId);
     console.log(`OpenAI Run Status for case ${caseId}: ${retrievedRun.status}`);
 
-    if (['queued', 'in_progress', 'cancelling'].includes(retrievedRun.status)) {
-      continue;
+    if (['completed', 'failed', 'cancelled', 'expired'].includes(retrievedRun.status)) {
+      return retrievedRun.status;
     }
+
     if (retrievedRun.status === 'requires_action' && retrievedRun.required_action?.type === 'submit_tool_outputs') {
       const toolOutputs = await Promise.all(retrievedRun.required_action.submit_tool_outputs.tool_calls.map(tc => handleOpenAIToolCall(supabaseClient, caseId, tc)));
       if (toolOutputs.length > 0) {
         await openai.beta.threads.runs.submitToolOutputs(threadId, runId, { tool_outputs: toolOutputs });
       }
-      continue;
     }
-    return retrievedRun.status;
+    
+    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before next poll
   }
+
+  return 'timed_out'; // Return a special status if the loop finishes without a terminal status.
 }
+
 
 async function handleOpenAICommand(supabaseClient: SupabaseClient, openai: OpenAI, caseId: string, command: string, payload: any, openaiThreadId: string, openaiAssistantId: string) {
   if (command === 'user_prompt') {
@@ -121,7 +127,10 @@ async function handleOpenAICommand(supabaseClient: SupabaseClient, openai: OpenA
         await updateCaseData(supabaseClient, caseId, assistantResponse);
         await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'AI', 'Response', assistantResponse, 'completed');
       }
+    } else if (finalStatus === 'timed_out') {
+      await insertAgentActivity(supabaseClient, caseId, 'AI Orchestrator', 'System', 'Processing Timeout', 'The AI is taking longer than expected to respond. The analysis is still running in the background. You can ask for an update later.', 'completed');
     } else {
+      await insertAgentActivity(supabaseClient, caseId, 'AI Orchestrator', 'Error Handler', 'Run Failed', `The AI analysis run failed with status: ${finalStatus}.`, 'error');
       throw new Error(`OpenAI Assistant run failed with status: ${finalStatus}`);
     }
   }
@@ -169,6 +178,7 @@ async function setupNewOpenAICase(supabaseClient: SupabaseClient, openai: OpenAI
     await supabaseClient.from('cases').update({ openai_thread_id: thread.id, openai_assistant_id: assistant.id, status: 'In Progress' }).eq('id', caseId);
     await insertAgentActivity(supabaseClient, caseId, 'AI Orchestrator', 'Setup', 'OpenAI Setup Complete', `Assistant ID: ${assistant.id}, Thread ID: ${thread.id}. Analysis is running.`, 'completed');
 
+    // This is a long-running task, so we poll with a timeout.
     const finalStatus = await pollOpenAIRun(openai, supabaseClient, caseId, thread.id, run.id);
     if (finalStatus === 'completed') {
         const messages = await openai.beta.threads.messages.list(thread.id, { order: 'desc', limit: 1 });
@@ -177,8 +187,10 @@ async function setupNewOpenAICase(supabaseClient: SupabaseClient, openai: OpenAI
             await updateCaseData(supabaseClient, caseId, assistantResponse);
             await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'AI', 'Initial Analysis', assistantResponse, 'completed');
         }
+    } else if (finalStatus === 'timed_out') {
+        await insertAgentActivity(supabaseClient, caseId, 'AI Orchestrator', 'System', 'Processing Timeout', 'The initial AI analysis is taking longer than expected. It is still running in the background. You can ask for an update later.', 'completed');
     } else {
-        throw new Error(`Initial run failed with status: ${finalStatus}`);
+        await insertAgentActivity(supabaseClient, caseId, 'AI Orchestrator', 'Error Handler', 'Initial Run Failed', `The initial AI analysis run failed with status: ${finalStatus}.`, 'error');
     }
 }
 
@@ -199,12 +211,13 @@ serve(async (req) => {
         const { aiModel } = payload;
         if (aiModel === 'openai') {
             const openai = new OpenAI({ apiKey: Deno.env.get('OPENAI_API_KEY') });
+            // This is a long-running task, but the function handles timeouts gracefully.
             await setupNewOpenAICase(supabaseClient, openai, caseId, userId, payload);
         } else {
             await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'Setup', 'Setup Complete', 'Gemini case ready. Awaiting user prompt.', 'completed');
             await supabaseClient.from('cases').update({ status: 'In Progress' }).eq('id', caseId);
         }
-        return new Response(JSON.stringify({ message: 'AI setup completed in background.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
+        return new Response(JSON.stringify({ message: 'AI setup process initiated.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
     }
 
     const { data: caseData, error: caseError } = await supabaseClient.from('cases').select('ai_model, openai_thread_id, openai_assistant_id, gemini_chat_history').eq('id', caseId).single();
