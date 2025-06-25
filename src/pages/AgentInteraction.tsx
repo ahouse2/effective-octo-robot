@@ -92,8 +92,17 @@ const AgentInteraction = () => {
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files) {
-      setFilesToUpload(Array.from(event.target.files));
-      toast.info(`Selected ${event.target.files.length} files.`);
+      const allFiles = Array.from(event.target.files);
+      const validFiles = allFiles.filter(file => !file.name.startsWith('~') && !file.name.startsWith('.'));
+      const skippedCount = allFiles.length - validFiles.length;
+
+      setFilesToUpload(validFiles);
+      
+      let toastMessage = `Selected ${validFiles.length} valid files for upload.`;
+      if (skippedCount > 0) {
+        toastMessage += ` Skipped ${skippedCount} temporary or system file(s).`;
+      }
+      toast.info(toastMessage);
     }
   };
 
