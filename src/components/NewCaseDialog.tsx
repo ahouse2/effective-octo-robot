@@ -90,6 +90,7 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
     const loadingToastId = toast.loading("Creating new case...");
 
     try {
+      // Step 1: Create the case record in the database. This is a fast operation.
       const { data: caseData, error: caseError } = await supabase
         .from("cases")
         .insert([
@@ -115,28 +116,28 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
         throw new Error("Case data not returned after creation.");
       }
 
-      const { data: analysisData, error: analysisError } = await supabase.functions.invoke(
+      // Step 2: Asynchronously invoke the analysis function.
+      // We DO NOT await this. This is a "fire-and-forget" call to the background process.
+      supabase.functions.invoke(
         'start-analysis',
         {
           body: JSON.stringify({
             caseId: newCase.id,
-            fileNames: [],
+            fileNames: [], // No files are uploaded at this stage
             caseGoals: values.caseGoals,
             systemInstruction: values.systemInstruction,
             aiModel: values.aiModel,
             openaiAssistantId: values.openaiAssistantId || null,
           }),
         }
-      );
-
-      if (analysisError) {
+      ).catch(analysisError => {
+        // Log the error but don't fail the user-facing flow.
         console.error("Error initiating AI for new case:", analysisError);
-        toast.error("Failed to initialize AI for the new case. You may need to update case details or upload files to trigger AI setup.");
-      } else {
-        console.log("AI initialization for new case successful:", analysisData);
-      }
+        toast.error("Failed to initialize AI for the new case. The case has been created, but you may need to trigger analysis manually.");
+      });
 
-      toast.success("New case created successfully!");
+      // Step 3: Provide immediate feedback to the user.
+      toast.success("New case created successfully! AI analysis is starting in the background.", { id: loadingToastId });
       form.reset();
       setIsOpen(false);
 
@@ -148,10 +149,10 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
 
     } catch (err: any) {
       console.error("Submission error:", err);
-      toast.error(err.message || "An unexpected error occurred during case creation.");
+      toast.error(err.message || "An unexpected error occurred during case creation.", { id: loadingToastId });
     } finally {
       setIsSubmitting(false);
-      toast.dismiss(loadingToastId);
+      // The toast is managed above, so we don't need a final dismiss here.
     }
   };
 
@@ -292,7 +293,7 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
         </ScrollArea>
         <DialogFooter>
           <Button type="submit" form="new-case-form" disabled={isSubmitting}>
-            {isSubmitting ? "Creating..." : "Creating Case"}
+            {isSubmitting ? "Creating..." : "Create Case"}
           </Button>
         </DialogFooter>
       </DialogContent>
