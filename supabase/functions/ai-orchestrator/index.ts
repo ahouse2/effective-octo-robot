@@ -208,6 +208,41 @@ async function handleOpenAICommand(
 ): Promise<string> {
   let responseMessage = '';
 
+  const structuredOutputInstruction = `
+    When providing updates or summaries, especially after processing new information or a user prompt, please include structured JSON data within a markdown code block (e.g., \`\`\`json{...}\`\`\`). This JSON should contain updates to the case theory and/or new insights.
+
+    **Case Theory Update Schema (optional, include if theory changes):**
+    \`\`\`json
+    {
+      "theory_update": {
+        "fact_patterns": ["Updated fact 1", "Updated fact 2"],
+        "legal_arguments": ["Updated argument 1", "Updated argument 2"],
+        "potential_outcomes": ["Updated outcome 1", "Updated outcome 2"],
+        "status": "developing" | "refined" | "complete"
+      }
+    }
+    \`\`\`
+
+    **Case Insights Schema (optional, include if new insights are generated):**
+    \`\`\`json
+    {
+      "insights": [
+        {
+          "title": "Insight Title",
+          "description": "Detailed description of the insight.",
+          "insight_type": "key_fact" | "risk_assessment" | "outcome_trend" | "general"
+        },
+        {
+          "title": "Another Insight",
+          "description": "More details.",
+          "insight_type": "general"
+        }
+      ]
+    }
+    \`\`\`
+    You can combine both "theory_update" and "insights" in a single JSON block if applicable.
+    `;
+
   if (command === 'user_prompt') {
     const { promptContent } = payload;
     console.log(`OpenAI: Processing user prompt for case ${caseId}: "${promptContent}"`);
@@ -344,6 +379,39 @@ async function handleOpenAICommand(
       await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'Error Handler', 'Web Search Processing Failed', `OpenAI Assistant run for web search failed or ended with status: ${finalStatus}`, 'error');
       throw new Error(`OpenAI Assistant run for web search failed with status: ${finalStatus}`);
     }
+  } else if (command === 'update_assistant_instructions') {
+    console.log(`OpenAI: Updating assistant instructions for case ${caseId}`);
+
+    const { data: caseData, error: caseFetchError } = await supabaseClient
+      .from('cases')
+      .select('case_goals, system_instruction')
+      .eq('id', caseId)
+      .single();
+
+    if (caseFetchError || !caseData) {
+      console.error('Error fetching case data for instruction update:', caseFetchError);
+      throw new Error('Case not found or error fetching case details for instruction update.');
+    }
+
+    const newInstructions = `You are a specialized AI assistant for California family law cases. Your primary goal is to analyze evidence, identify key facts, legal arguments, and potential outcomes. You should be precise, objective, and focus on the legal implications of the provided documents. Always cite the source document when making claims.
+            
+User's Case Goals: ${caseData.case_goals || 'Not specified.'}
+User's System Instruction: ${caseData.system_instruction || 'None provided.'}
+            
+When responding, provide updates on your analysis progress, key findings, and any questions you have.
+${structuredOutputInstruction}`;
+
+    try {
+      await openai.beta.assistants.update(openaiAssistantId, {
+        instructions: newInstructions,
+      });
+      await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'Configuration', 'Instructions Updated', 'OpenAI Assistant instructions updated successfully.', 'completed');
+      responseMessage = 'OpenAI Assistant instructions updated.';
+    } catch (updateError: any) {
+      console.error('Error updating OpenAI Assistant instructions:', updateError);
+      await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'Error Handler', 'Instructions Update Failed', `Failed to update OpenAI Assistant instructions: ${updateError.message}`, 'error');
+      throw new Error(`Failed to update OpenAI Assistant instructions: ${updateError.message}`);
+    }
   } else {
     throw new Error(`Unsupported command for OpenAI: ${command}`);
   }
@@ -449,6 +517,10 @@ async function handleGeminiCommand(
       await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'Error Handler', 'Gemini Web Search Processing Failed', `Failed to process web search results with Gemini: ${geminiError.message}`, 'error');
       throw new Error(`Failed to process web search results with Gemini: ${geminiError.message}`);
     }
+  } else if (command === 'update_assistant_instructions') {
+    console.log(`Gemini: Case directives updated for case ${caseId}. Gemini's instructions are managed via chat history and will adapt to new prompts.`);
+    await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'Configuration', 'Instructions Noted', 'Gemini instructions are dynamic via chat history; no direct assistant update needed.', 'completed');
+    responseMessage = 'Gemini instructions noted.';
   } else {
     throw new Error(`Unsupported command for Gemini: ${command}`);
   }
