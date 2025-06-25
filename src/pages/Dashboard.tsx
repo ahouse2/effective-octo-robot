@@ -59,9 +59,9 @@ const Dashboard = () => {
           <p className="text-xl text-muted-foreground mb-8">
             Your specialized tool for evidence analysis in California family law cases.
           </p>
-          <p className="mb-8">It looks like you don't have any cases yet. Get started by creating your first analysis.</p>
-          <Link to="/evidence-analysis">
-            <Button size="lg">Start Your First Analysis</Button>
+          <p className="mb-8">It looks like you don't have any cases yet. Get started by creating your first case.</p>
+          <Link to="/my-cases">
+            <Button size="lg">Create Your First Case</Button>
           </Link>
         </div>
       );
@@ -134,10 +134,10 @@ const Dashboard = () => {
             )}
             <Separator className="my-6" />
             <div className="flex justify-center space-x-4">
-              <Link to="/evidence-analysis">
-                <Button>Start New Analysis</Button>
+              <Link to="/my-cases">
+                <Button>Create New Case</Button>
               </Link>
-              <Link to="/case-management">
+              <Link to="/my-cases">
                 <Button variant="outline">View All Cases</Button>
               </Link>
             </div>

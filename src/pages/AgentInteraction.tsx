@@ -42,7 +42,7 @@ const AgentInteraction = () => {
   const fetchCaseDetails = async () => {
     if (!caseId) {
       toast.error("No case selected. Please select a case to interact with agents.");
-      navigate("/case-management");
+      navigate("/my-cases");
       return;
     }
     setLoadingCaseDetails(true);
@@ -56,7 +56,7 @@ const AgentInteraction = () => {
       console.error("Error fetching case details for AgentInteraction:", error);
       toast.error("Failed to load case details.");
       setCaseDetails(null);
-      navigate("/case-management");
+      navigate("/my-cases");
     } else {
       setCaseDetails(data as CaseDetails);
     }

@@ -4,8 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Dashboard from "./pages/Dashboard";
-import EvidenceAnalysis from "./pages/EvidenceAnalysis";
-import CaseManagement from "./pages/CaseManagement";
+import MyCases from "./pages/MyCases";
 import AgentInteraction from "./pages/AgentInteraction";
 import UserProfile from "./pages/UserProfile";
 import AppSettings from "./pages/AppSettings";
@@ -29,8 +28,7 @@ const App = () => (
               <Route path="/login" element={<Login />} />
               <Route path="/" element={<Dashboard />} />
               <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/evidence-analysis" element={<EvidenceAnalysis />} />
-              <Route path="/case-management" element={<CaseManagement />} />
+              <Route path="/my-cases" element={<MyCases />} />
               <Route path="/agent-interaction/:caseId" element={<AgentInteraction />} />
               <Route path="/case-details/:caseId" element={<CaseDetails />} />
               <Route path="/profile" element={<UserProfile />} />

@@ -54,7 +54,7 @@ const CaseDetails = () => {
   useEffect(() => {
     if (!caseId) {
       toast.error("No case ID provided.");
-      navigate("/case-management");
+      navigate("/my-cases");
       return;
     }
 
@@ -69,7 +69,7 @@ const CaseDetails = () => {
       if (error) {
         console.error("Error fetching case details:", error);
         toast.error("Failed to load case details. " + error.message);
-        navigate("/case-management");
+        navigate("/my-cases");
       } else if (data) {
         const fetchedData = {
           name: data.name,
@@ -169,7 +169,7 @@ const CaseDetails = () => {
     <Layout>
       <div className="container mx-auto py-8">
         <div className="flex items-center mb-8">
-          <Button variant="ghost" onClick={() => navigate("/case-management")} className="mr-4">
+          <Button variant="ghost" onClick={() => navigate("/my-cases")} className="mr-4">
             <ArrowLeft className="h-5 w-5 mr-2" /> Back to Cases
           </Button>
           <h1 className="text-4xl font-bold">Case Details</h1>
