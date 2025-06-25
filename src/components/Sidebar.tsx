@@ -50,19 +50,13 @@ export function Sidebar({ className }: SidebarProps) {
         </div>
         <div className="px-3 py-2">
           <h2 className="mb-2 px-4 text-lg font-semibold tracking-tight">
-            Settings
+            Account
           </h2>
           <div className="space-y-1">
-            <Link to="/profile">
+            <Link to="/ai-settings">
               <Button variant="ghost" className="w-full justify-start">
                 <User className="mr-2 h-4 w-4" />
-                Profile
-              </Button>
-            </Link>
-            <Link to="/app-settings">
-              <Button variant="ghost" className="w-full justify-start">
-                <Settings className="mr-2 h-4 w-4" />
-                App Settings
+                AI & Profile
               </Button>
             </Link>
             <ThemeToggle />

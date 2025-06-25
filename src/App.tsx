@@ -6,8 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Dashboard from "./pages/Dashboard";
 import MyCases from "./pages/MyCases";
 import AgentInteraction from "./pages/AgentInteraction";
-import UserProfile from "./pages/UserProfile";
-import AppSettings from "./pages/AppSettings";
+import AiProfileSettings from "./pages/AiProfileSettings";
 import CaseDetails from "./pages/CaseDetails";
 import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
@@ -31,8 +30,7 @@ const App = () => (
               <Route path="/my-cases" element={<MyCases />} />
               <Route path="/agent-interaction/:caseId" element={<AgentInteraction />} />
               <Route path="/case-details/:caseId" element={<CaseDetails />} />
-              <Route path="/profile" element={<UserProfile />} />
-              <Route path="/app-settings" element={<AppSettings />} />
+              <Route path="/ai-settings" element={<AiProfileSettings />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
