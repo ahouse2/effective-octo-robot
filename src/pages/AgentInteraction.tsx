@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import Layout from "@/components/Layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -10,8 +10,7 @@ import { CaseFilesDisplay } from "@/components/CaseFilesDisplay";
 import { OrganizedFilesCard } from "@/components/OrganizedFilesCard";
 import { CaseChatDisplay } from "@/components/CaseChatDisplay";
 import { useParams, useNavigate } from "react-router-dom";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Terminal, Send, Lightbulb, Upload, Edit, Search, RefreshCw } from "lucide-react";
+import { Send, Lightbulb, Upload, Edit, Search, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,7 +18,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useSession } from "@/components/SessionContextProvider";
 import { EditCaseDetailsDialog } from "@/components/EditCaseDetailsDialog";
-import { FileMentionInput } from "@/components/FileMentionInput"; // Import the new component
+import { FileMentionInput } from "@/components/FileMentionInput";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface CaseDetails {
   name: string;
@@ -298,7 +298,6 @@ const AgentInteraction = () => {
             <CardContent className="flex-1 flex flex-col">
               <CaseChatDisplay caseId={caseId} />
               
-              {/* User Input for Agent Interaction */}
               <Card className="mt-4 mb-4">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base flex items-center">
@@ -311,8 +310,6 @@ const AgentInteraction = () => {
                   <ul className="list-disc list-inside space-y-1">
                     <li>
                       <span className="font-semibold">@filename</span>: Ask a question about a specific file. Type '@' to see a list of available files.
-                      <br />
-                      <span className="text-xs italic">Example: @2023-Bank-Statement.pdf what was the total for October?</span>
                     </li>
                     <li>
                       <span className="font-semibold">Any other message</span>: Will be interpreted as a general instruction or question for the agents.
@@ -343,149 +340,145 @@ const AgentInteraction = () => {
             </CardContent>
           </Card>
 
-          {/* Right Sidebar for Summaries, Insights, Timeline, Files, and Activity Log */}
-          <div className="lg:col-span-1 flex flex-col space-y-8">
-            {/* New Card for Case Goals and System Instructions */}
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-lg">Case Directives</CardTitle>
-                {caseDetails && (
-                  <EditCaseDetailsDialog
-                    caseId={caseId}
-                    initialCaseGoals={caseDetails.case_goals || ""}
-                    initialSystemInstruction={caseDetails.system_instruction || ""}
-                    initialAiModel={caseDetails.ai_model}
-                    onSaveSuccess={fetchCaseDetails}
-                  />
-                )}
-              </CardHeader>
-              <CardContent className="text-sm text-muted-foreground space-y-3">
-                <div>
-                  <h3 className="font-semibold text-foreground mb-1">Primary Case Goals:</h3>
-                  <p className="whitespace-pre-wrap">{caseDetails?.case_goals || "Not specified."}</p>
+          {/* Right Sidebar with Tabs */}
+          <div className="lg:col-span-1">
+            <Tabs defaultValue="controls" className="w-full">
+              <TabsList className="grid w-full grid-cols-4">
+                <TabsTrigger value="controls">Controls</TabsTrigger>
+                <TabsTrigger value="summaries">Summaries</TabsTrigger>
+                <TabsTrigger value="files">Files</TabsTrigger>
+                <TabsTrigger value="timeline">Timeline</TabsTrigger>
+              </TabsList>
+              <TabsContent value="controls">
+                <div className="flex flex-col space-y-4 mt-4">
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-lg">Case Directives</CardTitle>
+                      {caseDetails && (
+                        <EditCaseDetailsDialog
+                          caseId={caseId}
+                          initialCaseGoals={caseDetails.case_goals || ""}
+                          initialSystemInstruction={caseDetails.system_instruction || ""}
+                          initialAiModel={caseDetails.ai_model}
+                          onSaveSuccess={fetchCaseDetails}
+                        />
+                      )}
+                    </CardHeader>
+                    <CardContent className="text-sm text-muted-foreground space-y-3">
+                      <div>
+                        <h3 className="font-semibold text-foreground mb-1">Primary Case Goals:</h3>
+                        <p className="whitespace-pre-wrap">{caseDetails?.case_goals || "Not specified."}</p>
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-foreground mb-1">System Instructions:</h3>
+                        <p className="whitespace-pre-wrap">{caseDetails?.system_instruction || "None provided."}</p>
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-foreground mb-1">AI Model:</h3>
+                        <p className="whitespace-pre-wrap">{caseDetails?.ai_model === 'openai' ? 'OpenAI (GPT-4o)' : 'Google Gemini'}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Upload More Evidence</CardTitle>
+                      <CardDescription>Add additional files to this case for analysis.</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid w-full items-center gap-1.5 mb-4">
+                        <Label htmlFor="additional-evidence-files">Select Files</Label>
+                        <Input
+                          id="additional-evidence-files"
+                          type="file"
+                          multiple
+                          onChange={handleFileChange}
+                          className="cursor-pointer"
+                          disabled={isUploadingFiles}
+                        />
+                      </div>
+                      <Button
+                        onClick={handleUploadFiles}
+                        disabled={isUploadingFiles || filesToUpload.length === 0}
+                        className="w-full"
+                      >
+                        <Upload className="h-4 w-4 mr-2" />
+                        {isUploadingFiles ? "Uploading..." : "Upload Files for Analysis"}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Perform Web Search</CardTitle>
+                      <CardDescription>Search the web for external information.</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid w-full items-center gap-1.5 mb-4">
+                        <Label htmlFor="web-search-query">Search Query</Label>
+                        <Input
+                          id="web-search-query"
+                          placeholder="e.g., 'California family law updates 2023'"
+                          value={webSearchQuery}
+                          onChange={(e) => setWebSearchQuery(e.target.value)}
+                          disabled={isSearchingWeb}
+                        />
+                      </div>
+                      <Button
+                        onClick={handleWebSearch}
+                        disabled={isSearchingWeb || !webSearchQuery.trim()}
+                        className="w-full"
+                      >
+                        <Search className="h-4 w-4 mr-2" />
+                        {isSearchingWeb ? "Searching..." : "Search Web"}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Re-analyze Case</CardTitle>
+                      <CardDescription>Trigger a full re-analysis of the case.</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <Button
+                        onClick={handleReanalyzeCase}
+                        disabled={isReanalyzing}
+                        className="w-full"
+                      >
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        {isReanalyzing ? "Re-analyzing..." : "Re-run Full Analysis"}
+                      </Button>
+                    </CardContent>
+                  </Card>
                 </div>
-                <div>
-                  <h3 className="font-semibold text-foreground mb-1">System Instructions:</h3>
-                  <p className="whitespace-pre-wrap">{caseDetails?.system_instruction || "None provided."}</p>
+              </TabsContent>
+              <TabsContent value="summaries">
+                <div className="flex flex-col space-y-4 mt-4">
+                  <CaseTheorySummary caseId={caseId} />
+                  <CaseInsightsCard caseId={caseId} />
                 </div>
-                <div>
-                  <h3 className="font-semibold text-foreground mb-1">AI Model:</h3>
-                  <p className="whitespace-pre-wrap">{caseDetails?.ai_model === 'openai' ? 'OpenAI (GPT-4o)' : 'Google Gemini'}</p>
+              </TabsContent>
+              <TabsContent value="files">
+                <div className="flex flex-col space-y-4 mt-4">
+                  <OrganizedFilesCard caseId={caseId} />
+                  <CaseFilesDisplay caseId={caseId} />
                 </div>
-              </CardContent>
-            </Card>
-
-            <CaseTheorySummary caseId={caseId} />
-            <CaseInsightsCard caseId={caseId} />
-            <OrganizedFilesCard caseId={caseId} />
-            <CaseFilesDisplay caseId={caseId} />
-            {/* New Card for File Upload */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Upload More Evidence</CardTitle>
-                <CardDescription>Add additional files to this case for analysis.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid w-full items-center gap-1.5 mb-4">
-                  <Label htmlFor="additional-evidence-files">Select Files</Label>
-                  <Input
-                    id="additional-evidence-files"
-                    type="file"
-                    multiple
-                    onChange={handleFileChange}
-                    className="cursor-pointer"
-                    disabled={isUploadingFiles}
-                  />
-                  {filesToUpload.length > 0 && (
-                    <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                      <p className="font-semibold">Selected Files ({filesToUpload.length}):</p>
-                      <ul className="list-disc list-inside max-h-24 overflow-y-auto">
-                        {filesToUpload.map((file, index) => (
-                          <li key={index}>{file.name} ({ (file.size / 1024 / 1024).toFixed(2) } MB)</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
+              </TabsContent>
+              <TabsContent value="timeline">
+                <div className="flex flex-col space-y-4 mt-4">
+                  <CaseTimeline caseId={caseId} />
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Detailed Activity Log</CardTitle>
+                      <CardDescription>A comprehensive log of all agent actions.</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <ScrollArea className="h-[300px] pr-4">
+                        <AgentActivityLog caseId={caseId} />
+                      </ScrollArea>
+                    </CardContent>
+                  </Card>
                 </div>
-                <Button
-                  onClick={handleUploadFiles}
-                  disabled={isUploadingFiles || filesToUpload.length === 0}
-                  className="w-full"
-                >
-                  <Upload className="h-4 w-4 mr-2" />
-                  {isUploadingFiles ? "Uploading..." : "Upload Files for Analysis"}
-                </Button>
-              </CardContent>
-            </Card>
-
-            {/* New Card for Web Search */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Perform Web Search</CardTitle>
-                <CardDescription>Search the web for external information relevant to the case.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid w-full items-center gap-1.5 mb-4">
-                  <Label htmlFor="web-search-query">Search Query</Label>
-                  <Input
-                    id="web-search-query"
-                    placeholder="e.g., 'California family law updates 2023'"
-                    value={webSearchQuery}
-                    onChange={(e) => setWebSearchQuery(e.target.value)}
-                    onKeyPress={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleWebSearch();
-                      }
-                    }}
-                    disabled={isSearchingWeb}
-                  />
-                </div>
-                <Button
-                  onClick={handleWebSearch}
-                  disabled={isSearchingWeb || !webSearchQuery.trim()}
-                  className="w-full"
-                >
-                  <Search className="h-4 w-4 mr-2" />
-                  {isSearchingWeb ? "Searching..." : "Search Web"}
-                </Button>
-              </CardContent>
-            </Card>
-
-            {/* New Card for Re-analyze Case */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Re-analyze Case</CardTitle>
-                <CardDescription>Trigger a full re-analysis of the case by the AI agents.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Button
-                  onClick={handleReanalyzeCase}
-                  disabled={isReanalyzing}
-                  className="w-full"
-                >
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  {isReanalyzing ? "Re-analyzing..." : "Re-run Full Analysis"}
-                </Button>
-                <p className="text-sm text-muted-foreground mt-2">
-                  This will prompt the AI to re-evaluate all current case data, including updated directives and files.
-                </p>
-              </CardContent>
-            </Card>
-
-            <CaseTimeline caseId={caseId} />
-            {/* Moved Agent Activity Log to the sidebar */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Detailed Activity Log</CardTitle>
-                <CardDescription>A comprehensive log of all agent actions.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ScrollArea className="h-[300px] pr-4">
-                  <AgentActivityLog caseId={caseId} />
-                </ScrollArea>
-              </CardContent>
-            </Card>
+              </TabsContent>
+            </Tabs>
           </div>
         </div>
       </div>
