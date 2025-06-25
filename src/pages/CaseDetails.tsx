@@ -16,6 +16,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Download } from "lucide-react";
 import { useSession } from "@/components/SessionContextProvider";
+import { CaseTimeline } from "@/components/CaseTimeline";
+import { Separator } from "@/components/ui/separator";
 
 const caseDetailsSchema = z.object({
   name: z.string().min(1, { message: "Case name is required." }).max(100, { message: "Case name too long." }),
@@ -212,165 +214,170 @@ const CaseDetails = () => {
           <h1 className="text-4xl font-bold">Case Details</h1>
         </div>
 
-        <Card className="max-w-3xl mx-auto">
-          <CardHeader>
-            <div className="flex justify-between items-start">
-              <div>
-                <CardTitle>Manage Case Information</CardTitle>
-                <CardDescription>View and update the core details of this case.</CardDescription>
-              </div>
-              <Button onClick={handleDownloadReport} disabled={isDownloadingReport}>
-                <Download className="h-4 w-4 mr-2" />
-                {isDownloadingReport ? "Generating..." : "Download Report"}
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="mb-6 flex items-center justify-between">
-              <div>
-                <Label className="text-sm font-medium">Case ID</Label>
-                <p className="text-lg font-semibold text-foreground">{caseId}</p>
-              </div>
-              <div>
-                <Label className="text-sm font-medium">Current Status</Label>
-                <Badge variant={
-                  caseStatus === "Analysis Complete" ? "default" :
-                  caseStatus === "In Progress" ? "secondary" :
-                  caseStatus === "Initial Setup" ? "outline" :
-                  "outline"
-                }>
-                  {caseStatus}
-                </Badge>
-              </div>
-            </div>
-
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                <FormField
-                  control={form.control}
-                  name="name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Case Name (Parties Involved)</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., John Doe vs. Jane Smith" {...field} disabled={isSubmitting} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="type"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Case Type</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., Divorce, Child Custody" {...field} disabled={isSubmitting} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="caseGoals"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Primary Case Goals</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          placeholder="e.g., Prove financial misconduct, Establish primary custody"
-                          className="min-h-[80px]"
-                          {...field}
-                          disabled={isSubmitting}
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        Clearly outlining your goals will help the AI agents focus their analysis.
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="systemInstruction"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>System Instructions (for AI Agents)</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          placeholder="Provide specific instructions or context for the AI agents. E.g., 'Focus heavily on financial documents for discrepancies.', 'Prioritize evidence related to child's welfare.', 'Ignore documents older than 2020.'"
-                          className="min-h-[120px]"
-                          {...field}
-                          disabled={isSubmitting}
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        Use this field to give the AI agents detailed directives on how to approach the analysis.
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="aiModel"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>AI Model for Analysis</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value} disabled={isSubmitting}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select an AI model" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="openai">OpenAI (GPT-4o)</SelectItem>
-                          <SelectItem value="gemini">Google Gemini (Requires RAG setup for full document analysis)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormDescription>
-                        This model powers the AI analysis for this specific case.
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="openaiAssistantId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>OpenAI Assistant ID (Optional)</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="asst_..."
-                          {...field}
-                          disabled={isSubmitting || form.watch("aiModel") === "gemini"}
-                          value={field.value || ""}
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        If using OpenAI, you can specify a pre-configured Assistant ID. If left blank, the system will use the one created for this case or create a new one if needed. Changing this will switch the assistant used for future interactions.
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <Button type="submit" className="w-full" disabled={isSubmitting}>
-                  {isSubmitting ? "Saving Changes..." : "Save Changes"}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <Card>
+            <CardHeader>
+              <div className="flex justify-between items-start">
+                <div>
+                  <CardTitle>Manage Case Information</CardTitle>
+                  <CardDescription>View and update the core details of this case.</CardDescription>
+                </div>
+                <Button onClick={handleDownloadReport} disabled={isDownloadingReport}>
+                  <Download className="h-4 w-4 mr-2" />
+                  {isDownloadingReport ? "Generating..." : "Download Report"}
                 </Button>
-              </form>
-            </Form>
-            <div className="mt-6 text-center">
-              <Link to={`/agent-interaction/${caseId}`}>
-                <Button variant="outline">Go to Agent Interaction</Button>
-              </Link>
-            </div>
-          </CardContent>
-        </Card>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <Label className="text-sm font-medium">Case ID</Label>
+                  <p className="text-lg font-semibold text-foreground">{caseId}</p>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium">Current Status</Label>
+                  <Badge variant={
+                    caseStatus === "Analysis Complete" ? "default" :
+                    caseStatus === "In Progress" ? "secondary" :
+                    caseStatus === "Initial Setup" ? "outline" :
+                    "outline"
+                  }>
+                    {caseStatus}
+                  </Badge>
+                </div>
+              </div>
+
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                  <FormField
+                    control={form.control}
+                    name="name"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Case Name (Parties Involved)</FormLabel>
+                        <FormControl>
+                          <Input placeholder="e.g., John Doe vs. Jane Smith" {...field} disabled={isSubmitting} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="type"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Case Type</FormLabel>
+                        <FormControl>
+                          <Input placeholder="e.g., Divorce, Child Custody" {...field} disabled={isSubmitting} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="caseGoals"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Primary Case Goals</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            placeholder="e.g., Prove financial misconduct, Establish primary custody"
+                            className="min-h-[80px]"
+                            {...field}
+                            disabled={isSubmitting}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          Clearly outlining your goals will help the AI agents focus their analysis.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="systemInstruction"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>System Instructions (for AI Agents)</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            placeholder="Provide specific instructions or context for the AI agents. E.g., 'Focus heavily on financial documents for discrepancies.', 'Prioritize evidence related to child's welfare.', 'Ignore documents older than 2020.'"
+                            className="min-h-[120px]"
+                            {...field}
+                            disabled={isSubmitting}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          Use this field to give the AI agents detailed directives on how to approach the analysis.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="aiModel"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>AI Model for Analysis</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value} disabled={isSubmitting}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select an AI model" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="openai">OpenAI (GPT-4o)</SelectItem>
+                            <SelectItem value="gemini">Google Gemini (Requires RAG setup for full document analysis)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>
+                          This model powers the AI analysis for this specific case.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="openaiAssistantId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>OpenAI Assistant ID (Optional)</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="asst_..."
+                            {...field}
+                            disabled={isSubmitting || form.watch("aiModel") === "gemini"}
+                            value={field.value || ""}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          If using OpenAI, you can specify a pre-configured Assistant ID.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <Button type="submit" className="w-full" disabled={isSubmitting}>
+                    {isSubmitting ? "Saving Changes..." : "Save Changes"}
+                  </Button>
+                </form>
+              </Form>
+              <div className="mt-6 text-center">
+                <Link to={`/agent-interaction/${caseId}`}>
+                  <Button variant="outline">Go to Agent Interaction</Button>
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+          
+          {caseId && <CaseTimeline caseId={caseId} />}
+
+        </div>
       </div>
     </Layout>
   );
