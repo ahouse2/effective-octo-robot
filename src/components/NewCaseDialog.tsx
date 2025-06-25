@@ -10,7 +10,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -21,6 +20,7 @@ import { useSession } from "@/components/SessionContextProvider";
 import { useNavigate } from "react-router-dom";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface NewCaseDialogProps {
   onCaseCreated?: (caseId: string) => void;
@@ -38,7 +38,7 @@ const formSchema = z.object({
   aiModel: z.enum(["openai", "gemini"], {
     required_error: "Please select an AI model.",
   }),
-  openaiAssistantId: z.string().optional(), // Add this field to the schema
+  openaiAssistantId: z.string().optional(),
 });
 
 export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) => {
@@ -55,7 +55,7 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
       caseGoals: "",
       systemInstruction: "",
       aiModel: "openai",
-      openaiAssistantId: "", // Initialize with empty string
+      openaiAssistantId: "",
     },
   });
 
@@ -75,7 +75,7 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
       }
     };
 
-    if (isOpen) { // Only fetch when dialog opens
+    if (isOpen) {
       fetchDefaultSettings();
     }
   }, [isOpen, user, sessionLoading, form]);
@@ -101,7 +101,7 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
             case_goals: values.caseGoals,
             system_instruction: values.systemInstruction,
             ai_model: values.aiModel,
-            openai_assistant_id: values.openaiAssistantId || null, // Save the assistant ID
+            openai_assistant_id: values.openaiAssistantId || null,
           },
         ])
         .select();
@@ -115,17 +115,16 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
         throw new Error("Case data not returned after creation.");
       }
 
-      // Invoke start-analysis to initialize AI assistant/thread or Gemini chat history
       const { data: analysisData, error: analysisError } = await supabase.functions.invoke(
         'start-analysis',
         {
           body: JSON.stringify({
             caseId: newCase.id,
-            fileNames: [], // No files yet, just initialize AI
+            fileNames: [],
             caseGoals: values.caseGoals,
             systemInstruction: values.systemInstruction,
             aiModel: values.aiModel,
-            openaiAssistantId: values.openaiAssistantId || null, // Pass the assistant ID
+            openaiAssistantId: values.openaiAssistantId || null,
           }),
           headers: { 'Content-Type': 'application/json' },
         }
@@ -134,7 +133,6 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
       if (analysisError) {
         console.error("Error initiating AI for new case:", analysisError);
         toast.error("Failed to initialize AI for the new case. You may need to update case details or upload files to trigger AI setup.");
-        // Do not throw, allow case creation to complete, but warn user
       } else {
         console.log("AI initialization for new case successful:", analysisData);
       }
@@ -163,135 +161,141 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
       <DialogTrigger asChild>
         <Button>Create New Case</Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Create New Case</DialogTitle>
           <DialogDescription>
             Enter the details for your new family law case.
           </DialogDescription>
         </DialogHeader>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 py-4">
-            <FormField
-              control={form.control}
-              name="caseType"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Case Type</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g., Divorce, Child Custody" {...field} disabled={isSubmitting} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="partiesInvolved"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Parties Involved</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g., John Doe vs. Jane Smith" {...field} disabled={isSubmitting} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="caseGoals"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Primary Case Goals</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder="e.g., Prove financial misconduct, Establish primary custody"
-                      className="min-h-[80px]"
-                      {...field}
-                      disabled={isSubmitting}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    Clearly outlining your goals will help the AI agents focus their analysis.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="systemInstruction"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>System Instructions (for AI Agents)</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder="Provide specific instructions or context for the AI agents. E.g., 'Focus heavily on financial documents for discrepancies.', 'Prioritize evidence related to child's welfare.', 'Ignore documents older than 2020.'"
-                      className="min-h-[120px]"
-                      {...field}
-                      disabled={isSubmitting}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    Use this field to give the AI agents detailed directives on how to approach the analysis.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="aiModel"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Choose AI Model</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value} disabled={isSubmitting}>
+        <ScrollArea className="max-h-[70vh] p-1">
+          <Form {...form}>
+            <form id="new-case-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 py-4 pr-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="caseType"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Case Type</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g., Divorce, Child Custody" {...field} disabled={isSubmitting} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="partiesInvolved"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Parties Involved</FormLabel>
+                      <FormControl>
+                        <Input placeholder="e.g., John Doe vs. Jane Smith" {...field} disabled={isSubmitting} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <FormField
+                control={form.control}
+                name="caseGoals"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Primary Case Goals</FormLabel>
                     <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select an AI model" />
-                      </SelectTrigger>
+                      <Textarea
+                        placeholder="e.g., Prove financial misconduct, Establish primary custody"
+                        className="min-h-[80px]"
+                        {...field}
+                        disabled={isSubmitting}
+                      />
                     </FormControl>
-                    <SelectContent>
-                      <SelectItem value="openai">OpenAI (GPT-4o)</SelectItem>
-                      <SelectItem value="gemini">Google Gemini (Requires RAG setup for full document analysis)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormDescription>
-                    Select the AI model to power your case analysis. Note: Gemini integration for document analysis requires a separate RAG (Retrieval Augmented Generation) setup.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="openaiAssistantId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>OpenAI Assistant ID (Optional)</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="asst_..."
-                      {...field}
-                      disabled={isSubmitting || form.watch("aiModel") === "gemini"} // Disable if Gemini is selected
-                      value={field.value || ""}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    If using OpenAI, you can specify a pre-configured Assistant ID. If left blank, a new one will be created for this case if needed.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <DialogFooter>
-              <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? "Creating..." : "Create Case"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </Form>
+                    <FormDescription>
+                      Clearly outlining your goals will help the AI agents focus their analysis.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="systemInstruction"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>System Instructions (for AI Agents)</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        placeholder="Provide specific instructions or context for the AI agents. E.g., 'Focus heavily on financial documents for discrepancies.', 'Prioritize evidence related to child's welfare.', 'Ignore documents older than 2020.'"
+                        className="min-h-[120px]"
+                        {...field}
+                        disabled={isSubmitting}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Use this field to give the AI agents detailed directives on how to approach the analysis.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="aiModel"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Choose AI Model</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value} disabled={isSubmitting}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select an AI model" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="openai">OpenAI (GPT-4o)</SelectItem>
+                          <SelectItem value="gemini">Google Gemini (Requires RAG setup)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>
+                        This model will power your case analysis.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="openaiAssistantId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>OpenAI Assistant ID (Optional)</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="asst_..."
+                          {...field}
+                          disabled={isSubmitting || form.watch("aiModel") === "gemini"}
+                          value={field.value || ""}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Use a pre-configured Assistant ID.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </form>
+          </Form>
+        </ScrollArea>
+        <DialogFooter>
+          <Button type="submit" form="new-case-form" disabled={isSubmitting}>
+            {isSubmitting ? "Creating..." : "Create Case"}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
