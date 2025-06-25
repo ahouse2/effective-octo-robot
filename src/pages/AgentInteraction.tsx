@@ -5,25 +5,17 @@ import { CaseTheorySummary } from "@/components/CaseTheorySummary";
 import { CaseInsightsCard } from "@/components/CaseInsightsCard";
 import { EvidenceManager } from "@/components/EvidenceManager";
 import { CaseChatDisplay } from "@/components/CaseChatDisplay";
-import { useParams, useNavigate } from "react-router-dom";
-import { Send, Lightbulb, Upload, Edit, Search, RefreshCw } from "lucide-react";
+import { AgentActivityLog } from "@/components/AgentActivityLog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useParams, useNavigate, Link } from "react-router-dom";
+import { Send, Upload, Search, RefreshCw, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useSession } from "@/components/SessionContextProvider";
-import { EditCaseDetailsDialog } from "@/components/EditCaseDetailsDialog";
 import { FileMentionInput } from "@/components/FileMentionInput";
-
-interface CaseDetails {
-  name: string;
-  type: string;
-  status: string;
-  case_goals: string | null;
-  system_instruction: string | null;
-  ai_model: "openai" | "gemini";
-}
 
 const AgentInteraction = () => {
   const { caseId } = useParams<{ caseId: string }>();
@@ -36,72 +28,45 @@ const AgentInteraction = () => {
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const [isReanalyzing, setIsReanalyzing] = useState(false);
   const { user } = useSession();
-  const [caseDetails, setCaseDetails] = useState<CaseDetails | null>(null);
+  const [caseDetails, setCaseDetails] = useState<{ name: string } | null>(null);
   const [loadingCaseDetails, setLoadingCaseDetails] = useState(true);
 
-  const fetchCaseDetails = async () => {
+  useEffect(() => {
     if (!caseId) {
-      toast.error("No case selected. Please select a case to interact with agents.");
+      toast.error("No case selected.");
       navigate("/my-cases");
       return;
     }
-    setLoadingCaseDetails(true);
-    const { data, error } = await supabase
-      .from('cases')
-      .select('name, type, status, case_goals, system_instruction, ai_model')
-      .eq('id', caseId)
-      .single();
+    const fetchCaseDetails = async () => {
+      setLoadingCaseDetails(true);
+      const { data, error } = await supabase
+        .from('cases')
+        .select('name')
+        .eq('id', caseId)
+        .single();
 
-    if (error) {
-      console.error("Error fetching case details for AgentInteraction:", error);
-      toast.error("Failed to load case details.");
-      setCaseDetails(null);
-      navigate("/my-cases");
-    } else {
-      setCaseDetails(data as CaseDetails);
-    }
-    setLoadingCaseDetails(false);
-  };
-
-  useEffect(() => {
+      if (error) {
+        toast.error("Failed to load case details.");
+        navigate("/my-cases");
+      } else {
+        setCaseDetails(data);
+      }
+      setLoadingCaseDetails(false);
+    };
     fetchCaseDetails();
   }, [caseId, navigate]);
 
   const handleSendPrompt = async () => {
-    if (!userPrompt.trim()) {
-      toast.info("Please enter a message to send.");
-      return;
-    }
-    if (!caseId || !user) {
-      toast.error("Case ID or user is missing. Cannot send prompt.");
-      return;
-    }
-
+    if (!userPrompt.trim() || !caseId || !user) return;
     setIsSending(true);
-    const loadingToastId = toast.loading("Sending prompt to agents...");
-
+    const loadingToastId = toast.loading("Sending prompt...");
     try {
-      const { data, error } = await supabase.functions.invoke(
-        'send-user-prompt',
-        {
-          body: JSON.stringify({
-            caseId: caseId,
-            promptContent: userPrompt,
-          }),
-        }
-      );
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      console.log("Prompt sent response:", data);
+      const { error } = await supabase.functions.invoke('send-user-prompt', { body: { caseId, promptContent: userPrompt } });
+      if (error) throw error;
       toast.success("Prompt sent successfully!");
       setUserPrompt("");
-
     } catch (err: any) {
-      console.error("Error sending prompt:", err);
-      toast.error(err.message || "Failed to send prompt. Please try again.");
+      toast.error(err.message || "Failed to send prompt.");
     } finally {
       setIsSending(false);
       toast.dismiss(loadingToastId);
@@ -109,41 +74,16 @@ const AgentInteraction = () => {
   };
 
   const handleWebSearch = async () => {
-    if (!webSearchQuery.trim()) {
-      toast.info("Please enter a query for web search.");
-      return;
-    }
-    if (!caseId || !user) {
-      toast.error("Case ID or user is missing. Cannot perform web search.");
-      return;
-    }
-
+    if (!webSearchQuery.trim() || !caseId || !user) return;
     setIsSearchingWeb(true);
-    const loadingToastId = toast.loading(`Performing web search for "${webSearchQuery}"...`);
-
+    const loadingToastId = toast.loading("Performing web search...");
     try {
-      const { data, error } = await supabase.functions.invoke(
-        'ai-orchestrator',
-        {
-          body: JSON.stringify({
-            caseId: caseId,
-            command: 'web_search',
-            payload: { query: webSearchQuery },
-          }),
-        }
-      );
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      console.log("Web search initiated response:", data);
-      toast.success("Web search initiated successfully! Results will appear in chat.");
+      const { error } = await supabase.functions.invoke('ai-orchestrator', { body: { caseId, command: 'web_search', payload: { query: webSearchQuery } } });
+      if (error) throw error;
+      toast.success("Web search initiated!");
       setWebSearchQuery("");
-
     } catch (err: any) {
-      console.error("Error performing web search:", err);
-      toast.error(err.message || "Failed to perform web search. Please try again.");
+      toast.error(err.message || "Failed to perform web search.");
     } finally {
       setIsSearchingWeb(false);
       toast.dismiss(loadingToastId);
@@ -151,73 +91,32 @@ const AgentInteraction = () => {
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (files) {
-      const fileList = Array.from(files);
-      setFilesToUpload(fileList);
-      toast.info(`Selected ${fileList.length} files for upload.`);
+    if (event.target.files) {
+      setFilesToUpload(Array.from(event.target.files));
+      toast.info(`Selected ${event.target.files.length} files.`);
     }
   };
 
   const handleUploadFiles = async () => {
-    if (!user) {
-      toast.error("You must be logged in to upload files.");
-      return;
-    }
-    if (!caseId) {
-      toast.error("Case ID is missing. Cannot upload files.");
-      return;
-    }
-    if (filesToUpload.length === 0) {
-      toast.info("Please select files to upload.");
-      return;
-    }
-
+    if (filesToUpload.length === 0 || !caseId || !user) return;
     setIsUploadingFiles(true);
     const loadingToastId = toast.loading(`Uploading ${filesToUpload.length} files...`);
-
     try {
       const uploadPromises = filesToUpload.map(async (file) => {
         const relativePath = (file as any).webkitRelativePath || file.name;
         const filePath = `${user.id}/${caseId}/${relativePath}`;
-        const { error: uploadError } = await supabase.storage
-          .from('evidence-files')
-          .upload(filePath, file, {
-            cacheControl: '3600',
-            upsert: true, // Overwrite files if they exist, crucial for folder uploads
-          });
-
-        if (uploadError) {
-          console.error(`Error uploading file ${relativePath}:`, uploadError);
-          throw new Error(`Failed to upload file ${relativePath}: ${uploadError.message}`);
-        }
+        const { error } = await supabase.storage.from('evidence-files').upload(filePath, file, { upsert: true });
+        if (error) throw new Error(`Failed to upload ${relativePath}: ${error.message}`);
         return relativePath;
       });
-
       const uploadedFilePaths = await Promise.all(uploadPromises);
       toast.success(`Successfully uploaded ${uploadedFilePaths.length} files.`);
-
-      const { data: edgeFunctionData, error: edgeFunctionError } = await supabase.functions.invoke(
-        'process-additional-files',
-        {
-          body: JSON.stringify({
-            caseId: caseId,
-            newFileNames: uploadedFilePaths,
-          }),
-        }
-      );
-
-      if (edgeFunctionError) {
-        throw new Error("Failed to invoke additional file processing function: " + edgeFunctionError.message);
-      }
-
-      console.log("Additional file processing function response:", edgeFunctionData);
+      const { error } = await supabase.functions.invoke('process-additional-files', { body: { caseId, newFileNames: uploadedFilePaths } });
+      if (error) throw new Error(`Failed to process files: ${error.message}`);
       toast.success("New files submitted for analysis!");
       setFilesToUpload([]);
-
     } catch (err: any) {
-      console.error("File upload error:", err);
-      toast.error(err.message || "An unexpected error occurred during file upload.");
+      toast.error(err.message || "An error occurred during upload.");
     } finally {
       setIsUploadingFiles(false);
       toast.dismiss(loadingToastId);
@@ -225,199 +124,158 @@ const AgentInteraction = () => {
   };
 
   const handleReanalyzeCase = async () => {
-    if (!caseId) {
-      toast.error("Case ID is missing. Cannot re-analyze.");
-      return;
-    }
-    if (!user) {
-      toast.error("You must be logged in to re-analyze a case.");
-      return;
-    }
-
+    if (!caseId || !user) return;
     setIsReanalyzing(true);
     const loadingToastId = toast.loading("Initiating full case re-analysis...");
-
     try {
-      const { data, error } = await supabase.functions.invoke(
-        'ai-orchestrator',
-        {
-          body: JSON.stringify({
-            caseId: caseId,
-            command: 're_run_analysis',
-            payload: {},
-          }),
-        }
-      );
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      console.log("Re-analysis initiated response:", data);
-      toast.success("Case re-analysis initiated successfully!");
-
+      const { error } = await supabase.functions.invoke('ai-orchestrator', { body: { caseId, command: 're_run_analysis', payload: {} } });
+      if (error) throw error;
+      toast.success("Case re-analysis initiated!");
     } catch (err: any) {
-      console.error("Error re-analyzing case:", err);
-      toast.error(err.message || "Failed to re-analyze case. Please try again.");
+      toast.error(err.message || "Failed to re-analyze case.");
     } finally {
       setIsReanalyzing(false);
       toast.dismiss(loadingToastId);
     }
   };
 
-  if (!caseId || loadingCaseDetails) {
-    return (
-      <Layout>
-        <div className="container mx-auto py-8 text-center">
-          <p className="text-lg text-gray-700 dark:text-gray-300">Loading case details...</p>
-        </div>
-      </Layout>
-    );
+  if (loadingCaseDetails) {
+    return <Layout><div className="text-center py-8">Loading Case...</div></Layout>;
   }
 
   return (
     <Layout>
-      <div className="container mx-auto py-8 max-w-screen-2xl">
-        <h1 className="text-4xl font-bold mb-8 text-center">Multi-Agent Case Analysis</h1>
+      <div className="container mx-auto py-8">
+        <div className="flex items-center mb-6">
+          <Button variant="ghost" size="sm" onClick={() => navigate("/my-cases")} className="mr-2">
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <h1 className="text-3xl font-bold">
+            Case: <span className="text-primary">{caseDetails?.name || '...'}</span>
+          </h1>
+        </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left Column: Intelligence Hub */}
-          <div className="lg:col-span-3 flex flex-col space-y-6">
-            <CaseTheorySummary caseId={caseId} />
-            <CaseInsightsCard caseId={caseId} />
-          </div>
+        <Tabs defaultValue="hub" className="w-full">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="hub">Analysis Hub</TabsTrigger>
+            <TabsTrigger value="chat">Agent Chat</TabsTrigger>
+            <TabsTrigger value="evidence">Evidence Locker</TabsTrigger>
+            <TabsTrigger value="log">Full Activity Log</TabsTrigger>
+          </TabsList>
 
-          {/* Center Column: Agent Chat */}
-          <Card className="lg:col-span-6 flex flex-col">
-            <CardHeader>
-              <CardTitle>Agent Chat</CardTitle>
-              <CardDescription>Interact directly with the AI agents.</CardDescription>
-            </CardHeader>
-            <CardContent className="flex-1 flex flex-col">
-              <CaseChatDisplay caseId={caseId} />
-              
-              <Card className="mt-4 mb-4">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center">
-                    <Lightbulb className="h-4 w-4 mr-2 text-yellow-500" />
-                    Agent Interaction Tips
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="text-sm text-muted-foreground">
-                  <p className="mb-2">You can send direct messages or use special commands:</p>
-                  <ul className="list-disc list-inside space-y-1">
-                    <li>
-                      <span className="font-semibold">@filename</span>: Ask a question about a specific file. Type '@' to see a list of available files.
-                    </li>
-                    <li>
-                      <span className="font-semibold">Any other message</span>: Will be interpreted as a general instruction or question for the agents.
-                    </li>
-                  </ul>
-                </CardContent>
-              </Card>
-              <div className="flex items-center space-x-2 mt-auto">
-                <FileMentionInput
-                  caseId={caseId}
-                  placeholder="Send a message, or type '@' to mention a file..."
-                  value={userPrompt}
-                  onChange={setUserPrompt}
-                  onKeyPress={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSendPrompt();
-                    }
-                  }}
-                  disabled={isSending}
-                  className="flex-1 resize-none"
-                />
-                <Button onClick={handleSendPrompt} disabled={isSending}>
-                  <Send className="h-4 w-4 mr-2" />
-                  Send
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Right Column: Evidence & Tools */}
-          <div className="lg:col-span-3 flex flex-col space-y-6">
-            <EvidenceManager caseId={caseId} />
+          <TabsContent value="hub" className="mt-6">
             <Card>
               <CardHeader>
-                <CardTitle>Case Tools</CardTitle>
-                <CardDescription>Manage your case analysis.</CardDescription>
+                <CardTitle>Analysis Hub</CardTitle>
+                <CardDescription>High-level intelligence and key findings generated by the AI agents.</CardDescription>
               </CardHeader>
-              <CardContent className="flex flex-col space-y-4">
-                <div>
-                  <Label className="text-sm font-medium">Case Directives</Label>
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm text-muted-foreground">View and edit case goals.</p>
-                    {caseDetails && (
-                      <EditCaseDetailsDialog
-                        caseId={caseId}
-                        initialCaseGoals={caseDetails.case_goals || ""}
-                        initialSystemInstruction={caseDetails.system_instruction || ""}
-                        initialAiModel={caseDetails.ai_model}
-                        onSaveSuccess={fetchCaseDetails}
+              <CardContent className="space-y-6">
+                <CaseTheorySummary caseId={caseId!} />
+                <CaseInsightsCard caseId={caseId!} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="chat" className="mt-6">
+            <Card>
+              <CardHeader>
+                <div className="flex justify-between items-center">
+                  <div>
+                    <CardTitle>Agent Chat</CardTitle>
+                    <CardDescription>Interact with the AI, perform web searches, or re-run the analysis.</CardDescription>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2">
+                      <Input
+                        id="web-search-query"
+                        placeholder="Search the web..."
+                        value={webSearchQuery}
+                        onChange={(e) => setWebSearchQuery(e.target.value)}
+                        disabled={isSearchingWeb}
+                        className="w-48"
                       />
-                    )}
+                      <Button onClick={handleWebSearch} disabled={isSearchingWeb || !webSearchQuery.trim()} size="sm">
+                        <Search className="h-4 w-4 mr-2" /> Search
+                      </Button>
+                    </div>
+                    <Button onClick={handleReanalyzeCase} disabled={isReanalyzing} variant="outline" size="sm">
+                      <RefreshCw className="h-4 w-4 mr-2" /> Re-run Analysis
+                    </Button>
                   </div>
                 </div>
-                <div>
-                  <Label htmlFor="additional-evidence-files">Upload Evidence Folder</Label>
-                  <Input
-                    id="additional-evidence-files"
-                    type="file"
-                    // @ts-ignore
-                    webkitdirectory=""
-                    directory=""
-                    onChange={handleFileChange}
-                    className="cursor-pointer mt-1"
-                    disabled={isUploadingFiles}
-                  />
-                  <Button
-                    onClick={handleUploadFiles}
-                    disabled={isUploadingFiles || filesToUpload.length === 0}
-                    className="w-full mt-2"
-                  >
-                    <Upload className="h-4 w-4 mr-2" />
-                    {isUploadingFiles ? "Uploading..." : `Upload ${filesToUpload.length} File(s)`}
-                  </Button>
-                </div>
-                <div>
-                  <Label htmlFor="web-search-query">Perform Web Search</Label>
-                  <Input
-                    id="web-search-query"
-                    placeholder="e.g., 'California family law updates 2023'"
-                    value={webSearchQuery}
-                    onChange={(e) => setWebSearchQuery(e.target.value)}
-                    disabled={isSearchingWeb}
-                    className="mt-1"
-                  />
-                  <Button
-                    onClick={handleWebSearch}
-                    disabled={isSearchingWeb || !webSearchQuery.trim()}
-                    className="w-full mt-2"
-                  >
-                    <Search className="h-4 w-4 mr-2" />
-                    {isSearchingWeb ? "Searching..." : "Search Web"}
-                  </Button>
-                </div>
-                <div>
-                  <Label>Re-run Full Analysis</Label>
-                  <Button
-                    onClick={handleReanalyzeCase}
-                    disabled={isReanalyzing}
-                    className="w-full mt-1"
-                    variant="outline"
-                  >
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    {isReanalyzing ? "Re-analyzing..." : "Re-run Analysis"}
-                  </Button>
+              </CardHeader>
+              <CardContent>
+                <div className="h-[60vh] flex flex-col">
+                  <CaseChatDisplay caseId={caseId!} />
+                  <div className="flex items-center space-x-2 mt-4">
+                    <FileMentionInput
+                      caseId={caseId!}
+                      placeholder="Send a message, or type '@' to mention a file..."
+                      value={userPrompt}
+                      onChange={setUserPrompt}
+                      onKeyPress={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendPrompt(); }}}
+                      disabled={isSending}
+                      className="flex-1 resize-none"
+                    />
+                    <Button onClick={handleSendPrompt} disabled={isSending}>
+                      <Send className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
-          </div>
-        </div>
+          </TabsContent>
+
+          <TabsContent value="evidence" className="mt-6">
+            <Card>
+              <CardHeader>
+                <div className="flex justify-between items-center">
+                  <div>
+                    <CardTitle>Evidence Locker</CardTitle>
+                    <CardDescription>Upload and manage all evidence files for this case.</CardDescription>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Label htmlFor="evidence-folder-upload" className="cursor-pointer">
+                      <Button asChild>
+                        <span><Upload className="h-4 w-4 mr-2" /> Upload Folder</span>
+                      </Button>
+                    </Label>
+                    <Input
+                      id="evidence-folder-upload"
+                      type="file"
+                      // @ts-ignore
+                      webkitdirectory=""
+                      directory=""
+                      onChange={handleFileChange}
+                      className="hidden"
+                      disabled={isUploadingFiles}
+                    />
+                    {filesToUpload.length > 0 && (
+                      <Button onClick={handleUploadFiles} disabled={isUploadingFiles}>
+                        {isUploadingFiles ? "Uploading..." : `Confirm Upload (${filesToUpload.length})`}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <EvidenceManager caseId={caseId!} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="log" className="mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Full Activity Log</CardTitle>
+                <CardDescription>A detailed, chronological log of every action taken by the system and AI agents.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <AgentActivityLog caseId={caseId!} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
     </Layout>
   );
