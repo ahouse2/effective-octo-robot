@@ -59,15 +59,15 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
     const loadingToastId = toast.loading(`Starting upload of ${totalFiles} files...`);
     
     const BATCH_SIZE = 20;
-    const processingPromises = [];
+    const allUploadedFilePaths: string[] = [];
 
     try {
+      // Step 1: Upload all files to storage in batches
       for (let i = 0; i < totalFiles; i += BATCH_SIZE) {
         const batch = filesToUpload.slice(i, i + BATCH_SIZE);
         const currentProgress = i + batch.length;
-        toast.loading(`Uploading batch ${Math.floor(i / BATCH_SIZE) + 1}... (${currentProgress}/${totalFiles} files)`, { id: loadingToastId });
+        toast.loading(`Uploading files... (${currentProgress}/${totalFiles})`, { id: loadingToastId });
 
-        // Step 1: Upload files in the current batch to storage
         const uploadPromises = batch.map(async (file) => {
           const relativePath = (file as any).webkitRelativePath || file.name;
           const filePath = `${user.id}/${caseId}/${relativePath}`;
@@ -82,28 +82,25 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
           return relativePath;
         });
 
-        const uploadedFilePaths = await Promise.all(uploadPromises);
-
-        // Step 2: Queue the processing task without waiting for it to finish
-        const processingPromise = supabase.functions.invoke(
-          'process-additional-files',
-          {
-            body: JSON.stringify({
-              caseId: caseId,
-              newFileNames: uploadedFilePaths,
-            }),
-          }
-        );
-        processingPromises.push(processingPromise);
+        const uploadedPathsInBatch = await Promise.all(uploadPromises);
+        allUploadedFilePaths.push(...uploadedPathsInBatch);
       }
 
-      // Step 3: Wait for all processing tasks to be *initiated*
-      toast.loading(`Finalizing... All ${totalFiles} files uploaded. Initiating analysis.`, { id: loadingToastId });
-      const results = await Promise.allSettled(processingPromises);
+      // Step 2: After all files are uploaded, make a single call to process them
+      toast.loading(`All ${totalFiles} files uploaded. Initiating analysis...`, { id: loadingToastId });
+      
+      const { error: edgeFunctionError } = await supabase.functions.invoke(
+        'process-additional-files',
+        {
+          body: JSON.stringify({
+            caseId: caseId,
+            newFileNames: allUploadedFilePaths,
+          }),
+        }
+      );
 
-      const failedInitiations = results.filter(r => r.status === 'rejected');
-      if (failedInitiations.length > 0) {
-        throw new Error(`${failedInitiations.length} processing batches failed to initiate.`);
+      if (edgeFunctionError) {
+        throw new Error(`Failed to start analysis process: ${edgeFunctionError.message}`);
       }
 
       toast.success(`Successfully uploaded and queued all ${totalFiles} files for analysis.`, { id: loadingToastId });
