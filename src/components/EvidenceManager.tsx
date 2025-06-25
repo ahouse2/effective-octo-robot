@@ -18,6 +18,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { EditFileMetadataDialog } from "./EditFileMetadataDialog";
 
 interface FileMetadata {
   id: string;
@@ -210,6 +211,7 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({ caseId }) => {
                             </div>
                           </div>
                           <div className="flex items-center space-x-1">
+                            <EditFileMetadataDialog file={file} />
                             <AlertDialog>
                               <AlertDialogTrigger asChild>
                                 <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600">
