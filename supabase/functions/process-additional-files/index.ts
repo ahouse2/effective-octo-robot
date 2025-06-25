@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-import OpenAI from 'https://esm.sh/openai@4.52.7';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -89,121 +88,67 @@ serve(async (req) => {
       throw new Error(`Failed to record metadata for additional files: ${metadataError.message}`);
     }
 
-    // 3. Trigger categorization and summarization for new files
+    // 3. Trigger categorization and summarization for new files (fire and forget)
     if (insertedMetadata) {
-      const categorizationPromises = insertedMetadata.map(meta =>
-          supabaseClient.functions.invoke('file-categorizer', {
-              body: JSON.stringify({
-                  fileId: meta.id,
-                  fileName: meta.file_name,
-                  filePath: meta.file_path,
-              }),
-          })
-      );
-      const summarizationPromises = insertedMetadata.map(meta =>
-          supabaseClient.functions.invoke('file-summarizer', {
-              body: JSON.stringify({
-                  fileId: meta.id,
-                  fileName: meta.file_name,
-                  filePath: meta.file_path,
-              }),
-          })
-      );
-      Promise.allSettled([...categorizationPromises, ...summarizationPromises]).then(results => {
-          results.forEach(result => {
-              if (result.status === 'rejected') {
-                  console.error("A file processing task (categorization or summarization) failed:", result.reason);
-              }
-          });
+      const processingPromises = insertedMetadata.flatMap(meta => [
+        supabaseClient.functions.invoke('file-categorizer', {
+          body: JSON.stringify({
+            fileId: meta.id,
+            fileName: meta.file_name,
+            filePath: meta.file_path,
+          }),
+        }),
+        supabaseClient.functions.invoke('file-summarizer', {
+          body: JSON.stringify({
+            fileId: meta.id,
+            fileName: meta.file_name,
+            filePath: meta.file_path,
+          }),
+        })
+      ]);
+      Promise.allSettled(processingPromises).then(results => {
+        results.forEach(result => {
+          if (result.status === 'rejected') {
+            console.error("A file processing task (categorization or summarization) failed:", result.reason);
+          }
+        });
       });
     }
 
-    // 4. Fetch case AI model
+    // 4. Update case status to 'In Progress' if it was 'Analysis Complete'
     const { data: caseData, error: caseFetchError } = await supabaseClient
       .from('cases')
-      .select('ai_model, status')
+      .select('status')
       .eq('id', caseId)
       .single();
 
-    if (caseFetchError || !caseData) {
-      throw new Error('Failed to fetch case details to determine AI model.');
-    }
+    if (caseFetchError) throw new Error('Failed to fetch case status.');
 
-    let attachments: { file_id: string; tools: { type: string }[] }[] = [];
-
-    // 5. If OpenAI, upload files to OpenAI and update metadata
-    if (caseData.ai_model === 'openai' && insertedMetadata) {
-      const openai = new OpenAI({ apiKey: Deno.env.get('OPENAI_API_KEY') });
-      const uploadPromises = insertedMetadata.map(async (meta) => {
-        const { data: fileBlob, error: downloadError } = await supabaseClient.storage
-          .from('evidence-files')
-          .download(meta.file_path);
-
-        if (downloadError || !fileBlob) {
-          console.error(`Failed to download ${meta.file_name} for OpenAI upload:`, downloadError);
-          return null;
-        }
-
-        try {
-          const openaiFile = await openai.files.create({
-            file: new File([fileBlob], meta.file_name),
-            purpose: 'assistants',
-          });
-          attachments.push({ file_id: openaiFile.id, tools: [{ type: "file_search" }] });
-
-          await supabaseClient
-            .from('case_files_metadata')
-            .update({ openai_file_id: openaiFile.id })
-            .eq('id', meta.id);
-            
-          return { file_id: openaiFile.id, tools: [{ type: "file_search" }] };
-        } catch (uploadError) {
-          console.error(`Failed to upload ${meta.file_name} to OpenAI:`, uploadError);
-          return null;
-        }
-      });
-      
-      const results = await Promise.all(uploadPromises);
-      attachments = results.filter(r => r !== null) as { file_id: string; tools: { type: string }[] }[];
-    }
-
-    // 6. Update case status to 'In Progress' if it was 'Analysis Complete'
     if (caseData.status === 'Analysis Complete') {
       await supabaseClient
         .from('cases')
         .update({ status: 'In Progress', last_updated: new Date().toISOString() })
         .eq('id', caseId);
-      await supabaseClient.from('agent_activities').insert({
-        case_id: caseId,
-        agent_name: 'System',
-        agent_role: 'Case Manager',
-        activity_type: 'Case Status Update',
-        content: 'Case status changed to "In Progress" due to new evidence upload.',
-        status: 'completed',
-      });
     }
 
-    // 7. Invoke the AI Orchestrator Edge Function
+    // 5. Invoke the AI Orchestrator to handle the AI-side processing asynchronously
     const { error: orchestratorError } = await supabaseClient.functions.invoke(
       'ai-orchestrator',
       {
         body: JSON.stringify({
           caseId: caseId,
-          command: 'process_additional_files',
-          payload: { 
-            newFileNames: newFileNames,
-            attachments: attachments, // Pass the attachments for OpenAI
-          },
+          command: 'initiate_analysis_on_new_files',
+          payload: {},
         }),
         headers: { 'Content-Type': 'application/json', 'x-supabase-user-id': userId },
       }
     );
 
     if (orchestratorError) {
-      throw new Error(`Failed to invoke AI Orchestrator: ${orchestratorError.message}`);
+      console.error(`Failed to invoke AI Orchestrator for new files, but user-facing tasks complete. Error: ${orchestratorError.message}`);
     }
 
-    return new Response(JSON.stringify({ message: 'Additional files sent to AI Orchestrator successfully', caseId }), {
+    return new Response(JSON.stringify({ message: 'New files are being processed by the AI.', caseId }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });
