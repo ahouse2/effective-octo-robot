@@ -55,47 +55,59 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
     }
 
     setIsUploadingFiles(true);
-    const loadingToastId = toast.loading(`Uploading ${filesToUpload.length} files...`);
+    const totalFiles = filesToUpload.length;
+    const loadingToastId = toast.loading(`Starting upload of ${totalFiles} files...`);
+    
+    const BATCH_SIZE = 20; // Process 20 files at a time
+    let filesProcessed = 0;
 
     try {
-      const uploadPromises = filesToUpload.map(async (file) => {
-        const relativePath = (file as any).webkitRelativePath || file.name;
-        const filePath = `${user.id}/${caseId}/${relativePath}`;
-        const { error: uploadError } = await supabase.storage
-          .from('evidence-files')
-          .upload(filePath, file, {
-            cacheControl: '3600',
-            upsert: true,
-          });
+      for (let i = 0; i < totalFiles; i += BATCH_SIZE) {
+        const batch = filesToUpload.slice(i, i + BATCH_SIZE);
+        const currentProgress = filesProcessed + batch.length;
+        toast.loading(`Uploading batch ${Math.floor(i / BATCH_SIZE) + 1}... (${currentProgress}/${totalFiles} files)`, { id: loadingToastId });
 
-        if (uploadError) throw new Error(`Failed to upload file ${relativePath}: ${uploadError.message}`);
-        return relativePath;
-      });
+        const uploadPromises = batch.map(async (file) => {
+          const relativePath = (file as any).webkitRelativePath || file.name;
+          const filePath = `${user.id}/${caseId}/${relativePath}`;
+          const { error: uploadError } = await supabase.storage
+            .from('evidence-files')
+            .upload(filePath, file, {
+              cacheControl: '3600',
+              upsert: true,
+            });
 
-      const uploadedFilePaths = await Promise.all(uploadPromises);
-      toast.success(`Successfully uploaded ${uploadedFilePaths.length} files.`);
+          if (uploadError) throw new Error(`Failed to upload file ${relativePath}: ${uploadError.message}`);
+          return relativePath;
+        });
 
-      const { error: edgeFunctionError } = await supabase.functions.invoke(
-        'process-additional-files',
-        {
-          body: JSON.stringify({
-            caseId: caseId,
-            newFileNames: uploadedFilePaths,
-          }),
-        }
-      );
+        const uploadedFilePaths = await Promise.all(uploadPromises);
 
-      if (edgeFunctionError) throw new Error("Failed to invoke additional file processing function: " + edgeFunctionError.message);
+        const { error: edgeFunctionError } = await supabase.functions.invoke(
+          'process-additional-files',
+          {
+            body: JSON.stringify({
+              caseId: caseId,
+              newFileNames: uploadedFilePaths,
+            }),
+          }
+        );
 
-      toast.success("New files submitted for analysis!");
+        if (edgeFunctionError) throw new Error(`Failed to start processing for batch: ${edgeFunctionError.message}`);
+        
+        filesProcessed += batch.length;
+      }
+
+      toast.success(`Successfully uploaded and queued all ${totalFiles} files for analysis.`, { id: loadingToastId });
       setFilesToUpload([]);
 
     } catch (err: any) {
       console.error("File upload error:", err);
-      toast.error(err.message || "An unexpected error occurred during file upload.");
+      toast.error(err.message || "An error occurred during upload.", { id: loadingToastId });
     } finally {
       setIsUploadingFiles(false);
-      toast.dismiss(loadingToastId);
+      // The toast is managed inside the loop, but we can ensure it's dismissed after a delay
+      setTimeout(() => toast.dismiss(loadingToastId), 4000);
     }
   };
 
