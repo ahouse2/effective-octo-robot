@@ -2,74 +2,31 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Upload, Search, RefreshCw } from "lucide-react";
+import { Upload, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useSession } from "@/components/SessionContextProvider";
-import { EditCaseDetailsDialog } from "./EditCaseDetailsDialog";
-
-interface CaseDetails {
-  name: string;
-  type: string;
-  status: string;
-  case_goals: string | null;
-  system_instruction: string | null;
-  ai_model: "openai" | "gemini";
-}
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface CaseToolsProps {
   caseId: string;
-  caseDetails: CaseDetails | null;
-  onCaseUpdate: () => void;
 }
 
-export const CaseTools: React.FC<CaseToolsProps> = ({ caseId, caseDetails, onCaseUpdate }) => {
-  const [webSearchQuery, setWebSearchQuery] = useState("");
-  const [isSearchingWeb, setIsSearchingWeb] = useState(false);
+export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
   const [filesToUpload, setFilesToUpload] = useState<File[]>([]);
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const [isReanalyzing, setIsReanalyzing] = useState(false);
   const { user } = useSession();
-
-  const handleWebSearch = async () => {
-    if (!webSearchQuery.trim()) {
-      toast.info("Please enter a query for web search.");
-      return;
-    }
-    if (!caseId || !user) {
-      toast.error("Case ID or user is missing. Cannot perform web search.");
-      return;
-    }
-
-    setIsSearchingWeb(true);
-    const loadingToastId = toast.loading(`Performing web search for "${webSearchQuery}"...`);
-
-    try {
-      const { data, error } = await supabase.functions.invoke(
-        'ai-orchestrator',
-        {
-          body: JSON.stringify({
-            caseId: caseId,
-            command: 'web_search',
-            payload: { query: webSearchQuery },
-          }),
-        }
-      );
-
-      if (error) throw new Error(error.message);
-
-      console.log("Web search initiated response:", data);
-      toast.success("Web search initiated successfully! Results will appear in chat.");
-      setWebSearchQuery("");
-
-    } catch (err: any) {
-      console.error("Error performing web search:", err);
-      toast.error(err.message || "Failed to perform web search. Please try again.");
-    } finally {
-      setIsSearchingWeb(false);
-      toast.dismiss(loadingToastId);
-    }
-  };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files) {
@@ -180,21 +137,6 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId, caseDetails, onCas
   return (
     <div className="p-4 space-y-6">
       <div>
-        <Label className="text-sm font-medium">Case Directives</Label>
-        <div className="flex items-center justify-between mt-1">
-          <p className="text-sm text-muted-foreground">View and edit case goals.</p>
-          {caseDetails && (
-            <EditCaseDetailsDialog
-              caseId={caseId}
-              initialCaseGoals={caseDetails.case_goals || ""}
-              initialSystemInstruction={caseDetails.system_instruction || ""}
-              initialAiModel={caseDetails.ai_model}
-              onSaveSuccess={onCaseUpdate}
-            />
-          )}
-        </div>
-      </div>
-      <div>
         <Label htmlFor="evidence-folder-upload-tools">Upload Evidence Folder</Label>
         <Input
           id="evidence-folder-upload-tools"
@@ -216,35 +158,33 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId, caseDetails, onCas
         </Button>
       </div>
       <div>
-        <Label htmlFor="web-search-query-tools">Perform Web Search</Label>
-        <Input
-          id="web-search-query-tools"
-          placeholder="e.g., 'California family law updates 2023'"
-          value={webSearchQuery}
-          onChange={(e) => setWebSearchQuery(e.target.value)}
-          disabled={isSearchingWeb}
-          className="mt-1"
-        />
-        <Button
-          onClick={handleWebSearch}
-          disabled={isSearchingWeb || !webSearchQuery.trim()}
-          className="w-full mt-2"
-        >
-          <Search className="h-4 w-4 mr-2" />
-          {isSearchingWeb ? "Searching..." : "Search Web"}
-        </Button>
-      </div>
-      <div>
         <Label>Re-run Full Analysis</Label>
-        <Button
-          onClick={handleReanalyzeCase}
-          disabled={isReanalyzing}
-          className="w-full mt-1"
-          variant="outline"
-        >
-          <RefreshCw className="h-4 w-4 mr-2" />
-          {isReanalyzing ? "Re-analyzing..." : "Re-run Analysis"}
-        </Button>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              disabled={isReanalyzing}
+              className="w-full mt-1"
+              variant="outline"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              {isReanalyzing ? "Re-analyzing..." : "Re-run Analysis"}
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Confirm Re-analysis</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will trigger a full re-analysis of all evidence in this case. This may incur costs and take some time. Are you sure you want to proceed?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleReanalyzeCase}>
+                Confirm & Re-run
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );

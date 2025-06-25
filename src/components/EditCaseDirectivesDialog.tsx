@@ -16,45 +16,38 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDes
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Edit } from "lucide-react";
 import { useSession } from "@/components/SessionContextProvider";
 
-interface EditCaseDetailsDialogProps {
+interface EditCaseDirectivesDialogProps {
   caseId: string;
   initialCaseGoals: string;
   initialSystemInstruction: string;
-  initialAiModel: "openai" | "gemini";
   onSaveSuccess: () => void;
 }
 
 const formSchema = z.object({
   caseGoals: z.string().optional(),
   systemInstruction: z.string().optional(),
-  aiModel: z.enum(["openai", "gemini"], {
-    required_error: "Please select an AI model.",
-  }),
 });
 
-type EditCaseDetailsFormValues = z.infer<typeof formSchema>;
+type FormValues = z.infer<typeof formSchema>;
 
-export const EditCaseDetailsDialog: React.FC<EditCaseDetailsDialogProps> = ({
+export const EditCaseDirectivesDialog: React.FC<EditCaseDirectivesDialogProps> = ({
   caseId,
   initialCaseGoals,
   initialSystemInstruction,
-  initialAiModel,
   onSaveSuccess,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { user } = useSession();
 
-  const form = useForm<EditCaseDetailsFormValues>({
+  const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       caseGoals: initialCaseGoals,
       systemInstruction: initialSystemInstruction,
-      aiModel: initialAiModel,
     },
   });
 
@@ -63,12 +56,11 @@ export const EditCaseDetailsDialog: React.FC<EditCaseDetailsDialogProps> = ({
       form.reset({
         caseGoals: initialCaseGoals,
         systemInstruction: initialSystemInstruction,
-        aiModel: initialAiModel,
       });
     }
-  }, [isOpen, initialCaseGoals, initialSystemInstruction, initialAiModel, form]);
+  }, [isOpen, initialCaseGoals, initialSystemInstruction, form]);
 
-  const onSubmit = async (values: EditCaseDetailsFormValues) => {
+  const onSubmit = async (values: FormValues) => {
     if (!user) {
       toast.error("You must be logged in to update case directives.");
       return;
@@ -82,7 +74,6 @@ export const EditCaseDetailsDialog: React.FC<EditCaseDetailsDialogProps> = ({
         .update({
           case_goals: values.caseGoals,
           system_instruction: values.systemInstruction,
-          ai_model: values.aiModel,
           last_updated: new Date().toISOString(),
         })
         .eq('id', caseId);
@@ -91,26 +82,14 @@ export const EditCaseDetailsDialog: React.FC<EditCaseDetailsDialogProps> = ({
         throw new Error("Failed to update case directives: " + error.message);
       }
 
-      const aiModelChanged = initialAiModel !== values.aiModel;
-      if (aiModelChanged) {
-        toast.info("AI model switched. Initiating setup and re-analysis...");
-        await supabase.functions.invoke('ai-orchestrator', {
-          body: JSON.stringify({
-            caseId: caseId,
-            command: 'switch_ai_model',
-            payload: { newAiModel: values.aiModel },
-          }),
-        });
-      } else {
-        toast.info("AI assistant instructions are being updated.");
-        await supabase.functions.invoke('ai-orchestrator', {
-          body: JSON.stringify({
-            caseId: caseId,
-            command: 'update_assistant_instructions',
-            payload: {},
-          }),
-        });
-      }
+      toast.info("AI assistant instructions are being updated.");
+      await supabase.functions.invoke('ai-orchestrator', {
+        body: JSON.stringify({
+          caseId: caseId,
+          command: 'update_assistant_instructions',
+          payload: {},
+        }),
+      });
 
       toast.success("Case directives updated successfully!");
       setIsOpen(false);
@@ -137,7 +116,7 @@ export const EditCaseDetailsDialog: React.FC<EditCaseDetailsDialogProps> = ({
         <DialogHeader>
           <DialogTitle>Edit Case Directives</DialogTitle>
           <DialogDescription>
-            Adjust the primary goals, system instructions, and AI model for this case.
+            Adjust the primary goals and system instructions for the AI agents.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -171,7 +150,7 @@ export const EditCaseDetailsDialog: React.FC<EditCaseDetailsDialogProps> = ({
                   <FormLabel>System Instructions (for AI Agents)</FormLabel>
                   <FormControl>
                     <Textarea
-                      placeholder="Provide specific instructions or context for the AI agents. E.g., 'Focus heavily on financial documents for discrepancies.', 'Prioritize evidence related to child's welfare.', 'Ignore documents older than 2020.'"
+                      placeholder="Provide specific instructions or context for the AI agents. E.g., 'Focus heavily on financial documents for discrepancies.'"
                       className="min-h-[120px]"
                       {...field}
                       disabled={isSubmitting}
@@ -179,30 +158,6 @@ export const EditCaseDetailsDialog: React.FC<EditCaseDetailsDialogProps> = ({
                   </FormControl>
                   <FormDescription>
                     Use this field to give the AI agents detailed directives on how to approach the analysis.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="aiModel"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>AI Model for Analysis</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value} disabled={isSubmitting}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select an AI model" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="openai">OpenAI (GPT-4o)</SelectItem>
-                      <SelectItem value="gemini">Google Gemini (Requires RAG setup for full document analysis)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormDescription>
-                    This model powers the AI analysis for this specific case.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

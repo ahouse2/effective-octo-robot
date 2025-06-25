@@ -17,6 +17,7 @@ import { useSession } from "@/components/SessionContextProvider";
 import { FileMentionInput } from "@/components/FileMentionInput";
 import { CaseTools } from "@/components/CaseTools";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { EditCaseDirectivesDialog } from "@/components/EditCaseDirectivesDialog";
 
 interface CaseDetails {
   name: string;
@@ -109,8 +110,20 @@ const AgentInteraction = () => {
   const chatPanel = (
     <div className="flex h-full flex-col">
       <CardHeader>
-        <CardTitle>Agent Chat: {caseDetails?.name}</CardTitle>
-        <CardDescription>Interact directly with the AI agents.</CardDescription>
+        <div className="flex justify-between items-center">
+          <div>
+            <CardTitle>Agent Chat: {caseDetails?.name}</CardTitle>
+            <CardDescription>Interact directly with the AI agents.</CardDescription>
+          </div>
+          {caseDetails && (
+            <EditCaseDirectivesDialog
+              caseId={caseId}
+              initialCaseGoals={caseDetails.case_goals || ""}
+              initialSystemInstruction={caseDetails.system_instruction || ""}
+              onSaveSuccess={fetchCaseDetails}
+            />
+          )}
+        </div>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col overflow-hidden">
         <CaseChatDisplay caseId={caseId} />
@@ -152,7 +165,7 @@ const AgentInteraction = () => {
         <EvidenceManager caseId={caseId} />
       </TabsContent>
       <TabsContent value="tools" className="flex-1 overflow-auto">
-        <CaseTools caseId={caseId} caseDetails={caseDetails} onCaseUpdate={fetchCaseDetails} />
+        <CaseTools caseId={caseId} />
       </TabsContent>
       <TabsContent value="log" className="flex-1 overflow-auto p-2">
         <AgentActivityLog caseId={caseId} />
@@ -173,7 +186,7 @@ const AgentInteraction = () => {
           <TabsContent value="chat" className="h-[80vh]">{chatPanel}</TabsContent>
           <TabsContent value="hub">{intelligencePanel}</TabsContent>
           <TabsContent value="evidence"><EvidenceManager caseId={caseId} /></TabsContent>
-          <TabsContent value="tools"><CaseTools caseId={caseId} caseDetails={caseDetails} onCaseUpdate={fetchCaseDetails} /></TabsContent>
+          <TabsContent value="tools"><CaseTools caseId={caseId} /></TabsContent>
         </Tabs>
       </Layout>
     );
