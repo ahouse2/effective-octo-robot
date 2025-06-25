@@ -35,40 +35,7 @@ export const DeleteCaseDialog: React.FC<DeleteCaseDialogProps> = ({ caseId, case
     const loadingToastId = toast.loading(`Deleting case "${caseName}" and all associated data...`);
 
     try {
-      // 1. Delete associated agent activities
-      const { error: activitiesError } = await supabase
-        .from('agent_activities')
-        .delete()
-        .eq('case_id', caseId);
-
-      if (activitiesError) {
-        console.error("Error deleting agent activities:", activitiesError);
-        throw new Error("Failed to delete associated agent activities.");
-      }
-
-      // 2. Delete associated case theories
-      const { error: theoriesError } = await supabase
-        .from('case_theories')
-        .delete()
-        .eq('case_id', caseId);
-
-      if (theoriesError) {
-        console.error("Error deleting case theories:", theoriesError);
-        throw new Error("Failed to delete associated case theories.");
-      }
-
-      // 3. Delete associated case insights
-      const { error: insightsError } = await supabase
-        .from('case_insights')
-        .delete()
-        .eq('case_id', caseId);
-
-      if (insightsError) {
-        console.error("Error deleting case insights:", insightsError);
-        throw new Error("Failed to delete associated case insights.");
-      }
-
-      // 4. Delete files from Supabase Storage
+      // Delete files from Supabase Storage first
       const { data: files, error: listError } = await supabase.storage
         .from('evidence-files')
         .list(`${user.id}/${caseId}/`);
@@ -90,7 +57,9 @@ export const DeleteCaseDialog: React.FC<DeleteCaseDialogProps> = ({ caseId, case
         }
       }
 
-      // 5. Delete the case itself (this should be last)
+      // Delete the case itself. Due to ON DELETE CASCADE,
+      // all related records in agent_activities, case_theories,
+      // case_insights, and case_files_metadata will be automatically deleted.
       const { error: caseError } = await supabase
         .from('cases')
         .delete()
@@ -98,7 +67,7 @@ export const DeleteCaseDialog: React.FC<DeleteCaseDialogProps> = ({ caseId, case
 
       if (caseError) {
         console.error("Error deleting case:", caseError);
-        throw new Error("Failed to delete the case record.");
+        throw new Error("Failed to delete the case record: " + caseError.message);
       }
 
       toast.success(`Case "${caseName}" and all related data deleted successfully.`);
