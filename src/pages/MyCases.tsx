@@ -14,10 +14,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { NewCaseDialog } from "@/components/NewCaseDialog";
-import { Link } from "react-router-dom";
-import { DeleteCaseDialog } from "@/components/DeleteCaseDialog"; // Import the new delete dialog
-import { Settings } from "lucide-react"; // Import Settings icon
-import { Input } from "@/components/ui/input"; // Import Input for search bar
+import { Link, useNavigate } from "react-router-dom";
+import { DeleteCaseDialog } from "@/components/DeleteCaseDialog";
+import { Settings } from "lucide-react";
+import { Input } from "@/components/ui/input";
 
 interface Case {
   id: string;
@@ -27,11 +27,12 @@ interface Case {
   last_updated: string;
 }
 
-const CaseManagement = () => {
+const MyCases = () => {
   const [cases, setCases] = useState<Case[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState(""); // New state for search term
+  const [searchTerm, setSearchTerm] = useState("");
+  const navigate = useNavigate();
 
   const fetchCases = async () => {
     setLoading(true);
@@ -54,7 +55,6 @@ const CaseManagement = () => {
   useEffect(() => {
     fetchCases();
 
-    // Real-time subscription for new cases
     const channel = supabase
       .channel('cases_changes')
       .on(
@@ -83,13 +83,9 @@ const CaseManagement = () => {
   }, []);
 
   const handleCaseCreated = (newCaseId: string) => {
-    // Optionally re-fetch cases or rely on real-time subscription
-    // fetchCases(); // If not using real-time, uncomment this
     toast.success("Case created! Navigating to analysis...");
-    // The NewCaseDialog already handles navigation, but if you wanted to do something else here, you could.
   };
 
-  // Filtered cases based on search term
   const filteredCases = cases.filter(
     (caseItem) =>
       caseItem.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -100,7 +96,7 @@ const CaseManagement = () => {
     <Layout>
       <div className="container mx-auto py-8">
         <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
-          <h1 className="text-4xl font-bold">Case Management</h1>
+          <h1 className="text-4xl font-bold">My Cases</h1>
           <div className="flex items-center space-x-4 w-full md:w-auto">
             <Input
               placeholder="Search cases by name or type..."
@@ -114,8 +110,8 @@ const CaseManagement = () => {
 
         <Card className="max-w-4xl mx-auto">
           <CardHeader>
-            <CardTitle>Your Cases</CardTitle>
-            <CardDescription>Overview of all your family law cases and their analysis status.</CardDescription>
+            <CardTitle>All Your Cases</CardTitle>
+            <CardDescription>Create, view, and manage all your family law cases.</CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -139,7 +135,11 @@ const CaseManagement = () => {
                 </TableHeader>
                 <TableBody>
                   {filteredCases.map((caseItem) => (
-                    <TableRow key={caseItem.id}>
+                    <TableRow
+                      key={caseItem.id}
+                      onClick={() => navigate(`/agent-interaction/${caseItem.id}`)}
+                      className="cursor-pointer hover:bg-muted/50"
+                    >
                       <TableCell className="font-medium">{caseItem.name}</TableCell>
                       <TableCell>{caseItem.type}</TableCell>
                       <TableCell>
@@ -153,16 +153,18 @@ const CaseManagement = () => {
                         </Badge>
                       </TableCell>
                       <TableCell>{new Date(caseItem.last_updated).toLocaleDateString()}</TableCell>
-                      <TableCell className="text-right flex items-center justify-end space-x-2">
-                        <Link to={`/case-details/${caseItem.id}`}>
-                          <Button variant="outline" size="sm">
-                            <Settings className="h-4 w-4" />
-                          </Button>
-                        </Link>
-                        <Link to={`/agent-interaction/${caseItem.id}`}>
-                          <Button variant="outline" size="sm">View Analysis</Button>
-                        </Link>
-                        <DeleteCaseDialog caseId={caseItem.id} caseName={caseItem.name} />
+                      <TableCell className="text-right">
+                        <div
+                          className="flex items-center justify-end space-x-2"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Link to={`/case-details/${caseItem.id}`}>
+                            <Button variant="outline" size="sm">
+                              <Settings className="h-4 w-4" />
+                            </Button>
+                          </Link>
+                          <DeleteCaseDialog caseId={caseItem.id} caseName={caseItem.name} />
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -176,4 +178,4 @@ const CaseManagement = () => {
   );
 };
 
-export default CaseManagement;
+export default MyCases;

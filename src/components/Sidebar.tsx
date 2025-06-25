@@ -1,7 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { FolderKanban, Settings, Gavel, BotMessageSquare, User, LogOut } from "lucide-react";
+import { FolderKanban, Settings, Gavel, User, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./ThemeToggle";
 import { supabase } from "@/integrations/supabase/client";
@@ -44,12 +44,6 @@ export function Sidebar({ className }: SidebarProps) {
               <Button variant="ghost" className="w-full justify-start">
                 <Gavel className="mr-2 h-4 w-4" />
                 My Cases
-              </Button>
-            </Link>
-            <Link to="/agent-interaction">
-              <Button variant="ghost" className="w-full justify-start">
-                <BotMessageSquare className="mr-2 h-4 w-4" />
-                Agent Interaction
               </Button>
             </Link>
           </div>
