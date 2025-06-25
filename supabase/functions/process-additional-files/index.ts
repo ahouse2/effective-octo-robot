@@ -53,10 +53,10 @@ serve(async (req) => {
     const DB_BATCH_SIZE = 100;
     for (let i = 0; i < newFileNames.length; i += DB_BATCH_SIZE) {
       const batch = newFileNames.slice(i, i + DB_BATCH_SIZE);
-      const fileMetadataInserts = batch.map((fileName: string) => ({
+      const fileMetadataInserts = batch.map((relativePath: string) => ({
         case_id: caseId,
-        file_name: fileName.split('/').pop() || fileName,
-        file_path: `${userId}/${caseId}/${fileName}`,
+        file_name: relativePath, // Store the full relative path as the file_name
+        file_path: `${userId}/${caseId}/${relativePath}`,
         description: `Additional file uploaded for case ${caseId}`,
       }));
 
