@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from "react";
 import Layout from "@/components/Layout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
-import { FileText, Gavel, Clock } from "lucide-react";
+import { FileText, Gavel, Clock, PlusCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -54,16 +54,28 @@ const Dashboard = () => {
   const renderDashboardContent = () => {
     if (totalCases === 0) {
       return (
-        <div className="text-center py-16 max-w-2xl mx-auto">
-          <h2 className="text-3xl font-bold mb-4">Welcome to Family Law AI</h2>
-          <p className="text-xl text-muted-foreground mb-8">
-            Your specialized tool for evidence analysis in California family law cases.
-          </p>
-          <p className="mb-8">It looks like you don't have any cases yet. Get started by creating your first case.</p>
-          <Link to="/my-cases">
-            <Button size="lg">Create Your First Case</Button>
-          </Link>
-        </div>
+        <Card className="max-w-3xl mx-auto text-center py-12 px-6">
+          <CardHeader>
+            <div className="mx-auto bg-primary/10 text-primary h-16 w-16 rounded-full flex items-center justify-center mb-4">
+              <Gavel className="h-8 w-8" />
+            </div>
+            <CardTitle className="text-3xl font-bold">Welcome to Family Law AI</CardTitle>
+            <CardDescription className="text-lg text-muted-foreground mt-2">
+              Your specialized tool for evidence analysis in California family law cases.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="mb-8">
+              It looks like you don't have any cases yet. Get started by creating your first case, uploading your evidence, and letting our AI agents handle the analysis.
+            </p>
+            <Link to="/my-cases">
+              <Button size="lg">
+                <PlusCircle className="mr-2 h-5 w-5" />
+                Create Your First Case
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
       );
     }
 
@@ -113,6 +125,7 @@ const Dashboard = () => {
         <Card className="max-w-4xl mx-auto">
           <CardHeader>
             <CardTitle>Recent Activity</CardTitle>
+            <CardDescription>A summary of the most recently updated cases.</CardDescription>
           </CardHeader>
           <CardContent>
             {recentActivities.length > 0 ? (
