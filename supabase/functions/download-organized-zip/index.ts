@@ -13,7 +13,7 @@ serve(async (req) => {
   }
 
   try {
-    const { caseId } = await req.json();
+    const { caseId, category } = await req.json(); // Add category
     if (!caseId) throw new Error("Case ID is required.");
 
     const supabaseClient = createClient(
@@ -22,14 +22,23 @@ serve(async (req) => {
       { auth: { persistSession: false } }
     );
 
-    const { data: files, error: filesError } = await supabaseClient
+    let query = supabaseClient
       .from('case_files_metadata')
-      .select('file_path, file_category, suggested_name')
+      .select('file_path, file_category, suggested_name, file_name') // Add file_name for fallback
       .eq('case_id', caseId)
       .not('suggested_name', 'is', null);
 
+    if (category) {
+      query = query.eq('file_category', category);
+    }
+
+    const { data: files, error: filesError } = await query;
+
     if (filesError) throw filesError;
-    if (!files || files.length === 0) throw new Error("No categorized files found to zip.");
+    if (!files || files.length === 0) {
+      const errorMessage = category ? `No categorized files found in category "${category}".` : "No categorized files found to zip.";
+      throw new Error(errorMessage);
+    }
 
     const zipObject: fflate.Zippable = {};
 
@@ -40,21 +49,26 @@ serve(async (req) => {
       
       if (downloadError) {
         console.error(`Failed to download ${file.file_path}:`, downloadError);
-        return;
+        return; // Skip failed downloads
       }
 
       const buffer = await blob.arrayBuffer();
-      const zipPath = `${file.file_category || 'Uncategorized'}/${file.suggested_name}`;
+      const fileNameInZip = file.suggested_name || file.file_name;
+      const zipPath = category ? fileNameInZip : `${file.file_category || 'Uncategorized'}/${fileNameInZip}`;
       zipObject[zipPath] = new Uint8Array(buffer);
     }));
 
     const zipData = fflate.zipSync(zipObject);
+    
+    const zipFileName = category 
+      ? `case_${caseId}_${category.replace(/\s+/g, '_')}.zip`
+      : `organized_case_${caseId}.zip`;
 
     return new Response(zipData, {
       headers: { 
         ...corsHeaders, 
         'Content-Type': 'application/zip',
-        'Content-Disposition': `attachment; filename="organized_case_${caseId}.zip"`
+        'Content-Disposition': `attachment; filename="${zipFileName}"`
       },
       status: 200,
     });

@@ -6,8 +6,7 @@ import { AgentActivityLog } from "@/components/AgentActivityLog";
 import { CaseTheorySummary } from "@/components/CaseTheorySummary";
 import { CaseInsightsCard } from "@/components/CaseInsightsCard";
 import { CaseTimeline } from "@/components/CaseTimeline";
-import { CaseFilesDisplay } from "@/components/CaseFilesDisplay";
-import { OrganizedFilesCard } from "@/components/OrganizedFilesCard";
+import { EvidenceManager } from "@/components/EvidenceManager";
 import { CaseChatDisplay } from "@/components/CaseChatDisplay";
 import { useParams, useNavigate } from "react-router-dom";
 import { Send, Lightbulb, Upload, Edit, Search, RefreshCw } from "lucide-react";
@@ -467,8 +466,7 @@ const AgentInteraction = () => {
               </TabsContent>
               <TabsContent value="files">
                 <div className="flex flex-col space-y-4 mt-4">
-                  <OrganizedFilesCard caseId={caseId} />
-                  <CaseFilesDisplay caseId={caseId} />
+                  <EvidenceManager caseId={caseId} />
                 </div>
               </TabsContent>
               <TabsContent value="timeline">
