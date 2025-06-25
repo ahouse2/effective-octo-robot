@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import OpenAI from 'https://esm.sh/openai@4.52.7';
 
 const corsHeaders = {
@@ -7,22 +7,31 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+async function getUserIdFromRequest(req: Request, supabaseClient: SupabaseClient): Promise<string | null> {
+  try {
+    const authHeader = req.headers.get('Authorization');
+    if (authHeader) {
+      const { data: { user }, error } = await supabaseClient.auth.getUser(authHeader.replace('Bearer ', ''));
+      if (error) {
+        console.warn("getUserIdFromRequest (process-additional-files): Failed to get user from JWT:", error.message);
+      }
+      if (user) {
+        return user.id;
+      }
+    }
+    return null;
+  } catch (e) {
+    console.error("getUserIdFromRequest (process-additional-files): Error getting user ID:", e);
+    return null;
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { caseId, newFileNames } = await req.json();
-    const userId = req.headers.get('x-supabase-user-id'); // Get user ID from header
-
-    if (!caseId || !userId || !newFileNames || !Array.isArray(newFileNames) || newFileNames.length === 0) {
-      return new Response(JSON.stringify({ error: 'Case ID, User ID, and new file names are required' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400,
-      });
-    }
-
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
@@ -32,6 +41,16 @@ serve(async (req) => {
         },
       }
     );
+
+    const { caseId, newFileNames } = await req.json();
+    const userId = await getUserIdFromRequest(req, supabaseClient);
+
+    if (!caseId || !userId || !newFileNames || !Array.isArray(newFileNames) || newFileNames.length === 0) {
+      return new Response(JSON.stringify({ error: 'Case ID, User ID, and new file names are required' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400,
+      });
+    }
 
     // 1. Record an agent activity for the new files being added
     await supabaseClient.from('agent_activities').insert({

@@ -126,10 +126,6 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
             aiModel: values.aiModel,
             openaiAssistantId: values.openaiAssistantId || null,
           }),
-          headers: { 
-            'Content-Type': 'application/json',
-            'x-supabase-user-id': user.id
-          },
         }
       );
 

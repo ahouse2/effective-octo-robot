@@ -1,10 +1,29 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+async function getUserIdFromRequest(req: Request, supabaseClient: SupabaseClient): Promise<string | null> {
+  try {
+    const authHeader = req.headers.get('Authorization');
+    if (authHeader) {
+      const { data: { user }, error } = await supabaseClient.auth.getUser(authHeader.replace('Bearer ', ''));
+      if (error) {
+        console.warn("getUserIdFromRequest (send-user-prompt): Failed to get user from JWT:", error.message);
+      }
+      if (user) {
+        return user.id;
+      }
+    }
+    return null;
+  } catch (e) {
+    console.error("getUserIdFromRequest (send-user-prompt): Error getting user ID:", e);
+    return null;
+  }
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -12,19 +31,9 @@ serve(async (req) => {
   }
 
   try {
-    const { caseId, promptContent } = await req.json();
-    const userId = req.headers.get('x-supabase-user-id'); // Get user ID from header
-
-    if (!caseId || !promptContent) {
-      return new Response(JSON.stringify({ error: 'Case ID and prompt content are required' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400,
-      });
-    }
-
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '', // Use service role key for server-side operations
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
       {
         auth: {
           persistSession: false,
@@ -32,16 +41,26 @@ serve(async (req) => {
       }
     );
 
+    const { caseId, promptContent } = await req.json();
+    const userId = await getUserIdFromRequest(req, supabaseClient);
+
+    if (!caseId || !promptContent || !userId) {
+      return new Response(JSON.stringify({ error: 'Case ID, prompt content, and user authentication are required' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400,
+      });
+    }
+
     // 1. Insert user's prompt as an agent activity
     const { error: activityError } = await supabaseClient
       .from('agent_activities')
       .insert({
         case_id: caseId,
-        agent_name: 'User', // Identify the source as 'User'
+        agent_name: 'User',
         agent_role: 'Client',
         activity_type: 'User Prompt',
         content: promptContent,
-        status: 'completed', // User prompts are immediately 'completed' from the user's side
+        status: 'completed',
       });
 
     if (activityError) {
@@ -72,7 +91,7 @@ serve(async (req) => {
           command: 'user_prompt',
           payload: { 
             promptContent: finalPrompt,
-            mentionedFilename: mentionedFilename // This can be null
+            mentionedFilename: mentionedFilename
           },
         }),
         headers: { 'Content-Type': 'application/json', 'x-supabase-user-id': userId },
