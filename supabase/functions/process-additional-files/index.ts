@@ -134,14 +134,14 @@ serve(async (req) => {
     // 5. If OpenAI, upload files to OpenAI and update metadata
     if (caseData.ai_model === 'openai' && insertedMetadata) {
       const openai = new OpenAI({ apiKey: Deno.env.get('OPENAI_API_KEY') });
-      for (const meta of insertedMetadata) {
+      const uploadPromises = insertedMetadata.map(async (meta) => {
         const { data: fileBlob, error: downloadError } = await supabaseClient.storage
           .from('evidence-files')
           .download(meta.file_path);
 
         if (downloadError || !fileBlob) {
           console.error(`Failed to download ${meta.file_name} for OpenAI upload:`, downloadError);
-          continue;
+          return null;
         }
 
         try {
@@ -155,10 +155,16 @@ serve(async (req) => {
             .from('case_files_metadata')
             .update({ openai_file_id: openaiFile.id })
             .eq('id', meta.id);
+            
+          return { file_id: openaiFile.id, tools: [{ type: "file_search" }] };
         } catch (uploadError) {
           console.error(`Failed to upload ${meta.file_name} to OpenAI:`, uploadError);
+          return null;
         }
-      }
+      });
+      
+      const results = await Promise.all(uploadPromises);
+      attachments = results.filter(r => r !== null) as { file_id: string; tools: { type: string }[] }[];
     }
 
     // 6. Update case status to 'In Progress' if it was 'Analysis Complete'

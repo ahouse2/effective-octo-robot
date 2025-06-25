@@ -197,7 +197,7 @@ serve(async (req) => {
       // Upload files to OpenAI and update metadata
       const openaiFileAttachments: { file_id: string; tools: { type: string }[] }[] = [];
       if (insertedMetadata) {
-        for (const meta of insertedMetadata) {
+        const uploadPromises = insertedMetadata.map(async (meta) => {
           const filePath = meta.file_path;
           const fileName = meta.file_name;
           
@@ -211,7 +211,7 @@ serve(async (req) => {
               case_id: caseId, agent_name: 'File Processor', agent_role: 'Error Handler',
               activity_type: 'File Download Failed', content: `Failed to download ${fileName} from Supabase Storage: ${downloadError.message}`, status: 'error',
             });
-            continue; // Skip this file
+            return null;
           }
 
           if (fileBlob) {
@@ -220,9 +220,7 @@ serve(async (req) => {
                 file: new File([fileBlob], fileName),
                 purpose: 'assistants',
               });
-              openaiFileAttachments.push({ file_id: openaiFile.id, tools: [{ type: "file_search" }] });
 
-              // Update the metadata row with the openai_file_id
               const { error: updateMetaError } = await supabaseClient
                 .from('case_files_metadata')
                 .update({ openai_file_id: openaiFile.id })
@@ -236,6 +234,8 @@ serve(async (req) => {
                 case_id: caseId, agent_name: 'File Processor', agent_role: 'OpenAI Integration',
                 activity_type: 'File Uploaded to OpenAI', content: `Successfully uploaded ${fileName} to OpenAI (ID: ${openaiFile.id}).`, status: 'completed',
               });
+              
+              return { file_id: openaiFile.id, tools: [{ type: "file_search" }] };
             } catch (openaiUploadError: any) {
               console.error(`Error uploading file ${fileName} to OpenAI:`, openaiUploadError);
               await supabaseClient.from('agent_activities').insert({
@@ -244,7 +244,11 @@ serve(async (req) => {
               });
             }
           }
-        }
+          return null;
+        });
+
+        const results = await Promise.all(uploadPromises);
+        openaiFileAttachments.push(...results.filter(r => r !== null) as any[]);
       }
 
       // 4. Create or retrieve an OpenAI Assistant
