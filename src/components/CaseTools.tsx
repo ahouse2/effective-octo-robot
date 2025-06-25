@@ -58,15 +58,16 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
     const totalFiles = filesToUpload.length;
     const loadingToastId = toast.loading(`Starting upload of ${totalFiles} files...`);
     
-    const BATCH_SIZE = 20; // Process 20 files at a time
-    let filesProcessed = 0;
+    const BATCH_SIZE = 20;
+    const processingPromises = [];
 
     try {
       for (let i = 0; i < totalFiles; i += BATCH_SIZE) {
         const batch = filesToUpload.slice(i, i + BATCH_SIZE);
-        const currentProgress = filesProcessed + batch.length;
+        const currentProgress = i + batch.length;
         toast.loading(`Uploading batch ${Math.floor(i / BATCH_SIZE) + 1}... (${currentProgress}/${totalFiles} files)`, { id: loadingToastId });
 
+        // Step 1: Upload files in the current batch to storage
         const uploadPromises = batch.map(async (file) => {
           const relativePath = (file as any).webkitRelativePath || file.name;
           const filePath = `${user.id}/${caseId}/${relativePath}`;
@@ -83,7 +84,8 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
 
         const uploadedFilePaths = await Promise.all(uploadPromises);
 
-        const { error: edgeFunctionError } = await supabase.functions.invoke(
+        // Step 2: Queue the processing task without waiting for it to finish
+        const processingPromise = supabase.functions.invoke(
           'process-additional-files',
           {
             body: JSON.stringify({
@@ -92,10 +94,16 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
             }),
           }
         );
+        processingPromises.push(processingPromise);
+      }
 
-        if (edgeFunctionError) throw new Error(`Failed to start processing for batch: ${edgeFunctionError.message}`);
-        
-        filesProcessed += batch.length;
+      // Step 3: Wait for all processing tasks to be *initiated*
+      toast.loading(`Finalizing... All ${totalFiles} files uploaded. Initiating analysis.`, { id: loadingToastId });
+      const results = await Promise.allSettled(processingPromises);
+
+      const failedInitiations = results.filter(r => r.status === 'rejected');
+      if (failedInitiations.length > 0) {
+        throw new Error(`${failedInitiations.length} processing batches failed to initiate.`);
       }
 
       toast.success(`Successfully uploaded and queued all ${totalFiles} files for analysis.`, { id: loadingToastId });
@@ -106,7 +114,6 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
       toast.error(err.message || "An error occurred during upload.", { id: loadingToastId });
     } finally {
       setIsUploadingFiles(false);
-      // The toast is managed inside the loop, but we can ensure it's dismissed after a delay
       setTimeout(() => toast.dismiss(loadingToastId), 4000);
     }
   };
