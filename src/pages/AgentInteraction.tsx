@@ -5,6 +5,7 @@ import { CaseTheorySummary } from "@/components/CaseTheorySummary";
 import { CaseInsightsCard } from "@/components/CaseInsightsCard";
 import { EvidenceManager } from "@/components/EvidenceManager";
 import { CaseChatDisplay } from "@/components/CaseChatDisplay";
+import { AgentActivityLog } from "@/components/AgentActivityLog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { useParams, useNavigate } from "react-router-dom";
@@ -15,6 +16,7 @@ import { toast } from "sonner";
 import { useSession } from "@/components/SessionContextProvider";
 import { FileMentionInput } from "@/components/FileMentionInput";
 import { CaseTools } from "@/components/CaseTools";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 interface CaseDetails {
   name: string;
@@ -33,6 +35,7 @@ const AgentInteraction = () => {
   const { user } = useSession();
   const [caseDetails, setCaseDetails] = useState<CaseDetails | null>(null);
   const [loadingCaseDetails, setLoadingCaseDetails] = useState(true);
+  const isMobile = useIsMobile();
 
   const fetchCaseDetails = async () => {
     if (!caseId) {
@@ -87,58 +90,93 @@ const AgentInteraction = () => {
     );
   }
 
+  const chatPanel = (
+    <div className="flex h-full flex-col">
+      <CardHeader>
+        <CardTitle>Agent Chat: {caseDetails?.name}</CardTitle>
+        <CardDescription>Interact directly with the AI agents.</CardDescription>
+      </CardHeader>
+      <CardContent className="flex-1 flex flex-col overflow-hidden">
+        <CaseChatDisplay caseId={caseId} />
+      </CardContent>
+      <div className="p-4 border-t">
+        <div className="flex items-center space-x-2">
+          <FileMentionInput
+            caseId={caseId}
+            placeholder="Send a message, or type '@' to mention a file..."
+            value={userPrompt}
+            onChange={setUserPrompt}
+            onKeyPress={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendPrompt(); }}}
+            disabled={isSending}
+            className="flex-1 resize-none"
+          />
+          <Button onClick={handleSendPrompt} disabled={isSending}>
+            <Send className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const intelligencePanel = (
+    <div className="flex h-full flex-col space-y-4 p-4 overflow-y-auto">
+      <CaseTheorySummary caseId={caseId} />
+      <CaseInsightsCard caseId={caseId} />
+    </div>
+  );
+
+  const rightPanel = (
+    <Tabs defaultValue="evidence" className="h-full flex flex-col">
+      <TabsList className="grid w-full grid-cols-3">
+        <TabsTrigger value="evidence">Evidence</TabsTrigger>
+        <TabsTrigger value="tools">Tools</TabsTrigger>
+        <TabsTrigger value="log">Log</TabsTrigger>
+      </TabsList>
+      <TabsContent value="evidence" className="flex-1 overflow-auto">
+        <EvidenceManager caseId={caseId} />
+      </TabsContent>
+      <TabsContent value="tools" className="flex-1 overflow-auto">
+        <CaseTools caseId={caseId} caseDetails={caseDetails} onCaseUpdate={fetchCaseDetails} />
+      </TabsContent>
+      <TabsContent value="log" className="flex-1 overflow-auto p-2">
+        <AgentActivityLog caseId={caseId} />
+      </TabsContent>
+    </Tabs>
+  );
+
+  if (isMobile) {
+    return (
+      <Layout>
+        <Tabs defaultValue="chat" className="w-full">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="chat">Chat</TabsTrigger>
+            <TabsTrigger value="hub">Hub</TabsTrigger>
+            <TabsTrigger value="evidence">Evidence</TabsTrigger>
+            <TabsTrigger value="tools">Tools</TabsTrigger>
+          </TabsList>
+          <TabsContent value="chat" className="h-[80vh]">{chatPanel}</TabsContent>
+          <TabsContent value="hub">{intelligencePanel}</TabsContent>
+          <TabsContent value="evidence"><EvidenceManager caseId={caseId} /></TabsContent>
+          <TabsContent value="tools"><CaseTools caseId={caseId} caseDetails={caseDetails} onCaseUpdate={fetchCaseDetails} /></TabsContent>
+        </Tabs>
+      </Layout>
+    );
+  }
+
   return (
     <Layout>
       <div className="h-full p-4">
         <ResizablePanelGroup direction="horizontal" className="h-full rounded-lg border">
           <ResizablePanel defaultSize={25} minSize={20}>
-            <div className="flex h-full flex-col space-y-4 p-4 overflow-y-auto">
-              <CaseTheorySummary caseId={caseId} />
-              <CaseInsightsCard caseId={caseId} />
-            </div>
+            {intelligencePanel}
           </ResizablePanel>
           <ResizableHandle withHandle />
           <ResizablePanel defaultSize={50} minSize={30}>
-            <div className="flex h-full flex-col">
-              <CardHeader>
-                <CardTitle>Agent Chat: {caseDetails?.name}</CardTitle>
-                <CardDescription>Interact directly with the AI agents.</CardDescription>
-              </CardHeader>
-              <CardContent className="flex-1 flex flex-col overflow-hidden">
-                <CaseChatDisplay caseId={caseId} />
-              </CardContent>
-              <div className="p-4 border-t">
-                <div className="flex items-center space-x-2">
-                  <FileMentionInput
-                    caseId={caseId}
-                    placeholder="Send a message, or type '@' to mention a file..."
-                    value={userPrompt}
-                    onChange={setUserPrompt}
-                    onKeyPress={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendPrompt(); }}}
-                    disabled={isSending}
-                    className="flex-1 resize-none"
-                  />
-                  <Button onClick={handleSendPrompt} disabled={isSending}>
-                    <Send className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            </div>
+            {chatPanel}
           </ResizablePanel>
           <ResizableHandle withHandle />
           <ResizablePanel defaultSize={25} minSize={20}>
-            <Tabs defaultValue="evidence" className="h-full flex flex-col">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="evidence">Evidence</TabsTrigger>
-                <TabsTrigger value="tools">Tools</TabsTrigger>
-              </TabsList>
-              <TabsContent value="evidence" className="flex-1 overflow-auto">
-                <EvidenceManager caseId={caseId} />
-              </TabsContent>
-              <TabsContent value="tools" className="flex-1 overflow-auto">
-                <CaseTools caseId={caseId} caseDetails={caseDetails} onCaseUpdate={fetchCaseDetails} />
-              </TabsContent>
-            </Tabs>
+            {rightPanel}
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>
