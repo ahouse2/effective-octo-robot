@@ -13,11 +13,11 @@ interface AgentActivity {
   status: "processing" | "completed" | "error";
 }
 
-interface AgentInteractionDisplayProps {
+interface AgentActivityLogProps {
   caseId: string;
 }
 
-export const AgentInteractionDisplay: React.FC<AgentInteractionDisplayProps> = ({ caseId }) => {
+export const AgentActivityLog: React.FC<AgentActivityLogProps> = ({ caseId }) => {
   const [activities, setActivities] = useState<AgentActivity[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
