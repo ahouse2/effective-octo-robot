@@ -178,30 +178,31 @@ const AgentInteraction = () => {
 
     try {
       const uploadPromises = filesToUpload.map(async (file) => {
-        const filePath = `${user.id}/${caseId}/${file.name}`;
+        const relativePath = (file as any).webkitRelativePath || file.name;
+        const filePath = `${user.id}/${caseId}/${relativePath}`;
         const { error: uploadError } = await supabase.storage
           .from('evidence-files')
           .upload(filePath, file, {
             cacheControl: '3600',
-            upsert: false,
+            upsert: true, // Overwrite files if they exist, crucial for folder uploads
           });
 
         if (uploadError) {
-          console.error(`Error uploading file ${file.name}:`, uploadError);
-          throw new Error(`Failed to upload file ${file.name}: ${uploadError.message}`);
+          console.error(`Error uploading file ${relativePath}:`, uploadError);
+          throw new Error(`Failed to upload file ${relativePath}: ${uploadError.message}`);
         }
-        return file.name;
+        return relativePath;
       });
 
-      const uploadedFileNames = await Promise.all(uploadPromises);
-      toast.success(`Successfully uploaded ${uploadedFileNames.length} files.`);
+      const uploadedFilePaths = await Promise.all(uploadPromises);
+      toast.success(`Successfully uploaded ${uploadedFilePaths.length} files.`);
 
       const { data: edgeFunctionData, error: edgeFunctionError } = await supabase.functions.invoke(
         'process-additional-files',
         {
           body: JSON.stringify({
             caseId: caseId,
-            newFileNames: uploadedFileNames,
+            newFileNames: uploadedFilePaths,
           }),
         }
       );
@@ -362,11 +363,13 @@ const AgentInteraction = () => {
                   </div>
                 </div>
                 <div>
-                  <Label htmlFor="additional-evidence-files">Upload More Evidence</Label>
+                  <Label htmlFor="additional-evidence-files">Upload Evidence Folder</Label>
                   <Input
                     id="additional-evidence-files"
                     type="file"
-                    multiple
+                    // @ts-ignore
+                    webkitdirectory=""
+                    directory=""
                     onChange={handleFileChange}
                     className="cursor-pointer mt-1"
                     disabled={isUploadingFiles}
@@ -377,7 +380,7 @@ const AgentInteraction = () => {
                     className="w-full mt-2"
                   >
                     <Upload className="h-4 w-4 mr-2" />
-                    {isUploadingFiles ? "Uploading..." : "Upload Files"}
+                    {isUploadingFiles ? "Uploading..." : `Upload ${filesToUpload.length} File(s)`}
                   </Button>
                 </div>
                 <div>

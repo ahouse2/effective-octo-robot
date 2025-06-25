@@ -46,8 +46,8 @@ serve(async (req) => {
     // 2. Record file metadata
     const fileMetadataInserts = newFileNames.map((fileName: string) => ({
       case_id: caseId,
-      file_name: fileName,
-      file_path: `${userId}/${caseId}/${fileName}`,
+      file_name: fileName.split('/').pop() || fileName, // Use basename for the file name
+      file_path: `${userId}/${caseId}/${fileName}`, // Use the full relative path for storage path
       description: `Additional file uploaded for case ${caseId}`,
     }));
 
