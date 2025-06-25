@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useParams, useNavigate, Link } from "react-router-dom";
@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft } from "lucide-react";
+import { useSession } from "@/components/SessionContextProvider"; // Import useSession
 
 const caseDetailsSchema = z.object({
   name: z.string().min(1, { message: "Case name is required." }).max(100, { message: "Case name too long." }),
@@ -34,6 +35,7 @@ const CaseDetails = () => {
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [caseStatus, setCaseStatus] = useState<string | null>(null);
+  const { user } = useSession(); // Get the current user
 
   const form = useForm<CaseDetailsFormValues>({
     resolver: zodResolver(caseDetailsSchema),
@@ -57,7 +59,7 @@ const CaseDetails = () => {
       setLoading(true);
       const { data, error } = await supabase
         .from('cases')
-        .select('name, type, status, case_goals, system_instruction, ai_model')
+        .select('name, type, status, case_goals, system_instruction, ai_model, openai_thread_id, openai_assistant_id')
         .eq('id', caseId)
         .single();
 
@@ -82,8 +84,8 @@ const CaseDetails = () => {
   }, [caseId, navigate, form]);
 
   const onSubmit = async (values: CaseDetailsFormValues) => {
-    if (!caseId) {
-      toast.error("Case ID is missing. Cannot update case.");
+    if (!caseId || !user) {
+      toast.error("Case ID or user is missing. Cannot update case.");
       return;
     }
 
@@ -91,7 +93,17 @@ const CaseDetails = () => {
     const loadingToastId = toast.loading("Updating case details...");
 
     try {
-      const { error } = await supabase
+      const { data: oldCaseData, error: fetchError } = await supabase
+        .from('cases')
+        .select('case_goals, system_instruction, ai_model, openai_thread_id, openai_assistant_id')
+        .eq('id', caseId)
+        .single();
+
+      if (fetchError || !oldCaseData) {
+        throw new Error("Failed to fetch current case details for comparison: " + fetchError?.message);
+      }
+
+      const { error: updateError } = await supabase
         .from('cases')
         .update({
           name: values.name,
@@ -103,8 +115,36 @@ const CaseDetails = () => {
         })
         .eq('id', caseId);
 
-      if (error) {
-        throw new Error("Failed to update case: " + error.message);
+      if (updateError) {
+        throw new Error("Failed to update case: " + updateError.message);
+      }
+
+      // Check if AI-related instructions have changed and trigger orchestrator
+      const goalsChanged = oldCaseData.case_goals !== values.caseGoals;
+      const instructionsChanged = oldCaseData.system_instruction !== values.systemInstruction;
+      const aiModelChanged = oldCaseData.ai_model !== values.aiModel;
+
+      if (goalsChanged || instructionsChanged || aiModelChanged) {
+        console.log("AI-related directives changed. Invoking AI Orchestrator to update assistant instructions.");
+        const { data: orchestratorResponse, error: orchestratorError } = await supabase.functions.invoke(
+          'ai-orchestrator',
+          {
+            body: JSON.stringify({
+              caseId: caseId,
+              command: 'update_assistant_instructions',
+              payload: {}, // Orchestrator will fetch latest instructions from DB
+            }),
+            headers: { 'Content-Type': 'application/json', 'x-supabase-user-id': user.id },
+          }
+        );
+
+        if (orchestratorError) {
+          console.error('Error invoking AI Orchestrator for instruction update:', orchestratorError);
+          toast.error("Failed to update AI assistant instructions. " + orchestratorError.message);
+        } else {
+          console.log('AI Orchestrator response for instruction update:', orchestratorResponse);
+          toast.info("AI assistant instructions are being updated.");
+        }
       }
 
       toast.success("Case details updated successfully!");
