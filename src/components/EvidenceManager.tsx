@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Folder, FileText, Download, Trash, RefreshCw } from "lucide-react";
+import { Folder, FileText, Download, Trash, RefreshCw, LayoutGrid, ListTree } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useSession } from "@/components/SessionContextProvider";
@@ -19,6 +19,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { EditFileMetadataDialog } from "./EditFileMetadataDialog";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 interface FileMetadata {
   id: string;
@@ -36,9 +37,70 @@ interface EvidenceManagerProps {
   caseId: string;
 }
 
+// Recursive component to render the folder tree view
+const FolderTreeView = ({ node, level = 0, handleDeleteFile }: { node: any, level?: number, handleDeleteFile: (fileId: string, filePath: string, fileName: string) => void }) => {
+  return (
+    <ul className={level > 0 ? "pl-4" : ""}>
+      {Object.keys(node).filter(key => key !== '_files').sort().map(folderName => (
+        <li key={folderName}>
+          <div className="flex items-center py-1 text-sm">
+            <Folder className="h-4 w-4 mr-2 flex-shrink-0 text-yellow-500" />
+            <span className="font-medium">{folderName}</span>
+          </div>
+          <FolderTreeView node={node[folderName]} level={level + 1} handleDeleteFile={handleDeleteFile} />
+        </li>
+      ))}
+      {node._files?.sort((a: FileMetadata, b: FileMetadata) => a.file_name.localeCompare(b.file_name)).map((file: FileMetadata) => (
+        <li key={file.id} className="flex items-start justify-between text-sm py-1.5 hover:bg-accent rounded-md px-2 -mx-2 group">
+          <div className="flex items-start space-x-2 overflow-hidden">
+            <FileText className="h-4 w-4 flex-shrink-0 mt-1 text-muted-foreground" />
+            <div className="flex-1 overflow-hidden">
+              <p className="font-medium text-foreground truncate" title={file.suggested_name || file.file_name}>{file.suggested_name || file.file_name}</p>
+              {file.description && <p className="text-xs text-muted-foreground mt-0.5 italic truncate">"{file.description}"</p>}
+              {file.tags && file.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {file.tags.map((tag, idx) => (
+                    <span key={idx} className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded-full dark:bg-blue-900 dark:text-blue-200">{tag}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <EditFileMetadataDialog file={file} />
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600">
+                  <Trash className="h-4 w-4" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete "{file.file_name}". This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => handleDeleteFile(file.id, file.file_path, file.file_name)}>
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+};
+
 export const EvidenceManager: React.FC<EvidenceManagerProps> = ({ caseId }) => {
   const [files, setFiles] = useState<FileMetadata[]>([]);
   const [groupedFiles, setGroupedFiles] = useState<Record<string, FileMetadata[]>>({});
+  const [folderStructure, setFolderStructure] = useState<any>({});
+  const [viewMode, setViewMode] = useState<'category' | 'folder'>('category');
   const [loading, setLoading] = useState(true);
   const [isDownloading, setIsDownloading] = useState<Record<string, boolean>>({});
   const { user } = useSession();
@@ -56,14 +118,34 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({ caseId }) => {
       toast.error("Failed to load evidence files.");
       console.error(error);
     } else {
-      setFiles(data || []);
-      const grouped = (data || []).reduce((acc, file) => {
+      const fetchedFiles = data || [];
+      setFiles(fetchedFiles);
+
+      // Group by AI category
+      const groupedByCategory = fetchedFiles.reduce((acc, file) => {
         const category = file.file_category || "Uncategorized";
         if (!acc[category]) acc[category] = [];
         acc[category].push(file);
         return acc;
       }, {} as Record<string, FileMetadata[]>);
-      setGroupedFiles(grouped);
+      setGroupedFiles(groupedByCategory);
+
+      // Build folder structure
+      const root: any = {};
+      fetchedFiles.forEach(file => {
+        const pathParts = file.file_path.split('/').slice(2);
+        let currentLevel = root;
+        pathParts.forEach((part, index) => {
+          if (index === pathParts.length - 1) {
+            if (!currentLevel._files) currentLevel._files = [];
+            currentLevel._files.push(file);
+          } else {
+            if (!currentLevel[part]) currentLevel[part] = {};
+            currentLevel = currentLevel[part];
+          }
+        });
+      });
+      setFolderStructure(root);
     }
     setLoading(false);
   };
@@ -126,19 +208,12 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({ caseId }) => {
     }
     const loadingToastId = toast.loading(`Deleting ${fileName}...`);
     try {
-      // First, delete the file from storage
       const { error: storageError } = await supabase.storage.from('evidence-files').remove([filePath]);
-      if (storageError) {
-        // If the file doesn't exist in storage, we can still proceed to delete the metadata
-        if (storageError.message !== 'The resource was not found') {
-          throw storageError;
-        }
+      if (storageError && storageError.message !== 'The resource was not found') {
+        throw storageError;
       }
-      
-      // Then, delete the metadata record
       const { error: dbError } = await supabase.from('case_files_metadata').delete().eq('id', fileId);
       if (dbError) throw dbError;
-
       toast.success(`${fileName} deleted successfully!`);
     } catch (err: any) {
       console.error("File deletion error:", err);
@@ -154,9 +229,17 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({ caseId }) => {
         <div className="flex justify-between items-center">
           <div>
             <CardTitle>Evidence Manager</CardTitle>
-            <CardDescription>AI-categorized files with summaries and tags.</CardDescription>
+            <CardDescription>View files by AI category or original folder structure.</CardDescription>
           </div>
           <div className="flex items-center space-x-2">
+            <ToggleGroup type="single" value={viewMode} onValueChange={(value) => { if (value) setViewMode(value as 'category' | 'folder') }} className="mr-2">
+              <ToggleGroupItem value="category" aria-label="Category view">
+                <LayoutGrid className="h-4 w-4" />
+              </ToggleGroupItem>
+              <ToggleGroupItem value="folder" aria-label="Folder view">
+                <ListTree className="h-4 w-4" />
+              </ToggleGroupItem>
+            </ToggleGroup>
             <Button variant="ghost" size="icon" onClick={fetchFiles} disabled={loading}>
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             </Button>
@@ -170,77 +253,81 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({ caseId }) => {
       <CardContent>
         {loading ? (
           <p className="text-center py-4">Loading evidence...</p>
-        ) : Object.keys(groupedFiles).length === 0 ? (
+        ) : files.length === 0 ? (
           <p className="text-center py-4">No evidence files have been uploaded or categorized yet.</p>
         ) : (
           <ScrollArea className="h-[400px] pr-4">
-            <Accordion type="multiple" className="w-full" defaultValue={Object.keys(groupedFiles)}>
-              {Object.entries(groupedFiles).map(([category, filesInCategory]) => (
-                <AccordionItem value={category} key={category}>
-                  <AccordionTrigger>
-                    <div className="flex justify-between items-center w-full pr-2">
-                      <div className="flex items-center">
-                        <Folder className="h-4 w-4 mr-2" /> {category} ({filesInCategory.length})
+            {viewMode === 'category' ? (
+              <Accordion type="multiple" className="w-full" defaultValue={Object.keys(groupedFiles)}>
+                {Object.entries(groupedFiles).map(([category, filesInCategory]) => (
+                  <AccordionItem value={category} key={category}>
+                    <AccordionTrigger>
+                      <div className="flex justify-between items-center w-full pr-2">
+                        <div className="flex items-center">
+                          <Folder className="h-4 w-4 mr-2" /> {category} ({filesInCategory.length})
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => { e.stopPropagation(); handleDownloadZip(category); }}
+                          disabled={isDownloading[category]}
+                        >
+                          <Download className="h-4 w-4" />
+                        </Button>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={(e) => { e.stopPropagation(); handleDownloadZip(category); }}
-                        disabled={isDownloading[category]}
-                      >
-                        <Download className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent>
-                    <ul className="space-y-3 pl-4">
-                      {filesInCategory.map(file => (
-                        <li key={file.id} className="flex items-start justify-between text-sm">
-                          <div className="flex items-start space-x-2">
-                            <FileText className="h-4 w-4 flex-shrink-0 mt-1 text-muted-foreground" />
-                            <div className="flex-1">
-                              <p className="font-medium text-foreground">{file.suggested_name || file.file_name}</p>
-                              {file.description && <p className="text-xs text-muted-foreground mt-0.5 italic">"{file.description}"</p>}
-                              {file.tags && file.tags.length > 0 && (
-                                <div className="flex flex-wrap gap-1 mt-1">
-                                  {file.tags.map((tag, idx) => (
-                                    <span key={idx} className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded-full dark:bg-blue-900 dark:text-blue-200">{tag}</span>
-                                  ))}
-                                </div>
-                              )}
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      <ul className="space-y-3 pl-4">
+                        {filesInCategory.map(file => (
+                          <li key={file.id} className="flex items-start justify-between text-sm group">
+                            <div className="flex items-start space-x-2 overflow-hidden">
+                              <FileText className="h-4 w-4 flex-shrink-0 mt-1 text-muted-foreground" />
+                              <div className="flex-1 overflow-hidden">
+                                <p className="font-medium text-foreground truncate" title={file.suggested_name || file.file_name}>{file.suggested_name || file.file_name}</p>
+                                {file.description && <p className="text-xs text-muted-foreground mt-0.5 italic truncate">"{file.description}"</p>}
+                                {file.tags && file.tags.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 mt-1">
+                                    {file.tags.map((tag, idx) => (
+                                      <span key={idx} className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded-full dark:bg-blue-900 dark:text-blue-200">{tag}</span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                          <div className="flex items-center space-x-1">
-                            <EditFileMetadataDialog file={file} />
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600">
-                                  <Trash className="h-4 w-4" />
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    This will permanently delete "{file.file_name}". This action cannot be undone.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction onClick={() => handleDeleteFile(file.id, file.file_path, file.file_name)}>
-                                    Delete
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </AccordionContent>
-                </AccordionItem>
-              ))}
-            </Accordion>
+                            <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <EditFileMetadataDialog file={file} />
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600">
+                                    <Trash className="h-4 w-4" />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      This will permanently delete "{file.file_name}". This action cannot be undone.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction onClick={() => handleDeleteFile(file.id, file.file_path, file.file_name)}>
+                                      Delete
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </AccordionContent>
+                  </AccordionItem>
+                ))}
+              </Accordion>
+            ) : (
+              <FolderTreeView node={folderStructure} handleDeleteFile={handleDeleteFile} />
+            )}
           </ScrollArea>
         )}
       </CardContent>
