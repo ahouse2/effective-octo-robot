@@ -6,21 +6,30 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Standardized helper to get user ID from either JWT (client-side) or custom header (server-side)
 async function getUserIdFromRequest(req: Request, supabaseClient: SupabaseClient): Promise<string | null> {
   try {
+    // 1. Try to get user from Authorization header (standard for client calls)
     const authHeader = req.headers.get('Authorization');
     if (authHeader) {
       const { data: { user }, error } = await supabaseClient.auth.getUser(authHeader.replace('Bearer ', ''));
       if (error) {
-        console.warn("getUserIdFromRequest (send-user-prompt): Failed to get user from JWT:", error.message);
+        console.warn("getUserIdFromRequest: Failed to get user from JWT:", error.message);
       }
       if (user) {
         return user.id;
       }
     }
+
+    // 2. Fallback to custom header (for server-to-server calls)
+    const userIdFromHeader = req.headers.get('x-supabase-user-id');
+    if (userIdFromHeader) {
+      return userIdFromHeader;
+    }
+
     return null;
   } catch (e) {
-    console.error("getUserIdFromRequest (send-user-prompt): Error getting user ID:", e);
+    console.error("getUserIdFromRequest: Error getting user ID:", e);
     return null;
   }
 }
