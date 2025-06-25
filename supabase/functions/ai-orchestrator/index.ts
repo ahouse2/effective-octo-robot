@@ -709,6 +709,39 @@ serve(async (req) => {
       }
     );
 
+    if (command === 'switch_ai_model') {
+        const { newAiModel } = payload;
+        await insertAgentActivity(supabaseClient, caseId, 'System', 'Configuration', 'AI Model Switch', `User switched AI model to ${newAiModel}.`, 'processing');
+        
+        // Here you could add logic to tear down old model resources if necessary (e.g., delete old OpenAI thread)
+        // For now, we'll just set up the new one.
+        
+        if (newAiModel === 'openai') {
+            // Check if an assistant already exists, if not, create one.
+            // This logic is simplified; a real app might want to reuse assistants.
+            const { data: caseData } = await supabaseClient.from('cases').select('openai_assistant_id').eq('id', caseId).single();
+            if (!caseData?.openai_assistant_id) {
+                // Re-using start-analysis logic to set up a new assistant and thread
+                await supabaseClient.functions.invoke('start-analysis', {
+                    body: JSON.stringify({ caseId, userId, aiModel: 'openai', fileNames: [] }),
+                });
+            }
+        } else if (newAiModel === 'gemini') {
+            await supabaseClient.from('cases').update({ gemini_chat_history: [] }).eq('id', caseId);
+        }
+
+        // Trigger a re-analysis with the new model
+        await supabaseClient.functions.invoke('ai-orchestrator', {
+            body: JSON.stringify({ caseId, command: 're_run_analysis', payload: {} }),
+            headers: { 'Content-Type': 'application/json', 'x-supabase-user-id': userId },
+        });
+
+        return new Response(JSON.stringify({ message: `Switched model to ${newAiModel} and started re-analysis.` }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 200,
+        });
+    }
+
     const { data: caseData, error: caseError } = await supabaseClient
       .from('cases')
       .select('ai_model, openai_thread_id, openai_assistant_id, gemini_chat_history')

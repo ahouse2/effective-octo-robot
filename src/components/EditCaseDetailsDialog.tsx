@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -9,7 +9,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -19,6 +18,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Edit } from "lucide-react";
+import { useSession } from "@/components/SessionContextProvider";
 
 interface EditCaseDetailsDialogProps {
   caseId: string;
@@ -47,6 +47,7 @@ export const EditCaseDetailsDialog: React.FC<EditCaseDetailsDialogProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { user } = useSession();
 
   const form = useForm<EditCaseDetailsFormValues>({
     resolver: zodResolver(formSchema),
@@ -57,16 +58,21 @@ export const EditCaseDetailsDialog: React.FC<EditCaseDetailsDialogProps> = ({
     },
   });
 
-  // Reset form values when dialog opens or initial props change
-  React.useEffect(() => {
-    form.reset({
-      caseGoals: initialCaseGoals,
-      systemInstruction: initialSystemInstruction,
-      aiModel: initialAiModel,
-    });
-  }, [initialCaseGoals, initialSystemInstruction, initialAiModel, form]);
+  useEffect(() => {
+    if (isOpen) {
+      form.reset({
+        caseGoals: initialCaseGoals,
+        systemInstruction: initialSystemInstruction,
+        aiModel: initialAiModel,
+      });
+    }
+  }, [isOpen, initialCaseGoals, initialSystemInstruction, initialAiModel, form]);
 
   const onSubmit = async (values: EditCaseDetailsFormValues) => {
+    if (!user) {
+      toast.error("You must be logged in to update case directives.");
+      return;
+    }
     setIsSubmitting(true);
     const loadingToastId = toast.loading("Saving case directives...");
 
@@ -85,9 +91,32 @@ export const EditCaseDetailsDialog: React.FC<EditCaseDetailsDialogProps> = ({
         throw new Error("Failed to update case directives: " + error.message);
       }
 
+      const aiModelChanged = initialAiModel !== values.aiModel;
+      if (aiModelChanged) {
+        toast.info("AI model switched. Initiating setup and re-analysis...");
+        await supabase.functions.invoke('ai-orchestrator', {
+          body: JSON.stringify({
+            caseId: caseId,
+            command: 'switch_ai_model',
+            payload: { newAiModel: values.aiModel },
+          }),
+          headers: { 'Content-Type': 'application/json', 'x-supabase-user-id': user.id },
+        });
+      } else {
+        toast.info("AI assistant instructions are being updated.");
+        await supabase.functions.invoke('ai-orchestrator', {
+          body: JSON.stringify({
+            caseId: caseId,
+            command: 'update_assistant_instructions',
+            payload: {},
+          }),
+          headers: { 'Content-Type': 'application/json', 'x-supabase-user-id': user.id },
+        });
+      }
+
       toast.success("Case directives updated successfully!");
       setIsOpen(false);
-      onSaveSuccess(); // Trigger parent to re-fetch data
+      onSaveSuccess();
 
     } catch (err: any) {
       console.error("Case directives update error:", err);

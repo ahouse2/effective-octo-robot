@@ -15,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft } from "lucide-react";
-import { useSession } from "@/components/SessionContextProvider"; // Import useSession
+import { useSession } from "@/components/SessionContextProvider";
 
 const caseDetailsSchema = z.object({
   name: z.string().min(1, { message: "Case name is required." }).max(100, { message: "Case name too long." }),
@@ -25,7 +25,7 @@ const caseDetailsSchema = z.object({
   aiModel: z.enum(["openai", "gemini"], {
     required_error: "Please select an AI model.",
   }),
-  openaiAssistantId: z.string().optional(), // Add this field to the schema
+  openaiAssistantId: z.string().optional(),
 });
 
 type CaseDetailsFormValues = z.infer<typeof caseDetailsSchema>;
@@ -36,7 +36,8 @@ const CaseDetails = () => {
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [caseStatus, setCaseStatus] = useState<string | null>(null);
-  const { user } = useSession(); // Get the current user
+  const { user } = useSession();
+  const [initialCaseData, setInitialCaseData] = useState<CaseDetailsFormValues | null>(null);
 
   const form = useForm<CaseDetailsFormValues>({
     resolver: zodResolver(caseDetailsSchema),
@@ -46,7 +47,7 @@ const CaseDetails = () => {
       caseGoals: "",
       systemInstruction: "",
       aiModel: "openai",
-      openaiAssistantId: "", // Initialize with empty string
+      openaiAssistantId: "",
     },
   });
 
@@ -61,7 +62,7 @@ const CaseDetails = () => {
       setLoading(true);
       const { data, error } = await supabase
         .from('cases')
-        .select('name, type, status, case_goals, system_instruction, ai_model, openai_thread_id, openai_assistant_id')
+        .select('name, type, status, case_goals, system_instruction, ai_model, openai_assistant_id')
         .eq('id', caseId)
         .single();
 
@@ -70,15 +71,17 @@ const CaseDetails = () => {
         toast.error("Failed to load case details. " + error.message);
         navigate("/case-management");
       } else if (data) {
-        form.reset({
+        const fetchedData = {
           name: data.name,
           type: data.type,
           caseGoals: data.case_goals || "",
           systemInstruction: data.system_instruction || "",
           aiModel: (data.ai_model as "openai" | "gemini") || "openai",
-          openaiAssistantId: data.openai_assistant_id || "", // Set the value from fetched data
-        });
+          openaiAssistantId: data.openai_assistant_id || "",
+        };
+        form.reset(fetchedData);
         setCaseStatus(data.status);
+        setInitialCaseData(fetchedData);
       }
       setLoading(false);
     };
@@ -96,16 +99,6 @@ const CaseDetails = () => {
     const loadingToastId = toast.loading("Updating case details...");
 
     try {
-      const { data: oldCaseData, error: fetchError } = await supabase
-        .from('cases')
-        .select('case_goals, system_instruction, ai_model, openai_thread_id, openai_assistant_id')
-        .eq('id', caseId)
-        .single();
-
-      if (fetchError || !oldCaseData) {
-        throw new Error("Failed to fetch current case details for comparison: " + fetchError?.message);
-      }
-
       const { error: updateError } = await supabase
         .from('cases')
         .update({
@@ -114,7 +107,7 @@ const CaseDetails = () => {
           case_goals: values.caseGoals,
           system_instruction: values.systemInstruction,
           ai_model: values.aiModel,
-          openai_assistant_id: values.aiModel === 'openai' ? (values.openaiAssistantId || null) : null, // Save assistant ID only if OpenAI is selected
+          openai_assistant_id: values.aiModel === 'openai' ? (values.openaiAssistantId || null) : null,
           last_updated: new Date().toISOString(),
         })
         .eq('id', caseId);
@@ -123,36 +116,36 @@ const CaseDetails = () => {
         throw new Error("Failed to update case: " + updateError.message);
       }
 
-      // Check if AI-related instructions or model/assistant ID have changed and trigger orchestrator
-      const goalsChanged = oldCaseData.case_goals !== values.caseGoals;
-      const instructionsChanged = oldCaseData.system_instruction !== values.systemInstruction;
-      const aiModelChanged = oldCaseData.ai_model !== values.aiModel;
-      const assistantIdChanged = oldCaseData.openai_assistant_id !== values.openaiAssistantId;
+      const aiModelChanged = initialCaseData?.aiModel !== values.aiModel;
+      const goalsChanged = initialCaseData?.caseGoals !== values.caseGoals;
+      const instructionsChanged = initialCaseData?.systemInstruction !== values.systemInstruction;
+      const assistantIdChanged = initialCaseData?.openaiAssistantId !== values.openaiAssistantId;
 
-      if (goalsChanged || instructionsChanged || aiModelChanged || assistantIdChanged) {
-        console.log("AI-related directives changed. Invoking AI Orchestrator to update assistant instructions.");
-        const { data: orchestratorResponse, error: orchestratorError } = await supabase.functions.invoke(
-          'ai-orchestrator',
-          {
-            body: JSON.stringify({
-              caseId: caseId,
-              command: 'update_assistant_instructions',
-              payload: {}, // Orchestrator will fetch latest instructions from DB
-            }),
-            headers: { 'Content-Type': 'application/json', 'x-supabase-user-id': user.id },
-          }
-        );
-
-        if (orchestratorError) {
-          console.error('Error invoking AI Orchestrator for instruction update:', orchestratorError);
-          toast.error("Failed to update AI assistant instructions. " + orchestratorError.message);
-        } else {
-          console.log('AI Orchestrator response for instruction update:', orchestratorResponse);
-          toast.info("AI assistant instructions are being updated.");
-        }
+      if (aiModelChanged) {
+        toast.info("AI model switched. Initiating setup and re-analysis...");
+        await supabase.functions.invoke('ai-orchestrator', {
+          body: JSON.stringify({
+            caseId: caseId,
+            command: 'switch_ai_model',
+            payload: { newAiModel: values.aiModel },
+          }),
+          headers: { 'Content-Type': 'application/json', 'x-supabase-user-id': user.id },
+        });
+      } else if (goalsChanged || instructionsChanged || assistantIdChanged) {
+        toast.info("AI assistant instructions are being updated.");
+        await supabase.functions.invoke('ai-orchestrator', {
+          body: JSON.stringify({
+            caseId: caseId,
+            command: 'update_assistant_instructions',
+            payload: {},
+          }),
+          headers: { 'Content-Type': 'application/json', 'x-supabase-user-id': user.id },
+        });
       }
 
       toast.success("Case details updated successfully!");
+      setInitialCaseData(values); // Update initial data to prevent re-triggering on next save
+
     } catch (err: any) {
       console.error("Case update error:", err);
       toast.error(err.message || "An unexpected error occurred during case update.");
@@ -310,8 +303,8 @@ const CaseDetails = () => {
                         <Input
                           placeholder="asst_..."
                           {...field}
-                          disabled={isSubmitting || form.watch("aiModel") === "gemini"} // Disable if Gemini is selected
-                          value={field.value || ""} // Ensure controlled component
+                          disabled={isSubmitting || form.watch("aiModel") === "gemini"}
+                          value={field.value || ""}
                         />
                       </FormControl>
                       <FormDescription>
