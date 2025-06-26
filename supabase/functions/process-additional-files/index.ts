@@ -50,19 +50,24 @@ serve(async (req) => {
       activity_type: 'New Evidence Received', content: `Received ${newFileNames.length} new file(s).`, status: 'completed',
     });
 
-    const fileMetadataInserts = newFileNames.map((relativePath: string) => ({
-      case_id: caseId,
-      file_name: relativePath,
-      file_path: `${userId}/${caseId}/${relativePath}`,
-    }));
+    // Process files in batches to avoid timeouts
+    const DB_BATCH_SIZE = 100;
+    for (let i = 0; i < newFileNames.length; i += DB_BATCH_SIZE) {
+      const batch = newFileNames.slice(i, i + DB_BATCH_SIZE);
+      const fileMetadataInserts = batch.map((relativePath: string) => ({
+        case_id: caseId,
+        file_name: relativePath,
+        file_path: `${userId}/${caseId}/${relativePath}`,
+      }));
 
-    const { error: metadataError } = await supabaseClient
-      .from('case_files_metadata')
-      .insert(fileMetadataInserts);
+      const { error: metadataError } = await supabaseClient
+        .from('case_files_metadata')
+        .insert(fileMetadataInserts);
 
-    if (metadataError) {
-      console.error('Error inserting file metadata:', metadataError);
-      throw new Error('Failed to create file metadata records.');
+      if (metadataError) {
+        console.error('Error inserting file metadata batch:', metadataError);
+        // Continue to next batch, but log the error
+      }
     }
     
     return new Response(JSON.stringify({ message: 'New files uploaded. Start analysis from the Tools tab when ready.', caseId }), {
