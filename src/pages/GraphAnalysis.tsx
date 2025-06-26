@@ -49,6 +49,7 @@ const GraphAnalysis = () => {
         });
 
         if (functionError) throw functionError;
+        if (data.error) throw new Error(data.error);
         if (!data || !data.nodes || data.nodes.length === 0) {
           throw new Error("No graph data found for this case. Have you exported it to Neo4j yet?");
         }
