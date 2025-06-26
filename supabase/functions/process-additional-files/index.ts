@@ -71,10 +71,13 @@ serve(async (req) => {
       }
 
       if (insertedMetadata) {
-        const processingPromises = insertedMetadata.flatMap(meta => [
-          supabaseClient.functions.invoke('file-categorizer', { body: JSON.stringify({ fileId: meta.id, fileName: meta.file_name, filePath: meta.file_path }) }),
-          supabaseClient.functions.invoke('file-summarizer', { body: JSON.stringify({ fileId: meta.id, fileName: meta.file_name, filePath: meta.file_path }) })
-        ]);
+        const processingPromises = insertedMetadata.flatMap(meta => {
+          const basename = meta.file_name.split('/').pop() || meta.file_name;
+          return [
+            supabaseClient.functions.invoke('file-categorizer', { body: JSON.stringify({ fileId: meta.id, fileName: basename, filePath: meta.file_path }) }),
+            supabaseClient.functions.invoke('file-summarizer', { body: JSON.stringify({ fileId: meta.id, fileName: basename, filePath: meta.file_path }) })
+          ];
+        });
         Promise.allSettled(processingPromises).then(results => {
           results.forEach(result => {
             if (result.status === 'rejected') console.error("A file processing task failed:", result.reason);

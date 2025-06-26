@@ -67,8 +67,9 @@ serve(async (req) => {
       } else if (insertedMetadata) {
         // Fire-and-forget categorization/summarization
         insertedMetadata.forEach(meta => {
-          supabaseClient.functions.invoke('file-categorizer', { body: JSON.stringify({ fileId: meta.id, fileName: meta.file_name, filePath: meta.file_path }) }).catch(console.error);
-          supabaseClient.functions.invoke('file-summarizer', { body: JSON.stringify({ fileId: meta.id, fileName: meta.file_name, filePath: meta.file_path }) }).catch(console.error);
+          const basename = meta.file_name.split('/').pop() || meta.file_name;
+          supabaseClient.functions.invoke('file-categorizer', { body: JSON.stringify({ fileId: meta.id, fileName: basename, filePath: meta.file_path }) }).catch(console.error);
+          supabaseClient.functions.invoke('file-summarizer', { body: JSON.stringify({ fileId: meta.id, fileName: basename, filePath: meta.file_path }) }).catch(console.error);
         });
       }
     }
