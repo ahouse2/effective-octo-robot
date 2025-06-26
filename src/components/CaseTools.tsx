@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Upload, PlayCircle, Share2 } from "lucide-react";
+import { Upload, PlayCircle, Share2, GitGraph } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useSession } from "@/components/SessionContextProvider";
@@ -17,6 +17,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Link } from "react-router-dom";
 
 interface CaseToolsProps {
   caseId: string;
@@ -217,11 +218,19 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
       </div>
       <div>
         <Label className="text-base font-medium">Graph Analysis</Label>
-        <p className="text-sm text-muted-foreground mb-2">Export this case's data to Neo4j to visualize relationships.</p>
-        <Button onClick={handleExportToNeo4j} disabled={isExporting} className="w-full" variant="secondary">
-          <Share2 className="h-4 w-4 mr-2" />
-          {isExporting ? "Exporting..." : "Export to Neo4j"}
-        </Button>
+        <p className="text-sm text-muted-foreground mb-2">Export data to Neo4j and visualize the relationships.</p>
+        <div className="grid grid-cols-2 gap-2">
+            <Button onClick={handleExportToNeo4j} disabled={isExporting} variant="secondary">
+                <Share2 className="h-4 w-4 mr-2" />
+                {isExporting ? "Exporting..." : "Export to Neo4j"}
+            </Button>
+            <Button asChild variant="secondary">
+                <Link to={`/graph-analysis/${caseId}`}>
+                    <GitGraph className="h-4 w-4 mr-2" />
+                    Visualize Graph
+                </Link>
+            </Button>
+        </div>
       </div>
     </div>
   );

@@ -8,6 +8,7 @@ import MyCases from "./pages/MyCases";
 import AgentInteraction from "./pages/AgentInteraction";
 import AiProfileSettings from "./pages/AiProfileSettings";
 import CaseDetails from "./pages/CaseDetails";
+import GraphAnalysis from "./pages/GraphAnalysis";
 import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
 import { ThemeProvider } from "next-themes";
@@ -31,6 +32,7 @@ const App = () => (
               <Route path="/agent-interaction/:caseId" element={<AgentInteraction />} />
               <Route path="/case-details/:caseId" element={<CaseDetails />} />
               <Route path="/ai-settings" element={<AiProfileSettings />} />
+              <Route path="/graph-analysis/:caseId" element={<GraphAnalysis />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
