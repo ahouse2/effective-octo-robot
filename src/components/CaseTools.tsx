@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Upload, PlayCircle, Share2, GitGraph } from "lucide-react";
+import { Upload, PlayCircle, Share2, GitGraph, CalendarClock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useSession } from "@/components/SessionContextProvider";
@@ -30,6 +30,7 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isGeneratingTimeline, setIsGeneratingTimeline] = useState(false);
   const { user } = useSession();
 
   const handleFileChangeAndUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -168,10 +169,27 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
     }
   };
 
+  const handleGenerateTimeline = async () => {
+    setIsGeneratingTimeline(true);
+    const loadingToastId = toast.loading("Starting automated timeline generation...");
+    try {
+      const { error } = await supabase.functions.invoke('create-timeline-from-evidence', {
+        body: { caseId },
+      });
+      if (error) throw error;
+      toast.success("Timeline generation complete. Check the Case Timeline.", { id: loadingToastId });
+    } catch (err: any) {
+      console.error("Timeline generation error:", err);
+      toast.error(err.message || "Failed to generate timeline.", { id: loadingToastId });
+    } finally {
+      setIsGeneratingTimeline(false);
+    }
+  };
+
   return (
     <div className="p-4 space-y-6">
       <div>
-        <Label htmlFor="evidence-folder-upload-tools" className="text-base font-medium">Step 1: Upload Evidence</Label>
+        <Label htmlFor="evidence-folder-upload-tools" className="text-base font-medium">Upload Evidence</Label>
         <p className="text-sm text-muted-foreground mb-2">Upload a folder of evidence. Files will be processed in batches.</p>
         <Button asChild className="w-full cursor-pointer" variant="outline" disabled={isUploading}>
           <label htmlFor="evidence-folder-upload-tools">
@@ -191,30 +209,36 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
         </Button>
       </div>
       <div>
-        <Label className="text-base font-medium">Step 2: Start Analysis</Label>
-        <p className="text-sm text-muted-foreground mb-2">After uploading, trigger the AI to analyze all evidence in this case.</p>
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button disabled={isAnalyzing} className="w-full">
-              <PlayCircle className="h-4 w-4 mr-2" />
-              {isAnalyzing ? "Starting Analysis..." : "Analyze All Evidence"}
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Confirm Analysis</AlertDialogTitle>
-              <AlertDialogDescription>
-                This will start a full analysis of all evidence in this case. This may incur costs and take some time. Are you sure you want to proceed?
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleAnalyzeCase}>
-                Confirm & Start Analysis
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <Label className="text-base font-medium">AI Analysis Tools</Label>
+        <p className="text-sm text-muted-foreground mb-2">Trigger different AI agents to process the case data.</p>
+        <div className="space-y-2">
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button disabled={isAnalyzing} className="w-full">
+                <PlayCircle className="h-4 w-4 mr-2" />
+                {isAnalyzing ? "Starting Analysis..." : "Run Full Analysis"}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Confirm Full Analysis</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will start a comprehensive analysis of all evidence. This may incur costs and take time. Are you sure?
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleAnalyzeCase}>
+                  Confirm & Start
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+          <Button onClick={handleGenerateTimeline} disabled={isGeneratingTimeline} className="w-full">
+            <CalendarClock className="h-4 w-4 mr-2" />
+            {isGeneratingTimeline ? "Generating..." : "Generate Timeline"}
+          </Button>
+        </div>
       </div>
       <div>
         <Label className="text-base font-medium">Graph Analysis</Label>
