@@ -65,10 +65,22 @@ serve(async (req) => {
     });
 
     const result = JSON.parse(completion.choices[0].message.content || '{}');
-    const { summary, tags } = result;
+    
+    // --- Data Validation and Sanitization ---
+    const summary = typeof result.summary === 'string' ? result.summary : null;
+    let tags = null;
+    if (Array.isArray(result.tags)) {
+      // Ensure all elements in the array are strings
+      tags = result.tags.map(tag => String(tag));
+    }
 
     if (!summary || !tags) {
-      throw new Error('AI failed to return a valid summary and tags.');
+      console.error('AI failed to return a valid summary and/or tags. Raw result:', result);
+      // We can choose to proceed with a partial update or throw an error.
+      // Let's proceed with what we have to avoid a full crash.
+      if (!summary && !tags) {
+        throw new Error('AI failed to return any valid data.');
+      }
     }
 
     // Update the file metadata in the database
