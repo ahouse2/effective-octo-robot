@@ -28,18 +28,8 @@ async function getUserIdFromRequest(req: Request, supabaseClient: SupabaseClient
   }
 }
 
-function extractJsonFromMarkdown(text: string): any | null {
-  const regex = /```json\n([\s\S]*?)\n```/;
-  const match = text.match(regex);
-  if (match && match[1]) {
-    try {
-      return JSON.parse(match[1]);
-    } catch (e) {
-      console.error("Failed to parse JSON from markdown:", e);
-      return null;
-    }
-  }
-  return null;
+async function updateProgress(supabaseClient: SupabaseClient, caseId: string, progress: number, message: string) {
+    await supabaseClient.from('cases').update({ analysis_progress: progress, analysis_status_message: message }).eq('id', caseId);
 }
 
 async function insertAgentActivity(supabaseClient: SupabaseClient, caseId: string, agentName: string, agentRole: string, activityType: string, content: string, status: 'processing' | 'completed' | 'error') {
@@ -52,36 +42,6 @@ async function insertAgentActivity(supabaseClient: SupabaseClient, caseId: strin
     status: status,
   });
   if (error) console.error(`Failed to insert agent activity [${activityType}]`, error);
-}
-
-async function updateCaseData(supabaseClient: SupabaseClient, caseId: string, assistantResponse: string) {
-  const jsonData = extractJsonFromMarkdown(assistantResponse);
-  if (!jsonData) {
-    await insertAgentActivity(supabaseClient, caseId, 'Orchestrator', 'System', 'Data Update Failed', 'Could not extract valid JSON from the AI response.', 'error');
-    return;
-  }
-
-  const { case_theory, case_insights } = jsonData;
-
-  if (case_theory) {
-    await supabaseClient.from('case_theories').update({
-      fact_patterns: case_theory.fact_patterns,
-      legal_arguments: case_theory.legal_arguments,
-      potential_outcomes: case_theory.potential_outcomes,
-      status: case_theory.status || 'developing',
-      last_updated: new Date().toISOString(),
-    }).eq('case_id', caseId);
-  }
-
-  if (case_insights && Array.isArray(case_insights)) {
-    const insightsToInsert = case_insights.map(insight => ({
-      case_id: caseId,
-      title: insight.title,
-      description: insight.description,
-      insight_type: insight.insight_type || 'general',
-    }));
-    await supabaseClient.from('case_insights').insert(insightsToInsert);
-  }
 }
 
 // --- OPENAI HANDLERS ---
@@ -121,11 +81,12 @@ async function getOrCreateAssistant(openai: OpenAI, supabaseClient: SupabaseClie
 }
 
 async function handleOpenAICommand(supabaseClient: SupabaseClient, openai: OpenAI, caseId: string, userId: string, command: string, payload: any) {
+    await updateProgress(supabaseClient, caseId, 10, 'Initializing OpenAI Assistant...');
     const { assistantId, threadId } = await getOrCreateAssistant(openai, supabaseClient, userId, caseId);
     let prompt = "";
 
     if (command === 're_run_analysis') {
-        await insertAgentActivity(supabaseClient, caseId, 'Orchestrator', 'System', 'Analysis Triggered', 'Full case re-analysis initiated by user.', 'processing');
+        await insertAgentActivity(supabaseClient, caseId, 'Orchestrator', 'System', 'Analysis Triggered', 'Full case re-analysis initiated by user with OpenAI.', 'processing');
         prompt = `Please perform a comprehensive analysis of all the evidence files associated with this case. Your primary objectives are to identify key themes, generate a high-level summary, create key insights, and update the case theory. Structure your response as a JSON object within a markdown block.`;
     } else if (command === 'user_prompt') {
         prompt = payload.promptContent;
@@ -133,11 +94,13 @@ async function handleOpenAICommand(supabaseClient: SupabaseClient, openai: OpenA
         throw new Error(`Unsupported OpenAI command: ${command}`);
     }
 
+    await updateProgress(supabaseClient, caseId, 25, 'Sending prompt to OpenAI...');
     await openai.beta.threads.messages.create(threadId, { role: "user", content: prompt });
     const run = await openai.beta.threads.runs.create(threadId, { assistant_id: assistantId });
 
     await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'AI', 'Analysis Started', `Run created with ID: ${run.id}. Awaiting completion.`, 'processing');
     await supabaseClient.from('cases').update({ status: 'In Progress' }).eq('id', caseId);
+    await updateProgress(supabaseClient, caseId, 50, 'OpenAI is processing the request...');
 }
 
 // --- GEMINI RAG HANDLER ---
@@ -150,6 +113,7 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     }
     
     await insertAgentActivity(supabaseClient, caseId, 'User', 'Command', 'Gemini RAG Query', promptContent, 'processing');
+    await updateProgress(supabaseClient, caseId, 10, 'Initializing Gemini and Vertex AI...');
 
     const gcpProjectId = Deno.env.get('GCP_PROJECT_ID');
     const gcpDataStoreId = Deno.env.get('GCP_VERTEX_AI_DATA_STORE_ID');
@@ -160,15 +124,18 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
       credentials: { client_email: gcpServiceAccountKey.client_email, private_key: gcpServiceAccountKey.private_key },
     });
 
+    await updateProgress(supabaseClient, caseId, 25, 'Searching for relevant documents in Vertex AI...');
     const servingConfig = discoveryEngineClient.servingConfigPath(gcpProjectId, 'global', gcpDataStoreId, 'default_serving_config');
     const [searchResponse] = await discoveryEngineClient.search({ servingConfig, query: promptContent, pageSize: 5 });
     const contextSnippets = searchResponse.results?.map(r => r.document?.derivedStructData?.fields?.content?.stringValue).filter(Boolean).join('\n\n---\n\n');
 
     if (!contextSnippets) {
         await insertAgentActivity(supabaseClient, caseId, 'Gemini', 'System', 'No Context Found', 'Could not find relevant documents in Vertex AI for this query.', 'completed');
+        await updateProgress(supabaseClient, caseId, 100, 'Analysis complete: No relevant documents found.');
         return;
     }
 
+    await updateProgress(supabaseClient, caseId, 60, 'Synthesizing response with Gemini...');
     const { data: caseDetails } = await supabaseClient.from('cases').select('case_goals, system_instruction').eq('id', caseId).single();
     const synthesisPrompt = `Based on the following context from case documents, answer the user's question. User's Question: "${promptContent}". Case Goals: ${caseDetails?.case_goals || 'Not specified.'}. System Instructions: ${caseDetails?.system_instruction || 'None.'}. Context from Documents: --- ${contextSnippets} --- Your Answer:`;
 
@@ -178,6 +145,7 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
 
     await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'AI', 'RAG Response', responseText, 'completed');
     await supabaseClient.from('cases').update({ status: 'Analysis Complete' }).eq('id', caseId);
+    await updateProgress(supabaseClient, caseId, 100, 'Analysis complete!');
 }
 
 // --- MAIN SERVE FUNCTION ---
@@ -189,10 +157,13 @@ serve(async (req) => {
     const userId = await getUserIdFromRequest(req, supabaseClient);
     if (!caseId || !userId || !command) throw new Error('caseId, userId, and command are required');
 
+    // Always fetch the latest AI model setting from the case itself
     const { data: caseData, error: caseError } = await supabaseClient.from('cases').select('ai_model').eq('id', caseId).single();
     if (caseError || !caseData) throw new Error('Case not found or error fetching case details.');
     
     const { ai_model } = caseData;
+
+    await supabaseClient.from('cases').update({ status: 'In Progress' }).eq('id', caseId);
 
     if (ai_model === 'openai') {
         const openai = new OpenAI({ apiKey: Deno.env.get('OPENAI_API_KEY') });
@@ -206,6 +177,11 @@ serve(async (req) => {
     return new Response(JSON.stringify({ message: 'Command processed successfully.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
   } catch (error: any) {
     console.error('Edge Function error:', error.message, error.stack);
+    const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
+    const { caseId } = await req.json().catch(() => ({ caseId: null }));
+    if (caseId) {
+        await supabaseClient.from('cases').update({ status: 'Error', analysis_status_message: error.message }).eq('id', caseId);
+    }
     return new Response(JSON.stringify({ error: error.message }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 });
   }
 });
