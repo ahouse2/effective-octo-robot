@@ -145,7 +145,7 @@ async function handleOpenAICommand(supabaseClient: SupabaseClient, openai: OpenA
 async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: GoogleGenerativeAI, caseId: string, command: string, payload: any) {
     let promptContent = payload.promptContent;
     if (command === 're_run_analysis') {
-        await insertAgentActivity(supabaseClient, caseId, 'Orchestrator', 'System', 'Analysis Triggered', 'Full case re-analysis initiated by user.', 'processing');
+        await insertAgentActivity(supabaseClient, caseId, 'Orchestrator', 'System', 'Analysis Triggered', 'Full case re-analysis initiated by user with Gemini.', 'processing');
         promptContent = `Perform a comprehensive analysis of all documents. Summarize the key facts, events, and overall case narrative based on the entire evidence locker.`;
     }
     
