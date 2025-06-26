@@ -45,22 +45,46 @@ serve(async (req) => {
       });
     }
 
-    const fileMetadataInserts = newFileNames.map((relativePath: string) => ({
-      case_id: caseId,
-      file_name: relativePath,
-      file_path: `${userId}/${caseId}/${relativePath}`,
-    }));
+    const successfulInserts: string[] = [];
+    const failedInserts: { name: string; reason: string }[] = [];
 
-    const { error: metadataError } = await supabaseClient
-      .from('case_files_metadata')
-      .insert(fileMetadataInserts);
+    for (const relativePath of newFileNames) {
+      try {
+        const fileMetadataInsert = {
+          case_id: caseId,
+          file_name: relativePath,
+          file_path: `${userId}/${caseId}/${relativePath}`,
+        };
 
-    if (metadataError) {
-      console.error('Error inserting file metadata:', metadataError);
-      throw new Error('Failed to create file metadata records.');
+        const { error } = await supabaseClient
+          .from('case_files_metadata')
+          .insert(fileMetadataInsert);
+
+        if (error) {
+          throw new Error(error.message);
+        }
+        successfulInserts.push(relativePath);
+      } catch (error) {
+        console.error(`Failed to insert metadata for file: ${relativePath}. Reason:`, error.message);
+        failedInserts.push({ name: relativePath, reason: error.message });
+      }
+    }
+
+    if (failedInserts.length > 0) {
+      await supabaseClient.from('agent_activities').insert({
+        case_id: caseId,
+        agent_name: 'System',
+        agent_role: 'File Processor',
+        activity_type: 'File Processing Warning',
+        content: `Could not process metadata for ${failedInserts.length} file(s). This may be due to invalid filenames or other issues.`,
+        status: 'error',
+      });
     }
     
-    return new Response(JSON.stringify({ message: 'Batch processed successfully.' }), {
+    return new Response(JSON.stringify({ 
+      message: `Batch processed. ${successfulInserts.length} successful, ${failedInserts.length} failed.`, 
+      caseId 
+    }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });
