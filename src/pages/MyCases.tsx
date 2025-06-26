@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { NewCaseDialog } from "@/components/NewCaseDialog";
 import { useNavigate } from "react-router-dom";
 import { DeleteCaseDialog } from "@/components/DeleteCaseDialog";
-import { Settings, FileText, PlusCircle } from "lucide-react";
+import { Settings, FileText } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
@@ -154,29 +154,29 @@ const MyCases = () => {
                 key={caseItem.id}
                 className="flex flex-col hover:shadow-lg transition-shadow duration-300"
               >
-                <CardHeader>
-                  <div className="flex justify-between items-start">
-                    <CardTitle className="truncate pr-2">{caseItem.name}</CardTitle>
+                <CardHeader className="pb-4">
+                  <div className="flex justify-between items-start gap-2">
+                    <CardTitle className="text-lg">{caseItem.name}</CardTitle>
                     <Badge variant={
                       caseItem.status === "Analysis Complete" ? "default" :
                       caseItem.status === "In Progress" ? "secondary" :
                       caseItem.status === "Error" ? "destructive" :
                       "outline"
-                    }>
+                    } className="flex-shrink-0">
                       {caseItem.status}
                     </Badge>
                   </div>
                   <CardDescription>{caseItem.type}</CardDescription>
                 </CardHeader>
-                <CardContent className="flex-grow space-y-4">
+                <CardContent className="flex-grow space-y-2 py-0">
                   {caseItem.status === 'In Progress' && caseItem.analysis_progress != null && (
-                    <div>
-                      <Progress value={caseItem.analysis_progress} className="w-full" />
-                      <p className="text-xs text-muted-foreground mt-1 text-center">{caseItem.analysis_status_message || `${caseItem.analysis_progress}% complete`}</p>
+                    <div className="pt-2">
+                      <Progress value={caseItem.analysis_progress} className="w-full h-2" />
+                      <p className="text-xs text-muted-foreground mt-2 text-center">{caseItem.analysis_status_message || `${caseItem.analysis_progress}% complete`}</p>
                     </div>
                   )}
                 </CardContent>
-                <CardFooter className="flex justify-between items-center bg-muted/50 p-4">
+                <CardFooter className="flex justify-between items-center bg-muted/50 p-3 mt-4">
                   <p className="text-xs text-muted-foreground">
                     Updated: {new Date(caseItem.last_updated).toLocaleDateString()}
                   </p>

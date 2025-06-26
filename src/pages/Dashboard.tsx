@@ -54,7 +54,7 @@ const Dashboard = () => {
   const renderDashboardContent = () => {
     if (totalCases === 0) {
       return (
-        <Card className="max-w-3xl mx-auto text-center py-12 px-6">
+        <Card className="max-w-3xl mx-auto text-center py-12 px-6 bg-gradient-to-br from-background to-muted/50">
           <CardHeader>
             <div className="mx-auto bg-primary/10 text-primary h-16 w-16 rounded-full flex items-center justify-center mb-4">
               <Gavel className="h-8 w-8" />
