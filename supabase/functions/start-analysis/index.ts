@@ -23,10 +23,6 @@ async function getUserIdFromRequest(req: Request, supabaseClient: SupabaseClient
   }
 }
 
-async function insertAgentActivity(supabaseClient: SupabaseClient, caseId: string, agentName: string, agentRole: string, activityType: string, content: string, status: 'processing' | 'completed' | 'error') {
-  await supabaseClient.from('agent_activities').insert({ case_id: caseId, agent_name: agentName, agent_role: agentRole, activity_type: activityType, content: content, status: status, timestamp: new Date().toISOString() });
-}
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -39,21 +35,21 @@ serve(async (req) => {
       { auth: { persistSession: false } }
     );
     
-    const { caseId, fileNames, caseGoals, systemInstruction, aiModel, openaiAssistantId } = await req.json();
+    const { caseId, fileNames } = await req.json();
     const userId = await getUserIdFromRequest(req, supabaseClient);
 
-    if (!caseId || !userId || !aiModel) {
-      return new Response(JSON.stringify({ error: 'Case ID, User ID, and AI Model are required' }), {
+    if (!caseId || !userId) {
+      return new Response(JSON.stringify({ error: 'Case ID and User ID are required' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400,
       });
     }
 
-    // Perform quick setup tasks
-    await insertAgentActivity(supabaseClient, caseId, 'System Initiator', 'Orchestrator', 'Analysis Initiation', `Analysis initiated for case ${caseId}. AI setup is running in the background.`, 'processing');
-    
+    // Insert initial records
+    await supabaseClient.from('agent_activities').insert({ case_id: caseId, agent_name: 'System', agent_role: 'Setup', activity_type: 'Case Created', content: `Case record created. Ready for evidence upload and analysis.`, status: 'completed' });
     await supabaseClient.from('case_theories').insert({ case_id: caseId, status: 'initial' });
 
+    // Process file metadata and trigger fire-and-forget summarization/categorization
     if (fileNames && fileNames.length > 0) {
       const fileMetadataInserts = fileNames.map((fileName: string) => ({
         case_id: caseId,
@@ -65,7 +61,6 @@ serve(async (req) => {
       if (metadataError) {
         console.error('Error inserting file metadata:', metadataError);
       } else if (insertedMetadata) {
-        // Fire-and-forget categorization/summarization
         insertedMetadata.forEach(meta => {
           const basename = meta.file_name.split('/').pop() || meta.file_name;
           supabaseClient.functions.invoke('file-categorizer', { body: JSON.stringify({ fileId: meta.id, fileName: basename, filePath: meta.file_path }) }).catch(console.error);
@@ -74,24 +69,9 @@ serve(async (req) => {
       }
     }
 
-    // Asynchronously invoke the AI orchestrator to do the heavy lifting
-    supabaseClient.functions.invoke(
-      'ai-orchestrator',
-      {
-        body: JSON.stringify({
-          caseId: caseId,
-          command: 'setup_new_case_ai',
-          payload: { caseGoals, systemInstruction, aiModel, openaiAssistantId },
-        }),
-        headers: { 'x-supabase-user-id': userId },
-      }
-    ).catch(orchestratorError => {
-        console.error('Failed to invoke AI Orchestrator for new case setup:', orchestratorError);
-        insertAgentActivity(supabaseClient, caseId, 'System', 'Error Handler', 'Orchestrator Invocation Failed', `Failed to start AI setup: ${orchestratorError.message}`, 'error').catch(console.error);
-    });
-
-    // Return a success response to the client immediately.
-    return new Response(JSON.stringify({ message: 'Case created and AI analysis is starting in the background.', caseId }), {
+    // IMPORTANT: Analysis is no longer triggered automatically.
+    // The user must now press a button in the UI to start the analysis.
+    return new Response(JSON.stringify({ message: 'Case created and files are being processed. Analysis can be started from the Tools tab.', caseId }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });

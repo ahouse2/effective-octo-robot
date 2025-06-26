@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Upload, RefreshCw } from "lucide-react";
+import { Upload, PlayCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useSession } from "@/components/SessionContextProvider";
@@ -24,7 +24,7 @@ interface CaseToolsProps {
 
 export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
   const [isUploading, setIsUploading] = useState(false);
-  const [isReanalyzing, setIsReanalyzing] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const { user } = useSession();
 
   const handleFileChangeAndUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -83,11 +83,10 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
       );
 
       if (edgeFunctionError) {
-        console.error("Edge function invocation error details:", edgeFunctionError);
-        throw new Error("Failed to start file processing on the server: " + edgeFunctionError.message);
+        throw new Error("Failed to log new files on the server: " + edgeFunctionError.message);
       }
 
-      toast.success("New files submitted for analysis!");
+      toast.success("File processing initiated. Click 'Analyze All Evidence' when ready.");
       
     } catch (err: any) {
       console.error("File upload process error:", err);
@@ -95,19 +94,18 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
     } finally {
       setIsUploading(false);
       toast.dismiss(loadingToastId);
-      // Reset the input value to allow re-uploading the same folder
       event.target.value = '';
     }
   };
 
-  const handleReanalyzeCase = async () => {
+  const handleAnalyzeCase = async () => {
     if (!user) {
-      toast.error("You must be logged in to re-analyze a case.");
+      toast.error("You must be logged in to analyze a case.");
       return;
     }
 
-    setIsReanalyzing(true);
-    const loadingToastId = toast.loading("Initiating full case re-analysis...");
+    setIsAnalyzing(true);
+    const loadingToastId = toast.loading("Initiating full case analysis...");
 
     try {
       const { data, error } = await supabase.functions.invoke(
@@ -123,15 +121,14 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
 
       if (error) throw new Error(error.message);
 
-      console.log("Re-analysis initiated response:", data);
-      toast.success("Case re-analysis initiated successfully!");
+      console.log("Analysis initiated response:", data);
+      toast.success("Case analysis initiated successfully! The AI will now begin its work.");
 
-    } catch (err: any)
-{
-      console.error("Error re-analyzing case:", err);
-      toast.error(err.message || "Failed to re-analyze case. Please try again.");
+    } catch (err: any) {
+      console.error("Error analyzing case:", err);
+      toast.error(err.message || "Failed to start analysis. Please try again.");
     } finally {
-      setIsReanalyzing(false);
+      setIsAnalyzing(false);
       toast.dismiss(loadingToastId);
     }
   };
@@ -139,8 +136,8 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
   return (
     <div className="p-4 space-y-6">
       <div>
-        <Label htmlFor="evidence-folder-upload-tools" className="text-base font-medium">Upload Evidence Folder</Label>
-        <p className="text-sm text-muted-foreground mb-2">Click to select a folder. The upload will start immediately.</p>
+        <Label htmlFor="evidence-folder-upload-tools" className="text-base font-medium">Step 1: Upload Evidence</Label>
+        <p className="text-sm text-muted-foreground mb-2">Upload a folder of evidence. Files will be processed and categorized.</p>
         <Button asChild className="w-full cursor-pointer" variant="outline" disabled={isUploading}>
           <label htmlFor="evidence-folder-upload-tools">
             <Upload className="h-4 w-4 mr-2" />
@@ -159,30 +156,29 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
         </Button>
       </div>
       <div>
-        <Label className="text-base font-medium">Re-run Full Analysis</Label>
-        <p className="text-sm text-muted-foreground mb-2">Trigger a complete re-analysis of all evidence in this case.</p>
+        <Label className="text-base font-medium">Step 2: Start Analysis</Label>
+        <p className="text-sm text-muted-foreground mb-2">After uploading, trigger the AI to analyze all evidence in this case.</p>
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button
-              disabled={isReanalyzing}
+              disabled={isAnalyzing}
               className="w-full"
-              variant="destructive"
             >
-              <RefreshCw className="h-4 w-4 mr-2" />
-              {isReanalyzing ? "Re-analyzing..." : "Re-run Full Analysis"}
+              <PlayCircle className="h-4 w-4 mr-2" />
+              {isAnalyzing ? "Starting Analysis..." : "Analyze All Evidence"}
             </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Confirm Re-analysis</AlertDialogTitle>
+              <AlertDialogTitle>Confirm Analysis</AlertDialogTitle>
               <AlertDialogDescription>
-                This will trigger a full re-analysis of all evidence in this case. This may incur costs and take some time. Are you sure you want to proceed?
+                This will start a full analysis of all evidence in this case. This may incur costs and take some time. Are you sure you want to proceed?
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleReanalyzeCase}>
-                Confirm & Re-run
+              <AlertDialogAction onClick={handleAnalyzeCase}>
+                Confirm & Start Analysis
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

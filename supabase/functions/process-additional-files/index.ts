@@ -47,7 +47,7 @@ serve(async (req) => {
 
     await supabaseClient.from('agent_activities').insert({
       case_id: caseId, agent_name: 'System', agent_role: 'File Processor',
-      activity_type: 'New Evidence Received', content: `Received ${newFileNames.length} new file(s) for processing.`, status: 'processing',
+      activity_type: 'New Evidence Received', content: `Received ${newFileNames.length} new file(s). They are being categorized and summarized.`, status: 'processing',
     });
 
     const DB_BATCH_SIZE = 100;
@@ -55,9 +55,8 @@ serve(async (req) => {
       const batch = newFileNames.slice(i, i + DB_BATCH_SIZE);
       const fileMetadataInserts = batch.map((relativePath: string) => ({
         case_id: caseId,
-        file_name: relativePath, // Store the full relative path as the file_name
+        file_name: relativePath,
         file_path: `${userId}/${caseId}/${relativePath}`,
-        description: `Additional file uploaded for case ${caseId}`,
       }));
 
       const { data: insertedMetadata, error: metadataError } = await supabaseClient
@@ -67,7 +66,7 @@ serve(async (req) => {
 
       if (metadataError) {
         console.error('Error inserting file metadata batch:', metadataError);
-        continue; // Continue to next batch even if one fails
+        continue;
       }
 
       if (insertedMetadata) {
@@ -85,25 +84,9 @@ serve(async (req) => {
         });
       }
     }
-
-    const { data: caseData, error: caseFetchError } = await supabaseClient.from('cases').select('status').eq('id', caseId).single();
-    if (caseFetchError) throw new Error('Failed to fetch case status.');
-
-    if (caseData.status === 'Analysis Complete') {
-      await supabaseClient.from('cases').update({ status: 'In Progress', last_updated: new Date().toISOString() }).eq('id', caseId);
-    }
-
-    supabaseClient.functions.invoke(
-      'ai-orchestrator',
-      {
-        body: JSON.stringify({ caseId, command: 'initiate_analysis_on_new_files', payload: {} }),
-        headers: { 'Content-Type': 'application/json', 'x-supabase-user-id': userId },
-      }
-    ).catch(orchestratorError => {
-      console.error(`Failed to invoke AI Orchestrator for new files: ${orchestratorError.message}`);
-    });
-
-    return new Response(JSON.stringify({ message: 'New files are being processed by the AI.', caseId }), {
+    
+    // IMPORTANT: Analysis is no longer triggered automatically.
+    return new Response(JSON.stringify({ message: 'New files are being processed. Start analysis from the Tools tab when ready.', caseId }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });
