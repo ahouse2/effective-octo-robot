@@ -29,7 +29,6 @@ serve(async (req) => {
       { auth: { persistSession: false } }
     );
 
-    // Download file content from storage
     const { data: fileBlob, error: downloadError } = await supabaseClient.storage
       .from('evidence-files')
       .download(filePath);
@@ -38,25 +37,39 @@ serve(async (req) => {
       throw new Error(`Failed to download file ${fileName}: ${downloadError.message}`);
     }
 
-    // Use a snippet to avoid sending huge files to the AI
-    const fileContent = await fileBlob.text();
-    const contentSnippet = fileContent.substring(0, 8000); // Use a larger snippet for better context
+    let prompt: string;
 
-    const prompt = `
-      Analyze the content of the following legal document snippet.
-      Original Filename: "${fileName}"
-      Content Snippet: "${contentSnippet}"
+    try {
+      const fileContent = await fileBlob.text();
+      const contentSnippet = fileContent.substring(0, 8000);
+      prompt = `
+        Analyze the content of the following legal document snippet.
+        Original Filename: "${fileName}"
+        Content Snippet: "${contentSnippet}"
 
-      Based on this information, please perform two tasks:
-      1.  Generate a concise, one-to-two sentence summary of the document's purpose and key contents.
-      2.  Extract a list of 3-5 relevant keywords or tags (as a JSON array of strings) that describe the main topics, people, or entities mentioned.
+        Based on this information, please perform two tasks:
+        1.  Generate a concise, one-to-two sentence summary of the document's purpose and key contents.
+        2.  Extract a list of 3-5 relevant keywords or tags (as a JSON array of strings) that describe the main topics, people, or entities mentioned.
 
-      Respond ONLY with a JSON object in the format:
-      {
-        "summary": "Your one or two sentence summary here.",
-        "tags": ["tag1", "tag2", "tag3"]
-      }
-    `;
+        Respond ONLY with a JSON object in the format:
+        {
+          "summary": "Your one or two sentence summary here.",
+          "tags": ["tag1", "tag2", "tag3"]
+        }
+      `;
+    } catch (e) {
+      console.warn(`Could not read file ${fileName} as text. Falling back to filename analysis for summary.`);
+      prompt = `
+        The content of the file named "${fileName}" could not be read as text, suggesting it is a binary file (e.g., an image).
+        Based on its filename, provide a simple summary and tags.
+
+        Respond ONLY with a JSON object in the format:
+        {
+          "summary": "Binary file (e.g., image, scan) with original name: ${fileName}",
+          "tags": ["binary file", "image/scan"]
+        }
+      `;
+    }
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o",
@@ -66,28 +79,20 @@ serve(async (req) => {
 
     const result = JSON.parse(completion.choices[0].message.content || '{}');
     
-    // --- Data Validation and Sanitization ---
     const summary = typeof result.summary === 'string' ? result.summary : null;
     let tags = null;
     if (Array.isArray(result.tags)) {
-      // Ensure all elements in the array are strings
       tags = result.tags.map(tag => String(tag));
     }
 
-    if (!summary || !tags) {
-      console.error('AI failed to return a valid summary and/or tags. Raw result:', result);
-      // We can choose to proceed with a partial update or throw an error.
-      // Let's proceed with what we have to avoid a full crash.
-      if (!summary && !tags) {
-        throw new Error('AI failed to return any valid data.');
-      }
+    if (!summary && !tags) {
+      throw new Error('AI failed to return any valid data.');
     }
 
-    // Update the file metadata in the database
     const { error: updateError } = await supabaseClient
       .from('case_files_metadata')
       .update({
-        description: summary, // Using the description field for the summary
+        description: summary,
         tags: tags,
       })
       .eq('id', fileId);

@@ -37,28 +37,52 @@ serve(async (req) => {
       throw new Error(`Failed to download file ${fileName}: ${downloadError.message}`);
     }
 
-    const fileContent = await fileBlob.text();
-    const contentSnippet = fileContent.substring(0, 4000);
+    let contentSnippet = "";
+    let prompt: string;
 
-    const prompt = `
-      Analyze the metadata and content snippet of the following legal document.
-      Original Filename: "${fileName}"
-      Content Snippet: "${contentSnippet}"
+    try {
+      // Attempt to read the file as text. This will fail for binary files.
+      const fileContent = await fileBlob.text();
+      contentSnippet = fileContent.substring(0, 4000);
+      prompt = `
+        Analyze the metadata and content snippet of the following legal document.
+        Original Filename: "${fileName}"
+        Content Snippet: "${contentSnippet}"
 
-      Based on this information, provide a logical category and a new, descriptive filename.
-      The filename should follow the format: YYYY-MM-DD_Document-Type_Brief-Description.ext
-      - The date should be the most prominent date found in the document. If none, use today's date.
-      - Document-Type should be a concise category (e.g., Financial-Statement, Email, Court-Order, Property-Deed, Declaration).
-      - Brief-Description should be a few keywords summarizing the content.
-      - Keep the original file extension.
-      - IMPORTANT: The new filename must not contain any slashes ('/' or '\\').
+        Based on this information, provide a logical category and a new, descriptive filename.
+        The filename should follow the format: YYYY-MM-DD_Document-Type_Brief-Description.ext
+        - The date should be the most prominent date found in the document. If none, use today's date.
+        - Document-Type should be a concise category (e.g., Financial-Statement, Email, Court-Order, Property-Deed, Declaration, Image, Other).
+        - Brief-Description should be a few keywords summarizing the content.
+        - Keep the original file extension.
+        - IMPORTANT: The new filename must not contain any slashes ('/' or '\\').
 
-      Respond ONLY with a JSON object in the format:
-      {
-        "category": "Your Suggested Category",
-        "suggestedName": "Your-Suggested-Filename.ext"
-      }
-    `;
+        Respond ONLY with a JSON object in the format:
+        {
+          "category": "Your Suggested Category",
+          "suggestedName": "Your-Suggested-Filename.ext"
+        }
+      `;
+    } catch (e) {
+      // Fallback for binary files: analyze the filename only.
+      console.warn(`Could not read file ${fileName} as text. Falling back to filename analysis.`);
+      prompt = `
+        The content of the file named "${fileName}" could not be read as text, suggesting it is a binary file (e.g., an image, protected PDF).
+        Based on its filename, provide a logical category and a new, descriptive filename.
+        The filename should follow the format: YYYY-MM-DD_Document-Type_Brief-Description.ext
+        - If the filename contains a date, use it. Otherwise, use today's date.
+        - Infer the Document-Type from the filename (e.g., Image, Scan, Document).
+        - Use the filename for the Brief-Description.
+        - Keep the original file extension.
+        - IMPORTANT: The new filename must not contain any slashes ('/' or '\\').
+
+        Respond ONLY with a JSON object in the format:
+        {
+          "category": "Your Suggested Category",
+          "suggestedName": "Your-Suggested-Filename.ext"
+        }
+      `;
+    }
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o",
