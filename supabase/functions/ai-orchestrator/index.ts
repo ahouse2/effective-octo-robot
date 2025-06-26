@@ -10,37 +10,158 @@ const corsHeaders = {
 };
 
 // --- UTILITY FUNCTIONS ---
-async function getUserIdFromRequest(req: Request, supabaseClient: SupabaseClient): Promise<string | null> { /* ... */ return null; }
-function extractJsonFromMarkdown(text: string): any | null { /* ... */ return null; }
-async function updateCaseData(supabaseClient: SupabaseClient, caseId: string, assistantResponse: string) { /* ... */ }
-async function insertAgentActivity(supabaseClient: SupabaseClient, caseId: string, agentName: string, agentRole: string, activityType: string, content: string, status: 'processing' | 'completed' | 'error') { /* ... */ }
+
+async function getUserIdFromRequest(req: Request, supabaseClient: SupabaseClient): Promise<string | null> {
+  try {
+    const authHeader = req.headers.get('Authorization');
+    if (authHeader) {
+      const { data: { user }, error } = await supabaseClient.auth.getUser(authHeader.replace('Bearer ', ''));
+      if (error) console.warn("getUserIdFromRequest: Failed to get user from JWT:", error.message);
+      if (user) return user.id;
+    }
+    const userIdFromHeader = req.headers.get('x-supabase-user-id');
+    if (userIdFromHeader) return userIdFromHeader;
+    return null;
+  } catch (e) {
+    console.error("getUserIdFromRequest: Error getting user ID:", e);
+    return null;
+  }
+}
+
+function extractJsonFromMarkdown(text: string): any | null {
+  const regex = /```json\n([\s\S]*?)\n```/;
+  const match = text.match(regex);
+  if (match && match[1]) {
+    try {
+      return JSON.parse(match[1]);
+    } catch (e) {
+      console.error("Failed to parse JSON from markdown:", e);
+      return null;
+    }
+  }
+  return null;
+}
+
+async function insertAgentActivity(supabaseClient: SupabaseClient, caseId: string, agentName: string, agentRole: string, activityType: string, content: string, status: 'processing' | 'completed' | 'error') {
+  const { error } = await supabaseClient.from('agent_activities').insert({
+    case_id: caseId,
+    agent_name: agentName,
+    agent_role: agentRole,
+    activity_type: activityType,
+    content: content,
+    status: status,
+  });
+  if (error) console.error(`Failed to insert agent activity [${activityType}]`, error);
+}
+
+async function updateCaseData(supabaseClient: SupabaseClient, caseId: string, assistantResponse: string) {
+  const jsonData = extractJsonFromMarkdown(assistantResponse);
+  if (!jsonData) {
+    await insertAgentActivity(supabaseClient, caseId, 'Orchestrator', 'System', 'Data Update Failed', 'Could not extract valid JSON from the AI response.', 'error');
+    return;
+  }
+
+  const { case_theory, case_insights } = jsonData;
+
+  if (case_theory) {
+    await supabaseClient.from('case_theories').update({
+      fact_patterns: case_theory.fact_patterns,
+      legal_arguments: case_theory.legal_arguments,
+      potential_outcomes: case_theory.potential_outcomes,
+      status: case_theory.status || 'developing',
+      last_updated: new Date().toISOString(),
+    }).eq('case_id', caseId);
+  }
+
+  if (case_insights && Array.isArray(case_insights)) {
+    const insightsToInsert = case_insights.map(insight => ({
+      case_id: caseId,
+      title: insight.title,
+      description: insight.description,
+      insight_type: insight.insight_type || 'general',
+    }));
+    await supabaseClient.from('case_insights').insert(insightsToInsert);
+  }
+}
 
 // --- OPENAI HANDLERS ---
-// ... (Existing OpenAI functions remain unchanged)
+
+async function getOrCreateAssistant(openai: OpenAI, supabaseClient: SupabaseClient, userId: string, caseId: string): Promise<{ assistantId: string, threadId: string }> {
+    let { data: caseData, error: caseError } = await supabaseClient.from('cases').select('openai_assistant_id, openai_thread_id, name, case_goals, system_instruction').eq('id', caseId).single();
+    if (caseError || !caseData) throw new Error(`Case not found: ${caseId}`);
+
+    let assistantId = caseData.openai_assistant_id;
+    if (!assistantId) {
+        const { data: profileData } = await supabaseClient.from('profiles').select('openai_assistant_id').eq('id', userId).single();
+        assistantId = profileData?.openai_assistant_id;
+    }
+
+    const instructions = `You are a specialized legal AI assistant for California family law. Your role is to analyze evidence, identify key facts, and help build a case theory. Base your analysis strictly on the provided files. Case Goals: ${caseData.case_goals}. System Instructions: ${caseData.system_instruction}`;
+
+    if (assistantId) {
+        await openai.beta.assistants.update(assistantId, { instructions, tools: [{ type: "file_search" }] });
+    } else {
+        const assistant = await openai.beta.assistants.create({
+            name: `Family Law AI for Case: ${caseData.name}`,
+            instructions,
+            tools: [{ type: "file_search" }],
+            model: "gpt-4o",
+        });
+        assistantId = assistant.id;
+    }
+
+    let threadId = caseData.openai_thread_id;
+    if (!threadId) {
+        const thread = await openai.beta.threads.create();
+        threadId = thread.id;
+    }
+
+    await supabaseClient.from('cases').update({ openai_assistant_id: assistantId, openai_thread_id: threadId }).eq('id', caseId);
+    return { assistantId, threadId };
+}
+
+async function handleOpenAICommand(supabaseClient: SupabaseClient, openai: OpenAI, caseId: string, userId: string, command: string, payload: any) {
+    const { assistantId, threadId } = await getOrCreateAssistant(openai, supabaseClient, userId, caseId);
+    let prompt = "";
+
+    if (command === 're_run_analysis') {
+        await insertAgentActivity(supabaseClient, caseId, 'Orchestrator', 'System', 'Analysis Triggered', 'Full case re-analysis initiated by user.', 'processing');
+        prompt = `Please perform a comprehensive analysis of all the evidence files associated with this case. Your primary objectives are to identify key themes, generate a high-level summary, create key insights, and update the case theory. Structure your response as a JSON object within a markdown block.`;
+    } else if (command === 'user_prompt') {
+        prompt = payload.promptContent;
+    } else {
+        throw new Error(`Unsupported OpenAI command: ${command}`);
+    }
+
+    await openai.beta.threads.messages.create(threadId, { role: "user", content: prompt });
+    const run = await openai.beta.threads.runs.create(threadId, { assistant_id: assistantId });
+
+    await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'AI', 'Analysis Started', `Run created with ID: ${run.id}. Awaiting completion.`, 'processing');
+    await supabaseClient.from('cases').update({ status: 'In Progress' }).eq('id', caseId);
+}
 
 // --- GEMINI RAG HANDLER ---
+
 async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: GoogleGenerativeAI, caseId: string, command: string, payload: any) {
-    const { promptContent } = payload;
+    let promptContent = payload.promptContent;
+    if (command === 're_run_analysis') {
+        await insertAgentActivity(supabaseClient, caseId, 'Orchestrator', 'System', 'Analysis Triggered', 'Full case re-analysis initiated by user.', 'processing');
+        promptContent = `Perform a comprehensive analysis of all documents. Summarize the key facts, events, and overall case narrative based on the entire evidence locker.`;
+    }
+    
     await insertAgentActivity(supabaseClient, caseId, 'User', 'Command', 'Gemini RAG Query', promptContent, 'processing');
 
-    // --- Get GCP Credentials ---
     const gcpProjectId = Deno.env.get('GCP_PROJECT_ID');
     const gcpDataStoreId = Deno.env.get('GCP_VERTEX_AI_DATA_STORE_ID');
     const gcpServiceAccountKey = JSON.parse(Deno.env.get('GCP_SERVICE_ACCOUNT_KEY') ?? '{}');
 
-    // --- Query Vertex AI Search ---
     const discoveryEngineClient = new v1.SearchServiceClient({
       projectId: gcpProjectId,
       credentials: { client_email: gcpServiceAccountKey.client_email, private_key: gcpServiceAccountKey.private_key },
     });
 
     const servingConfig = discoveryEngineClient.servingConfigPath(gcpProjectId, 'global', gcpDataStoreId, 'default_serving_config');
-    const [searchResponse] = await discoveryEngineClient.search({
-      servingConfig,
-      query: promptContent,
-      pageSize: 5, // Get top 5 most relevant chunks
-    });
-
+    const [searchResponse] = await discoveryEngineClient.search({ servingConfig, query: promptContent, pageSize: 5 });
     const contextSnippets = searchResponse.results?.map(r => r.document?.derivedStructData?.fields?.content?.stringValue).filter(Boolean).join('\n\n---\n\n');
 
     if (!contextSnippets) {
@@ -48,21 +169,8 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
         return;
     }
 
-    // --- Synthesize Answer with Gemini ---
     const { data: caseDetails } = await supabaseClient.from('cases').select('case_goals, system_instruction').eq('id', caseId).single();
-    const synthesisPrompt = `
-        Based on the following context from case documents, answer the user's question.
-        User's Question: "${promptContent}"
-        Case Goals: ${caseDetails?.case_goals || 'Not specified.'}
-        System Instructions: ${caseDetails?.system_instruction || 'None.'}
-
-        Context from Documents:
-        ---
-        ${contextSnippets}
-        ---
-
-        Your Answer:
-    `;
+    const synthesisPrompt = `Based on the following context from case documents, answer the user's question. User's Question: "${promptContent}". Case Goals: ${caseDetails?.case_goals || 'Not specified.'}. System Instructions: ${caseDetails?.system_instruction || 'None.'}. Context from Documents: --- ${contextSnippets} --- Your Answer:`;
 
     const model = genAI.getGenerativeModel({ model: "gemini-pro" });
     const result = await model.generateContent(synthesisPrompt);
@@ -71,7 +179,6 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'AI', 'RAG Response', responseText, 'completed');
     await supabaseClient.from('cases').update({ status: 'Analysis Complete' }).eq('id', caseId);
 }
-
 
 // --- MAIN SERVE FUNCTION ---
 serve(async (req) => {
@@ -82,19 +189,17 @@ serve(async (req) => {
     const userId = await getUserIdFromRequest(req, supabaseClient);
     if (!caseId || !userId || !command) throw new Error('caseId, userId, and command are required');
 
-    const { data: caseData, error: caseError } = await supabaseClient.from('cases').select('ai_model, openai_thread_id, openai_assistant_id').eq('id', caseId).single();
+    const { data: caseData, error: caseError } = await supabaseClient.from('cases').select('ai_model').eq('id', caseId).single();
     if (caseError || !caseData) throw new Error('Case not found or error fetching case details.');
-    const { ai_model, openai_thread_id, openai_assistant_id } = caseData;
+    
+    const { ai_model } = caseData;
 
     if (ai_model === 'openai') {
-        // ... existing OpenAI logic
+        const openai = new OpenAI({ apiKey: Deno.env.get('OPENAI_API_KEY') });
+        await handleOpenAICommand(supabaseClient, openai, caseId, userId, command, payload);
     } else if (ai_model === 'gemini') {
         const genAI = new GoogleGenerativeAI(Deno.env.get('GOOGLE_GEMINI_API_KEY') ?? '');
-        if (command === 'user_prompt') {
-            await handleGeminiRAGCommand(supabaseClient, genAI, caseId, command, payload);
-        } else {
-            await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'System', 'Command Received', `Received command '${command}'. Only user prompts are currently handled by the Gemini RAG pipeline.`, 'completed');
-        }
+        await handleGeminiRAGCommand(supabaseClient, genAI, caseId, command, payload);
     } else {
       throw new Error(`Unsupported AI model: ${ai_model}`);
     }
