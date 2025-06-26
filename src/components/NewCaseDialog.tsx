@@ -125,7 +125,7 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
       }
 
       toast.loading("Starting AI analysis...", { id: loadingToastId });
-      supabase.functions.invoke('start-analysis', {
+      const { error: startAnalysisError } = await supabase.functions.invoke('start-analysis', {
         body: JSON.stringify({
           caseId: newCase.id,
           fileNames: uploadedFilePaths,
@@ -134,10 +134,11 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
           aiModel: values.aiModel,
           openaiAssistantId: values.openaiAssistantId || null,
         }),
-      }).catch(analysisError => {
-        console.error("'start-analysis' function invocation failed:", analysisError);
-        toast.error("Failed to initialize AI for the new case. The case has been created, but you may need to trigger analysis manually.");
       });
+
+      if (startAnalysisError) {
+        throw new Error(`Failed to start analysis: ${startAnalysisError.message}`);
+      }
 
       toast.success("Case created! AI analysis is starting in the background.", { id: loadingToastId });
       form.reset();
