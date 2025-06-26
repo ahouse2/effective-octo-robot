@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Upload, PlayCircle } from "lucide-react";
+import { Upload, PlayCircle, Share2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useSession } from "@/components/SessionContextProvider";
@@ -28,6 +28,7 @@ const MAX_BATCH_SIZE_MB = 4; // Supabase Edge Function payload limit is around 4
 export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const { user } = useSession();
 
   const handleFileChangeAndUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -149,6 +150,23 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
     }
   };
 
+  const handleExportToNeo4j = async () => {
+    setIsExporting(true);
+    const loadingToastId = toast.loading("Exporting case data to Neo4j...");
+    try {
+      const { error } = await supabase.functions.invoke('export-to-neo4j', {
+        body: { caseId },
+      });
+      if (error) throw error;
+      toast.success("Case data successfully exported to Neo4j.", { id: loadingToastId });
+    } catch (err: any) {
+      console.error("Neo4j export error:", err);
+      toast.error(err.message || "Failed to export to Neo4j.", { id: loadingToastId });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="p-4 space-y-6">
       <div>
@@ -196,6 +214,14 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+      </div>
+      <div>
+        <Label className="text-base font-medium">Graph Analysis</Label>
+        <p className="text-sm text-muted-foreground mb-2">Export this case's data to Neo4j to visualize relationships.</p>
+        <Button onClick={handleExportToNeo4j} disabled={isExporting} className="w-full" variant="secondary">
+          <Share2 className="h-4 w-4 mr-2" />
+          {isExporting ? "Exporting..." : "Export to Neo4j"}
+        </Button>
       </div>
     </div>
   );
