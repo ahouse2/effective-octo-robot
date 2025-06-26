@@ -51,6 +51,7 @@ serve(async (req) => {
       - Document-Type should be a concise category (e.g., Financial-Statement, Email, Court-Order, Property-Deed, Declaration).
       - Brief-Description should be a few keywords summarizing the content.
       - Keep the original file extension.
+      - IMPORTANT: The new filename must not contain any slashes ('/' or '\\').
 
       Respond ONLY with a JSON object in the format:
       {
@@ -66,11 +67,14 @@ serve(async (req) => {
     });
 
     const result = JSON.parse(completion.choices[0].message.content || '{}');
-    const { category, suggestedName } = result;
+    let { category, suggestedName } = result;
 
     if (!category || !suggestedName) {
       throw new Error('AI failed to return a valid category and suggested name.');
     }
+
+    // Sanitize the suggested name to remove any slashes, just in case the AI ignores the instruction.
+    suggestedName = suggestedName.replace(/[\\/]/g, '_');
 
     const { error: updateError } = await supabaseClient
       .from('case_files_metadata')
