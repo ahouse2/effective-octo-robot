@@ -18,7 +18,6 @@ interface Case {
   type: string;
   status: string;
   last_updated: string;
-  case_files_metadata: { count: number }[];
 }
 
 const MyCases = () => {
@@ -35,7 +34,7 @@ const MyCases = () => {
     setError(null);
     const { data, error } = await supabase
       .from("cases")
-      .select("*, case_files_metadata(count)")
+      .select("*")
       .order("last_updated", { ascending: false });
 
     if (error) {
@@ -52,15 +51,10 @@ const MyCases = () => {
     fetchCases();
 
     const channel = supabase
-      .channel('cases_changes_with_files')
+      .channel('cases_changes')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'cases' },
-        () => fetchCases()
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'case_files_metadata' },
         () => fetchCases()
       )
       .subscribe();
@@ -156,10 +150,6 @@ const MyCases = () => {
                     }>
                       {caseItem.status}
                     </Badge>
-                    <div className="flex items-center">
-                      <FileText className="h-4 w-4 mr-1" />
-                      <span>{caseItem.case_files_metadata[0]?.count || 0} Files</span>
-                    </div>
                   </div>
                 </CardContent>
                 <CardFooter className="flex justify-between items-center">
