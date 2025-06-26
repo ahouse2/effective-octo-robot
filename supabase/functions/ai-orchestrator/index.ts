@@ -306,42 +306,29 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'caseId, userId, and command are required' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
     }
 
+    // The first and most important step: determine the AI model for this case.
     const { data: caseData, error: caseError } = await supabaseClient.from('cases').select('ai_model, openai_thread_id, openai_assistant_id').eq('id', caseId).single();
     if (caseError || !caseData) throw new Error('Case not found or error fetching case details.');
-
     const { ai_model, openai_thread_id, openai_assistant_id } = caseData;
 
-    if (command === 'setup_new_case_ai') {
-        const { aiModel } = payload;
-        if (aiModel === 'openai') {
-            const openai = new OpenAI({ apiKey: Deno.env.get('OPENAI_API_KEY') });
-            await setupNewOpenAICase(supabaseClient, openai, caseId, payload);
-        } else {
-            await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'Setup', 'Setup Complete', 'Gemini case ready. Awaiting user prompt.', 'completed');
-            await supabaseClient.from('cases').update({ status: 'In Progress' }).eq('id', caseId);
-        }
-        return new Response(JSON.stringify({ message: 'AI setup process initiated.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
-    } else if (command === 'switch_ai_model') {
-        const { newAiModel } = payload;
-        await insertAgentActivity(supabaseClient, caseId, 'User', 'Command', 'Switch AI Model', `User switched AI model to ${newAiModel}.`, 'processing');
-        if (newAiModel === 'openai') {
-            const { data: caseDataForSwitch } = await supabaseClient.from('cases').select('case_goals, system_instruction, openai_assistant_id').eq('id', caseId).single();
-            const openai = new OpenAI({ apiKey: Deno.env.get('OPENAI_API_KEY') });
-            await setupNewOpenAICase(supabaseClient, openai, caseId, { ...caseDataForSwitch, openaiAssistantId: caseDataForSwitch?.openai_assistant_id });
-        } else {
-            await supabaseClient.from('cases').update({ openai_thread_id: null, openai_assistant_id: null, status: 'In Progress' }).eq('id', caseId);
-            await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'Setup', 'Setup Complete', 'Gemini case ready. Awaiting user prompt.', 'completed');
-        }
-        return new Response(JSON.stringify({ message: 'AI model switched and setup initiated.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
-    }
-
+    // Route to the correct handler based on the selected AI model.
     if (ai_model === 'openai') {
-      if (!openai_thread_id || !openai_assistant_id) throw new Error('OpenAI thread or assistant ID missing for this case.');
-      const openai = new OpenAI({ apiKey: Deno.env.get('OPENAI_API_KEY') });
-      await handleOpenAICommand(supabaseClient, openai, caseId, command, payload, openai_thread_id, openai_assistant_id);
+      if (command === 'setup_new_case_ai' || command === 'switch_ai_model') {
+        const openai = new OpenAI({ apiKey: Deno.env.get('OPENAI_API_KEY') });
+        await setupNewOpenAICase(supabaseClient, openai, caseId, payload);
+      } else {
+        if (!openai_thread_id || !openai_assistant_id) throw new Error('OpenAI thread or assistant ID missing for this case.');
+        const openai = new OpenAI({ apiKey: Deno.env.get('OPENAI_API_KEY') });
+        await handleOpenAICommand(supabaseClient, openai, caseId, command, payload, openai_thread_id, openai_assistant_id);
+      }
     } else if (ai_model === 'gemini') {
-      // Gemini handling logic would go here
-      await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'System', 'Command Received', `Received command '${command}' but Gemini logic is not yet implemented.`, 'completed');
+      if (command === 'setup_new_case_ai' || command === 'switch_ai_model') {
+        await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'Setup', 'Setup Complete', 'Gemini case ready. Awaiting user prompt.', 'completed');
+        await supabaseClient.from('cases').update({ status: 'In Progress', openai_thread_id: null, openai_assistant_id: null }).eq('id', caseId);
+      } else {
+        // Gemini handling logic for other commands like 're_run_analysis' or 'user_prompt'
+        await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'System', 'Command Received', `Received command '${command}' but Gemini logic is not yet implemented.`, 'completed');
+      }
     } else {
       throw new Error(`Unsupported AI model: ${ai_model}`);
     }
