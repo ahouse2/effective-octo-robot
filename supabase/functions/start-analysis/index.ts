@@ -46,32 +46,25 @@ serve(async (req) => {
     }
 
     // Insert initial records
-    await supabaseClient.from('agent_activities').insert({ case_id: caseId, agent_name: 'System', agent_role: 'Setup', activity_type: 'Case Created', content: `Case record created. Ready for evidence upload and analysis.`, status: 'completed' });
+    await supabaseClient.from('agent_activities').insert({ case_id: caseId, agent_name: 'System', agent_role: 'Setup', activity_type: 'Case Created', content: `Case record created. Ready for evidence upload.`, status: 'completed' });
     await supabaseClient.from('case_theories').insert({ case_id: caseId, status: 'initial' });
 
-    // Process file metadata and trigger fire-and-forget summarization/categorization
+    // Process file metadata
     if (fileNames && fileNames.length > 0) {
       const fileMetadataInserts = fileNames.map((fileName: string) => ({
         case_id: caseId,
         file_name: fileName,
         file_path: `${userId}/${caseId}/${fileName}`,
       }));
-      const { data: insertedMetadata, error: metadataError } = await supabaseClient.from('case_files_metadata').insert(fileMetadataInserts).select('id, file_name, file_path');
+      const { error: metadataError } = await supabaseClient.from('case_files_metadata').insert(fileMetadataInserts);
       
       if (metadataError) {
         console.error('Error inserting file metadata:', metadataError);
-      } else if (insertedMetadata) {
-        insertedMetadata.forEach(meta => {
-          const basename = meta.file_name.split('/').pop() || meta.file_name;
-          supabaseClient.functions.invoke('file-categorizer', { body: JSON.stringify({ fileId: meta.id, fileName: basename, filePath: meta.file_path }) }).catch(console.error);
-          supabaseClient.functions.invoke('file-summarizer', { body: JSON.stringify({ fileId: meta.id, fileName: basename, filePath: meta.file_path }) }).catch(console.error);
-        });
+        throw new Error('Failed to create file metadata records.');
       }
     }
 
-    // IMPORTANT: Analysis is no longer triggered automatically.
-    // The user must now press a button in the UI to start the analysis.
-    return new Response(JSON.stringify({ message: 'Case created and files are being processed. Analysis can be started from the Tools tab.', caseId }), {
+    return new Response(JSON.stringify({ message: 'Case created and files are uploaded. Start analysis from the Tools tab.', caseId }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });

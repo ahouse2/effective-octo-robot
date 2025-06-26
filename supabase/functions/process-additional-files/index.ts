@@ -47,46 +47,25 @@ serve(async (req) => {
 
     await supabaseClient.from('agent_activities').insert({
       case_id: caseId, agent_name: 'System', agent_role: 'File Processor',
-      activity_type: 'New Evidence Received', content: `Received ${newFileNames.length} new file(s). They are being categorized and summarized.`, status: 'processing',
+      activity_type: 'New Evidence Received', content: `Received ${newFileNames.length} new file(s).`, status: 'completed',
     });
 
-    const DB_BATCH_SIZE = 100;
-    for (let i = 0; i < newFileNames.length; i += DB_BATCH_SIZE) {
-      const batch = newFileNames.slice(i, i + DB_BATCH_SIZE);
-      const fileMetadataInserts = batch.map((relativePath: string) => ({
-        case_id: caseId,
-        file_name: relativePath,
-        file_path: `${userId}/${caseId}/${relativePath}`,
-      }));
+    const fileMetadataInserts = newFileNames.map((relativePath: string) => ({
+      case_id: caseId,
+      file_name: relativePath,
+      file_path: `${userId}/${caseId}/${relativePath}`,
+    }));
 
-      const { data: insertedMetadata, error: metadataError } = await supabaseClient
-        .from('case_files_metadata')
-        .insert(fileMetadataInserts)
-        .select('id, file_name, file_path');
+    const { error: metadataError } = await supabaseClient
+      .from('case_files_metadata')
+      .insert(fileMetadataInserts);
 
-      if (metadataError) {
-        console.error('Error inserting file metadata batch:', metadataError);
-        continue;
-      }
-
-      if (insertedMetadata) {
-        const processingPromises = insertedMetadata.flatMap(meta => {
-          const basename = meta.file_name.split('/').pop() || meta.file_name;
-          return [
-            supabaseClient.functions.invoke('file-categorizer', { body: JSON.stringify({ fileId: meta.id, fileName: basename, filePath: meta.file_path }) }),
-            supabaseClient.functions.invoke('file-summarizer', { body: JSON.stringify({ fileId: meta.id, fileName: basename, filePath: meta.file_path }) })
-          ];
-        });
-        Promise.allSettled(processingPromises).then(results => {
-          results.forEach(result => {
-            if (result.status === 'rejected') console.error("A file processing task failed:", result.reason);
-          });
-        });
-      }
+    if (metadataError) {
+      console.error('Error inserting file metadata:', metadataError);
+      throw new Error('Failed to create file metadata records.');
     }
     
-    // IMPORTANT: Analysis is no longer triggered automatically.
-    return new Response(JSON.stringify({ message: 'New files are being processed. Start analysis from the Tools tab when ready.', caseId }), {
+    return new Response(JSON.stringify({ message: 'New files uploaded. Start analysis from the Tools tab when ready.', caseId }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });
