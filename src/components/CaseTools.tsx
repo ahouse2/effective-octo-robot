@@ -22,79 +22,61 @@ interface CaseToolsProps {
   caseId: string;
 }
 
+const BATCH_SIZE = 20; // Process 20 files at a time
+
 export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const { user } = useSession();
 
   const handleFileChangeAndUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (!event.target.files || event.target.files.length === 0) {
-      return;
-    }
+    if (!event.target.files || event.target.files.length === 0) return;
     if (!user) {
       toast.error("You must be logged in to upload files.");
       return;
     }
 
-    const allFiles = Array.from(event.target.files);
-    const validFiles = allFiles.filter(file => !file.name.startsWith('~') && !file.name.startsWith('.'));
-    const skippedCount = allFiles.length - validFiles.length;
-
-    if (validFiles.length === 0) {
-      toast.info(`Skipped ${skippedCount} temporary or system file(s). No valid files selected.`);
+    const allFiles = Array.from(event.target.files).filter(file => !file.name.startsWith('~') && !file.name.startsWith('.'));
+    if (allFiles.length === 0) {
+      toast.info("No valid files selected for upload.");
       return;
     }
 
-    let toastMessage = `Selected ${validFiles.length} valid files for upload.`;
-    if (skippedCount > 0) {
-      toastMessage += ` Skipped ${skippedCount} temporary or system file(s).`;
-    }
-    toast.info(toastMessage);
-
     setIsUploading(true);
-    const loadingToastId = toast.loading(`Uploading ${validFiles.length} files...`);
+    const loadingToastId = toast.loading(`Starting upload of ${allFiles.length} files...`);
 
     try {
-      const uploadPromises = validFiles.map(async (file) => {
-        const relativePath = (file as any).webkitRelativePath || file.name;
-        const filePath = `${user.id}/${caseId}/${relativePath}`;
-        const { error: uploadError } = await supabase.storage
-          .from('evidence-files')
-          .upload(filePath, file, {
-            cacheControl: '3600',
-            upsert: true,
-          });
+      for (let i = 0; i < allFiles.length; i += BATCH_SIZE) {
+        const batch = allFiles.slice(i, i + BATCH_SIZE);
+        const progress = `(Files ${i + 1}-${Math.min(i + batch.length, allFiles.length)} of ${allFiles.length})`;
+        
+        toast.loading(`Uploading batch... ${progress}`, { id: loadingToastId });
 
-        if (uploadError) throw new Error(`Failed to upload file ${relativePath}: ${uploadError.message}`);
-        return relativePath;
-      });
+        const uploadPromises = batch.map(async (file) => {
+          const relativePath = (file as any).webkitRelativePath || file.name;
+          const filePath = `${user.id}/${caseId}/${relativePath}`;
+          const { error } = await supabase.storage.from('evidence-files').upload(filePath, file, { upsert: true });
+          if (error) throw new Error(`Failed to upload ${relativePath}: ${error.message}`);
+          return relativePath;
+        });
+        const uploadedFilePaths = await Promise.all(uploadPromises);
 
-      const uploadedFilePaths = await Promise.all(uploadPromises);
-      toast.success(`Successfully uploaded ${uploadedFilePaths.length} files.`);
-
-      const { error: edgeFunctionError } = await supabase.functions.invoke(
-        'process-additional-files',
-        {
-          body: {
-            caseId: caseId,
-            newFileNames: uploadedFilePaths,
-          },
-        }
-      );
-
-      if (edgeFunctionError) {
-        throw new Error("Failed to log new files on the server: " + edgeFunctionError.message);
+        toast.loading(`Processing batch... ${progress}`, { id: loadingToastId });
+        const { error: functionError } = await supabase.functions.invoke('process-additional-files', {
+          body: { caseId, newFileNames: uploadedFilePaths },
+        });
+        if (functionError) throw new Error(`Failed to process batch: ${functionError.message}`);
       }
 
-      toast.success("File processing initiated. Click 'Analyze All Evidence' when ready.");
-      
+      toast.success("All files uploaded and processed successfully!", { id: loadingToastId });
+      toast.info("You can now run the analysis on all evidence.");
+
     } catch (err: any) {
       console.error("File upload process error:", err);
-      toast.error(err.message || "An unexpected error occurred during file upload.");
+      toast.error(err.message || "An unexpected error occurred during upload.", { id: loadingToastId });
     } finally {
       setIsUploading(false);
-      toast.dismiss(loadingToastId);
-      event.target.value = '';
+      event.target.value = ''; // Allow re-uploading the same folder
     }
   };
 
@@ -108,28 +90,16 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
     const loadingToastId = toast.loading("Initiating full case analysis...");
 
     try {
-      const { data, error } = await supabase.functions.invoke(
-        'ai-orchestrator',
-        {
-          body: {
-            caseId: caseId,
-            command: 're_run_analysis',
-            payload: {},
-          },
-        }
-      );
-
+      const { data, error } = await supabase.functions.invoke('ai-orchestrator', {
+        body: { caseId, command: 're_run_analysis', payload: {} },
+      });
       if (error) throw new Error(error.message);
-
-      console.log("Analysis initiated response:", data);
-      toast.success("Case analysis initiated successfully! The AI will now begin its work.");
-
+      toast.success("Case analysis initiated successfully! The AI will now begin its work.", { id: loadingToastId });
     } catch (err: any) {
       console.error("Error analyzing case:", err);
-      toast.error(err.message || "Failed to start analysis. Please try again.");
+      toast.error(err.message || "Failed to start analysis.", { id: loadingToastId });
     } finally {
       setIsAnalyzing(false);
-      toast.dismiss(loadingToastId);
     }
   };
 
@@ -137,7 +107,7 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
     <div className="p-4 space-y-6">
       <div>
         <Label htmlFor="evidence-folder-upload-tools" className="text-base font-medium">Step 1: Upload Evidence</Label>
-        <p className="text-sm text-muted-foreground mb-2">Upload a folder of evidence. Files will be processed and categorized.</p>
+        <p className="text-sm text-muted-foreground mb-2">Upload a folder of evidence. Files will be processed in batches.</p>
         <Button asChild className="w-full cursor-pointer" variant="outline" disabled={isUploading}>
           <label htmlFor="evidence-folder-upload-tools">
             <Upload className="h-4 w-4 mr-2" />
@@ -160,10 +130,7 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
         <p className="text-sm text-muted-foreground mb-2">After uploading, trigger the AI to analyze all evidence in this case.</p>
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <Button
-              disabled={isAnalyzing}
-              className="w-full"
-            >
+            <Button disabled={isAnalyzing} className="w-full">
               <PlayCircle className="h-4 w-4 mr-2" />
               {isAnalyzing ? "Starting Analysis..." : "Analyze All Evidence"}
             </Button>
