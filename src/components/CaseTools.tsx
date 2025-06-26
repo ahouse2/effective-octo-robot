@@ -75,7 +75,7 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
       const { error: edgeFunctionError } = await supabase.functions.invoke(
         'process-additional-files',
         {
-          body: { // Ensure body is an object, not a stringified JSON
+          body: {
             caseId: caseId,
             newFileNames: uploadedFilePaths,
           },
