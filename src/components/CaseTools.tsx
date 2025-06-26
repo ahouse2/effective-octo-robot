@@ -75,19 +75,22 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
       const { error: edgeFunctionError } = await supabase.functions.invoke(
         'process-additional-files',
         {
-          body: JSON.stringify({
+          body: { // Ensure body is an object, not a stringified JSON
             caseId: caseId,
             newFileNames: uploadedFilePaths,
-          }),
+          },
         }
       );
 
-      if (edgeFunctionError) throw new Error("Failed to invoke additional file processing function: " + edgeFunctionError.message);
+      if (edgeFunctionError) {
+        console.error("Edge function invocation error details:", edgeFunctionError);
+        throw new Error("Failed to start file processing on the server: " + edgeFunctionError.message);
+      }
 
       toast.success("New files submitted for analysis!");
       
     } catch (err: any) {
-      console.error("File upload error:", err);
+      console.error("File upload process error:", err);
       toast.error(err.message || "An unexpected error occurred during file upload.");
     } finally {
       setIsUploading(false);
@@ -110,11 +113,11 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
       const { data, error } = await supabase.functions.invoke(
         'ai-orchestrator',
         {
-          body: JSON.stringify({
+          body: {
             caseId: caseId,
             command: 're_run_analysis',
             payload: {},
-          }),
+          },
         }
       );
 
