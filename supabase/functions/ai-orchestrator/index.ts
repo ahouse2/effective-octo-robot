@@ -76,9 +76,18 @@ async function handleOpenAIToolCall(supabaseClient: SupabaseClient, caseId: stri
   return { tool_call_id: toolCall.id, output: `Unknown tool: ${toolCall.function.name}` };
 }
 
+async function handleCompletedRun(supabaseClient: SupabaseClient, openai: OpenAI, caseId: string, threadId: string, activityType: string) {
+    const messages = await openai.beta.threads.messages.list(threadId, { order: 'desc', limit: 1 });
+    if (messages.data[0]?.role === 'assistant') {
+        const assistantResponse = messages.data[0].content.map(block => block.type === 'text' ? block.text.value : '').join('\n');
+        await updateCaseData(supabaseClient, caseId, assistantResponse);
+        await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'AI', activityType, assistantResponse, 'completed');
+    }
+}
+
 async function pollOpenAIRun(openai: OpenAI, supabaseClient: SupabaseClient, caseId: string, threadId: string, runId: string): Promise<string> {
   const startTime = Date.now();
-  const TIMEOUT_MS = 55000; // 55 seconds, leaving a 5s buffer for the edge function to wrap up.
+  const TIMEOUT_MS = 55000;
 
   while (Date.now() - startTime < TIMEOUT_MS) {
     const retrievedRun = await openai.beta.threads.runs.retrieve(threadId, runId);
@@ -95,74 +104,115 @@ async function pollOpenAIRun(openai: OpenAI, supabaseClient: SupabaseClient, cas
       }
     }
     
-    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before next poll
+    await new Promise(resolve => setTimeout(resolve, 2000));
   }
 
-  return 'timed_out'; // Return a special status if the loop finishes without a terminal status.
+  return 'timed_out';
 }
 
+async function handleNewFilesForOpenAI(supabaseClient: SupabaseClient, openai: OpenAI, caseId: string) {
+    await insertAgentActivity(supabaseClient, caseId, 'AI Orchestrator', 'File Processor', 'Processing new files', 'Checking for new files to upload to OpenAI.', 'processing');
+    const { data: filesToUpload } = await supabaseClient.from('case_files_metadata').select('id, file_name, file_path, openai_file_id').eq('case_id', caseId);
+    const newFiles = filesToUpload?.filter(f => !f.openai_file_id) || [];
+
+    if (newFiles.length === 0) {
+        await insertAgentActivity(supabaseClient, caseId, 'AI Orchestrator', 'File Processor', 'No new files', 'No new files found to upload to OpenAI.', 'completed');
+        return [];
+    }
+
+    const uploadPromises = newFiles.map(async (meta) => {
+        const { data: fileBlob } = await supabaseClient.storage.from('evidence-files').download(meta.file_path);
+        if (fileBlob) {
+            const fileNameOnly = meta.file_name.split('/').pop() || meta.file_name;
+            const openaiFile = await openai.files.create({ file: new File([fileBlob], fileNameOnly), purpose: 'assistants' });
+            await supabaseClient.from('case_files_metadata').update({ openai_file_id: openaiFile.id }).eq('id', meta.id);
+            return { file_id: openaiFile.id, tools: [{ type: "file_search" }] as { type: string }[] };
+        }
+        return null;
+    });
+
+    const results = await Promise.all(uploadPromises);
+    const attachments = results.filter(r => r !== null) as { file_id: string; tools: { type: string }[] }[];
+    await insertAgentActivity(supabaseClient, caseId, 'AI Orchestrator', 'File Processor', 'New Files Uploaded', `${attachments.length} new files uploaded to OpenAI.`, 'completed');
+    return attachments;
+}
 
 async function handleOpenAICommand(supabaseClient: SupabaseClient, openai: OpenAI, caseId: string, command: string, payload: any, openaiThreadId: string, openaiAssistantId: string) {
-  if (command === 'user_prompt') {
-    const { promptContent, mentionedFilename } = payload;
-    let attachments: { file_id: string; tools: { type: string }[] }[] = [];
-    let finalPromptContent = promptContent;
+    let run: any = null;
+    let activityType = 'Response';
 
-    if (mentionedFilename) {
-      const { data: fileMeta } = await supabaseClient.from('case_files_metadata').select('openai_file_id').eq('case_id', caseId).or(`suggested_name.eq.${mentionedFilename},file_name.eq.${mentionedFilename}`).limit(1).single();
-      if (fileMeta?.openai_file_id) {
-        attachments.push({ file_id: fileMeta.openai_file_id, tools: [{ type: "file_search" }] });
-        finalPromptContent = `The user is asking a question about the attached file, "${mentionedFilename}". The question is: ${promptContent}`;
-      }
+    if (command === 'user_prompt') {
+        const { promptContent, mentionedFilename } = payload;
+        let attachments: { file_id: string; tools: { type: string }[] }[] = [];
+        let finalPromptContent = promptContent;
+
+        if (mentionedFilename) {
+            const { data: fileMeta } = await supabaseClient.from('case_files_metadata').select('openai_file_id').eq('case_id', caseId).or(`suggested_name.eq.${mentionedFilename},file_name.eq.${mentionedFilename}`).limit(1).single();
+            if (fileMeta?.openai_file_id) {
+                attachments.push({ file_id: fileMeta.openai_file_id, tools: [{ type: "file_search" }] });
+                finalPromptContent = `The user is asking a question about the attached file, "${mentionedFilename}". The question is: ${promptContent}`;
+            }
+        }
+        await openai.beta.threads.messages.create(openaiThreadId, { role: "user", content: finalPromptContent, attachments });
+        run = await openai.beta.threads.runs.create(openaiThreadId, { assistant_id: openaiAssistantId });
+
+    } else if (command === 'initiate_analysis_on_new_files') {
+        activityType = 'New Files Analysis';
+        const attachments = await handleNewFilesForOpenAI(supabaseClient, openai, caseId);
+        if (attachments.length > 0) {
+            await openai.beta.threads.messages.create(openaiThreadId, {
+                role: "user",
+                content: "I have uploaded new files. Please analyze them in the context of our previous discussion and update the case theory and insights accordingly.",
+                attachments: attachments,
+            });
+            run = await openai.beta.threads.runs.create(openaiThreadId, { assistant_id: openaiAssistantId });
+        }
+    } else if (command === 're_run_analysis') {
+        activityType = 'Full Re-analysis';
+        await insertAgentActivity(supabaseClient, caseId, 'User', 'Command', 'Re-run Analysis', 'User requested a full re-analysis of the case.', 'completed');
+        const { data: allFiles } = await supabaseClient.from('case_files_metadata').select('openai_file_id').eq('case_id', caseId).not('openai_file_id', 'is', null);
+        const attachments = allFiles?.map(f => ({ file_id: f.openai_file_id, tools: [{ type: 'file_search' }] })) || [];
+        await openai.beta.threads.messages.create(openaiThreadId, {
+            role: "user",
+            content: "Please perform a full re-analysis of all evidence files provided for this case from scratch. Re-evaluate everything based on the current case goals and instructions, and provide a comprehensive new case theory and set of insights.",
+            attachments: attachments,
+        });
+        run = await openai.beta.threads.runs.create(openaiThreadId, { assistant_id: openaiAssistantId });
+
+    } else if (command === 'update_assistant_instructions') {
+        await insertAgentActivity(supabaseClient, caseId, 'User', 'Command', 'Update Instructions', 'User updated case goals or system instructions.', 'processing');
+        const { data: caseData } = await supabaseClient.from('cases').select('case_goals, system_instruction').eq('id', caseId).single();
+        if (caseData) {
+            const structuredOutputInstruction = `When providing updates or summaries, include structured JSON data within a markdown code block (\`\`\`json{...}\`\`\`). This JSON should contain updates to the case theory ("theory_update") and/or new insights ("insights").`;
+            const instructions = `You are a specialized AI assistant for California family law cases. Your primary goal is to analyze evidence, identify key facts, legal arguments, and potential outcomes.\nUser's Case Goals: ${caseData.case_goals || 'Not specified.'}\nUser's System Instruction: ${caseData.system_instruction || 'None provided.'}\n${structuredOutputInstruction}`;
+            await openai.beta.assistants.update(openaiAssistantId, { instructions });
+            await insertAgentActivity(supabaseClient, caseId, 'AI Orchestrator', 'Setup', 'Assistant Updated', 'Assistant instructions have been updated.', 'completed');
+        } else {
+            await insertAgentActivity(supabaseClient, caseId, 'AI Orchestrator', 'Error Handler', 'Update Failed', 'Could not retrieve case data to update assistant.', 'error');
+        }
     }
 
-    await openai.beta.threads.messages.create(openaiThreadId, { role: "user", content: finalPromptContent, attachments });
-    const run = await openai.beta.threads.runs.create(openaiThreadId, { assistant_id: openaiAssistantId });
-    const finalStatus = await pollOpenAIRun(openai, supabaseClient, caseId, openaiThreadId, run.id);
-
-    if (finalStatus === 'completed') {
-      const messages = await openai.beta.threads.messages.list(openaiThreadId, { order: 'desc', limit: 1 });
-      if (messages.data[0]?.role === 'assistant') {
-        const assistantResponse = messages.data[0].content.map(block => block.type === 'text' ? block.text.value : '').join('\n');
-        await updateCaseData(supabaseClient, caseId, assistantResponse);
-        await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'AI', 'Response', assistantResponse, 'completed');
-      }
-    } else if (finalStatus === 'timed_out') {
-      await insertAgentActivity(supabaseClient, caseId, 'AI Orchestrator', 'System', 'Processing Timeout', 'The AI is taking longer than expected to respond. The analysis is still running in the background. You can ask for an update later.', 'completed');
-    } else {
-      await insertAgentActivity(supabaseClient, caseId, 'AI Orchestrator', 'Error Handler', 'Run Failed', `The AI analysis run failed with status: ${finalStatus}.`, 'error');
-      throw new Error(`OpenAI Assistant run failed with status: ${finalStatus}`);
+    if (run) {
+        const finalStatus = await pollOpenAIRun(openai, supabaseClient, caseId, openaiThreadId, run.id);
+        if (finalStatus === 'completed') {
+            await handleCompletedRun(supabaseClient, openai, caseId, openaiThreadId, activityType);
+        } else if (finalStatus === 'timed_out') {
+            await insertAgentActivity(supabaseClient, caseId, 'AI Orchestrator', 'System', 'Processing Timeout', 'The AI is taking longer than expected. The analysis is still running in the background. You can ask for an update later.', 'completed');
+        } else {
+            await insertAgentActivity(supabaseClient, caseId, 'AI Orchestrator', 'Error Handler', 'Run Failed', `The AI analysis run failed with status: ${finalStatus}.`, 'error');
+            throw new Error(`OpenAI Assistant run failed with status: ${finalStatus}`);
+        }
     }
-  }
 }
 
-async function setupNewOpenAICase(supabaseClient: SupabaseClient, openai: OpenAI, caseId: string, userId: string, payload: any) {
+async function setupNewOpenAICase(supabaseClient: SupabaseClient, openai: OpenAI, caseId: string, payload: any) {
     const { caseGoals, systemInstruction, openaiAssistantId: clientProvidedAssistantId } = payload;
-    
     await insertAgentActivity(supabaseClient, caseId, 'AI Orchestrator', 'Setup', 'Starting OpenAI Setup', 'Preparing assistant and thread for the new case.', 'processing');
-
-    const { data: filesToUpload } = await supabaseClient.from('case_files_metadata').select('id, file_name, file_path').eq('case_id', caseId).is('openai_file_id', null);
-    const attachments: { file_id: string; tools: { type: string }[] }[] = [];
-    if (filesToUpload && filesToUpload.length > 0) {
-        const uploadPromises = filesToUpload.map(async (meta) => {
-            const { data: fileBlob } = await supabaseClient.storage.from('evidence-files').download(meta.file_path);
-            if (fileBlob) {
-                const openaiFile = await openai.files.create({ file: new File([fileBlob], meta.file_name), purpose: 'assistants' });
-                await supabaseClient.from('case_files_metadata').update({ openai_file_id: openaiFile.id }).eq('id', meta.id);
-                return { file_id: openaiFile.id, tools: [{ type: "file_search" }] };
-            }
-            return null;
-        });
-        const results = await Promise.all(uploadPromises);
-        attachments.push(...results.filter(r => r !== null) as any[]);
-        await insertAgentActivity(supabaseClient, caseId, 'AI Orchestrator', 'File Processor', 'Initial Files Uploaded', `${attachments.length} files uploaded to OpenAI.`, 'completed');
-    }
+    
+    const attachments = await handleNewFilesForOpenAI(supabaseClient, openai, caseId);
 
     const structuredOutputInstruction = `When providing updates or summaries, include structured JSON data within a markdown code block (\`\`\`json{...}\`\`\`). This JSON should contain updates to the case theory ("theory_update") and/or new insights ("insights").`;
-    const instructions = `You are a specialized AI assistant for California family law cases. Your primary goal is to analyze evidence, identify key facts, legal arguments, and potential outcomes.
-    User's Case Goals: ${caseGoals || 'Not specified.'}
-    User's System Instruction: ${systemInstruction || 'None provided.'}
-    ${structuredOutputInstruction}`;
+    const instructions = `You are a specialized AI assistant for California family law cases. Your primary goal is to analyze evidence, identify key facts, legal arguments, and potential outcomes.\nUser's Case Goals: ${caseGoals || 'Not specified.'}\nUser's System Instruction: ${systemInstruction || 'None provided.'}\n${structuredOutputInstruction}`;
     
     let assistant;
     if (clientProvidedAssistantId) {
@@ -178,15 +228,9 @@ async function setupNewOpenAICase(supabaseClient: SupabaseClient, openai: OpenAI
     await supabaseClient.from('cases').update({ openai_thread_id: thread.id, openai_assistant_id: assistant.id, status: 'In Progress' }).eq('id', caseId);
     await insertAgentActivity(supabaseClient, caseId, 'AI Orchestrator', 'Setup', 'OpenAI Setup Complete', `Assistant ID: ${assistant.id}, Thread ID: ${thread.id}. Analysis is running.`, 'completed');
 
-    // This is a long-running task, so we poll with a timeout.
     const finalStatus = await pollOpenAIRun(openai, supabaseClient, caseId, thread.id, run.id);
     if (finalStatus === 'completed') {
-        const messages = await openai.beta.threads.messages.list(thread.id, { order: 'desc', limit: 1 });
-        if (messages.data[0]?.role === 'assistant') {
-            const assistantResponse = messages.data[0].content.map(block => block.type === 'text' ? block.text.value : '').join('\n');
-            await updateCaseData(supabaseClient, caseId, assistantResponse);
-            await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'AI', 'Initial Analysis', assistantResponse, 'completed');
-        }
+        await handleCompletedRun(supabaseClient, openai, caseId, thread.id, 'Initial Analysis');
     } else if (finalStatus === 'timed_out') {
         await insertAgentActivity(supabaseClient, caseId, 'AI Orchestrator', 'System', 'Processing Timeout', 'The initial AI analysis is taking longer than expected. It is still running in the background. You can ask for an update later.', 'completed');
     } else {
@@ -211,19 +255,30 @@ serve(async (req) => {
         const { aiModel } = payload;
         if (aiModel === 'openai') {
             const openai = new OpenAI({ apiKey: Deno.env.get('OPENAI_API_KEY') });
-            // This is a long-running task, but the function handles timeouts gracefully.
-            await setupNewOpenAICase(supabaseClient, openai, caseId, userId, payload);
+            await setupNewOpenAICase(supabaseClient, openai, caseId, payload);
         } else {
             await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'Setup', 'Setup Complete', 'Gemini case ready. Awaiting user prompt.', 'completed');
             await supabaseClient.from('cases').update({ status: 'In Progress' }).eq('id', caseId);
         }
         return new Response(JSON.stringify({ message: 'AI setup process initiated.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
+    } else if (command === 'switch_ai_model') {
+        const { newAiModel } = payload;
+        await insertAgentActivity(supabaseClient, caseId, 'User', 'Command', 'Switch AI Model', `User switched AI model to ${newAiModel}.`, 'processing');
+        if (newAiModel === 'openai') {
+            const { data: caseData } = await supabaseClient.from('cases').select('case_goals, system_instruction, openai_assistant_id').eq('id', caseId).single();
+            const openai = new OpenAI({ apiKey: Deno.env.get('OPENAI_API_KEY') });
+            await setupNewOpenAICase(supabaseClient, openai, caseId, { ...caseData, openaiAssistantId: caseData?.openai_assistant_id });
+        } else {
+            await supabaseClient.from('cases').update({ openai_thread_id: null, openai_assistant_id: null, status: 'In Progress' }).eq('id', caseId);
+            await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'Setup', 'Setup Complete', 'Gemini case ready. Awaiting user prompt.', 'completed');
+        }
+        return new Response(JSON.stringify({ message: 'AI model switched and setup initiated.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
     }
 
-    const { data: caseData, error: caseError } = await supabaseClient.from('cases').select('ai_model, openai_thread_id, openai_assistant_id, gemini_chat_history').eq('id', caseId).single();
+    const { data: caseData, error: caseError } = await supabaseClient.from('cases').select('ai_model, openai_thread_id, openai_assistant_id').eq('id', caseId).single();
     if (caseError || !caseData) throw new Error('Case not found or error fetching case details.');
 
-    const { ai_model, openai_thread_id, openai_assistant_id, gemini_chat_history } = caseData;
+    const { ai_model, openai_thread_id, openai_assistant_id } = caseData;
 
     if (ai_model === 'openai') {
       if (!openai_thread_id || !openai_assistant_id) throw new Error('OpenAI thread or assistant ID missing for this case.');
@@ -231,6 +286,7 @@ serve(async (req) => {
       await handleOpenAICommand(supabaseClient, openai, caseId, command, payload, openai_thread_id, openai_assistant_id);
     } else if (ai_model === 'gemini') {
       // Gemini handling logic would go here
+      await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'System', 'Command Received', `Received command '${command}' but Gemini logic is not yet implemented.`, 'completed');
     } else {
       throw new Error(`Unsupported AI model: ${ai_model}`);
     }

@@ -78,13 +78,13 @@ serve(async (req) => {
     }
 
     // 2. Parse for @-mentioned filename
-    const mentionRegex = /@([\w.-]+)/;
+    const mentionRegex = /@'([^']+)'/;
     const match = promptContent.match(mentionRegex);
 
     let mentionedFilename = null;
     let finalPrompt = promptContent;
 
-    if (match) {
+    if (match && match[1]) {
       mentionedFilename = match[1];
       finalPrompt = promptContent.replace(mentionRegex, '').trim();
       console.log(`User mentioned file: ${mentionedFilename}. Remaining prompt: "${finalPrompt}"`);

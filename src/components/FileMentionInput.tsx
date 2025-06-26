@@ -79,7 +79,7 @@ export const FileMentionInput: React.FC<FileMentionInputProps> = ({
     if (lastAtPosition.current !== null) {
       const textBefore = value.substring(0, lastAtPosition.current);
       const textAfter = value.substring(lastAtPosition.current + 1 + mentionQuery.length);
-      const newValue = `${textBefore}@${fileNameToInsert} ${textAfter}`;
+      const newValue = `${textBefore}@'${fileNameToInsert}' ${textAfter}`;
       onChange(newValue);
     }
     setPopoverOpen(false);
