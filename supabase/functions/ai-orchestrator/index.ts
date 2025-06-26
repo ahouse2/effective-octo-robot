@@ -306,6 +306,11 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'caseId, userId, and command are required' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 });
     }
 
+    const { data: caseData, error: caseError } = await supabaseClient.from('cases').select('ai_model, openai_thread_id, openai_assistant_id').eq('id', caseId).single();
+    if (caseError || !caseData) throw new Error('Case not found or error fetching case details.');
+
+    const { ai_model, openai_thread_id, openai_assistant_id } = caseData;
+
     if (command === 'setup_new_case_ai') {
         const { aiModel } = payload;
         if (aiModel === 'openai') {
@@ -320,20 +325,15 @@ serve(async (req) => {
         const { newAiModel } = payload;
         await insertAgentActivity(supabaseClient, caseId, 'User', 'Command', 'Switch AI Model', `User switched AI model to ${newAiModel}.`, 'processing');
         if (newAiModel === 'openai') {
-            const { data: caseData } = await supabaseClient.from('cases').select('case_goals, system_instruction, openai_assistant_id').eq('id', caseId).single();
+            const { data: caseDataForSwitch } = await supabaseClient.from('cases').select('case_goals, system_instruction, openai_assistant_id').eq('id', caseId).single();
             const openai = new OpenAI({ apiKey: Deno.env.get('OPENAI_API_KEY') });
-            await setupNewOpenAICase(supabaseClient, openai, caseId, { ...caseData, openaiAssistantId: caseData?.openai_assistant_id });
+            await setupNewOpenAICase(supabaseClient, openai, caseId, { ...caseDataForSwitch, openaiAssistantId: caseDataForSwitch?.openai_assistant_id });
         } else {
             await supabaseClient.from('cases').update({ openai_thread_id: null, openai_assistant_id: null, status: 'In Progress' }).eq('id', caseId);
             await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'Setup', 'Setup Complete', 'Gemini case ready. Awaiting user prompt.', 'completed');
         }
         return new Response(JSON.stringify({ message: 'AI model switched and setup initiated.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
     }
-
-    const { data: caseData, error: caseError } = await supabaseClient.from('cases').select('ai_model, openai_thread_id, openai_assistant_id').eq('id', caseId).single();
-    if (caseError || !caseData) throw new Error('Case not found or error fetching case details.');
-
-    const { ai_model, openai_thread_id, openai_assistant_id } = caseData;
 
     if (ai_model === 'openai') {
       if (!openai_thread_id || !openai_assistant_id) throw new Error('OpenAI thread or assistant ID missing for this case.');
