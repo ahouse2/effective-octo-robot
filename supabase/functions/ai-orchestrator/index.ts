@@ -158,13 +158,18 @@ serve(async (req) => {
     if (!caseId || !userId || !command) throw new Error('caseId, userId, and command are required');
 
     // Handle model switching separately
-    if (command === 'switch_ai_model') {
-        await insertAgentActivity(supabaseClient, caseId, 'Orchestrator', 'System', 'AI Model Switched', `Case AI model preference updated to ${payload.newAiModel}. Future analyses will use this model.`, 'completed');
-        if (payload.newAiModel === 'gemini') {
-            // When switching to Gemini, we can clear the OpenAI specific fields to avoid confusion.
+    if (command === 'switch_ai_model' || command === 'update_assistant_instructions') {
+        await insertAgentActivity(supabaseClient, caseId, 'Orchestrator', 'System', 'Configuration Updated', `Case settings updated. Command: ${command}`, 'completed');
+        if (command === 'switch_ai_model' && payload.newAiModel === 'gemini') {
             await supabaseClient.from('cases').update({ openai_assistant_id: null, openai_thread_id: null }).eq('id', caseId);
         }
-        return new Response(JSON.stringify({ message: 'AI model switched successfully.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
+        // Re-initialize assistant if needed
+        const { data: caseData } = await supabaseClient.from('cases').select('ai_model').eq('id', caseId).single();
+        if (caseData?.ai_model === 'openai') {
+            const openai = new OpenAI({ apiKey: Deno.env.get('OPENAI_API_KEY') });
+            await getOrCreateAssistant(openai, supabaseClient, userId, caseId);
+        }
+        return new Response(JSON.stringify({ message: 'Configuration updated successfully.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
     }
 
     // For all other commands, fetch the case and route based on its current AI model
@@ -173,9 +178,7 @@ serve(async (req) => {
     
     const { ai_model } = caseData;
 
-    // Add explicit logging for debugging
     await insertAgentActivity(supabaseClient, caseId, 'Orchestrator', 'System', 'Command Received', `Received command '${command}'. Routing to ${ai_model} handler.`, 'processing');
-
     await supabaseClient.from('cases').update({ status: 'In Progress' }).eq('id', caseId);
 
     if (ai_model === 'openai') {

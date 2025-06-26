@@ -127,20 +127,20 @@ const CaseDetails = () => {
       if (aiModelChanged) {
         toast.info("AI model switched. Initiating setup and re-analysis...");
         await supabase.functions.invoke('ai-orchestrator', {
-          body: JSON.stringify({
+          body: {
             caseId: caseId,
             command: 'switch_ai_model',
             payload: { newAiModel: values.aiModel },
-          }),
+          },
         });
       } else if (goalsChanged || instructionsChanged || assistantIdChanged) {
         toast.info("AI assistant instructions are being updated.");
         await supabase.functions.invoke('ai-orchestrator', {
-          body: JSON.stringify({
+          body: {
             caseId: caseId,
             command: 'update_assistant_instructions',
             payload: {},
-          }),
+          },
         });
       }
 
@@ -166,7 +166,7 @@ const CaseDetails = () => {
 
     try {
         const { data, error } = await supabase.functions.invoke('generate-case-report', {
-            body: JSON.stringify({ caseId }),
+            body: { caseId },
             responseType: 'blob'
         });
 
