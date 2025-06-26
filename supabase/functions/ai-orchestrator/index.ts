@@ -59,96 +59,66 @@ async function insertAgentActivity(supabaseClient: SupabaseClient, caseId: strin
 
 // --- PROVIDER-SPECIFIC FILE PRE-PROCESSING ---
 
-async function preprocessFilesWithOpenAI(supabaseClient: SupabaseClient, openai: OpenAI, caseId: string) {
-    await insertAgentActivity(supabaseClient, caseId, 'OpenAI', 'File Processor', 'Starting File Pre-processing', 'Checking for files to categorize and summarize.', 'processing');
-    const { data: filesToProcess, error } = await supabaseClient.from('case_files_metadata').select('id, file_name, file_path').eq('case_id', caseId).or('description.is.null,file_category.is.null');
-    if (error || !filesToProcess || filesToProcess.length === 0) {
-        await insertAgentActivity(supabaseClient, caseId, 'OpenAI', 'File Processor', 'No Files to Pre-process', 'All files are already categorized and summarized.', 'completed');
+async function preprocessFiles(supabaseClient: SupabaseClient, caseId: string, ai_model: 'openai' | 'gemini') {
+    await supabaseClient.from('cases').update({ status: 'Processing Evidence' }).eq('id', caseId);
+    await insertAgentActivity(supabaseClient, caseId, 'AI Orchestrator', 'File Processor', 'Starting File Pre-processing', `Checking for files to process using ${ai_model}.`, 'processing');
+    
+    const { data: filesToProcess, error } = await supabaseClient
+        .from('case_files_metadata')
+        .select('id, file_name, file_path')
+        .eq('case_id', caseId)
+        .or('description.is.null,file_category.is.null');
+
+    if (error) throw new Error(`Could not fetch files to process: ${error.message}`);
+    if (!filesToProcess || filesToProcess.length === 0) {
+        await insertAgentActivity(supabaseClient, caseId, 'AI Orchestrator', 'File Processor', 'No Files to Pre-process', 'All files are already categorized and summarized.', 'completed');
         return;
     }
+
     for (const file of filesToProcess) {
         try {
             const { data: fileBlob } = await supabaseClient.storage.from('evidence-files').download(file.file_path);
             if (!fileBlob) continue;
             const contentSnippet = (await fileBlob.text()).substring(0, 4000);
             const prompt = `Analyze file info. Filename: "${file.file_name}", Snippet: "${contentSnippet}". Respond ONLY with JSON: {"category": "...", "suggestedName": "YYYY-MM-DD_Type_Desc.ext", "summary": "...", "tags": ["t1"]}`;
-            const completion = await openai.chat.completions.create({ model: "gpt-4o", messages: [{ role: "user", content: prompt }], response_format: { type: "json_object" } });
-            const result = JSON.parse(completion.choices[0].message.content || '{}');
+            
+            let result: any;
+            if (ai_model === 'openai') {
+                const openai = new OpenAI({ apiKey: Deno.env.get('OPENAI_API_KEY') });
+                const completion = await openai.chat.completions.create({ model: "gpt-4o", messages: [{ role: "user", content: prompt }], response_format: { type: "json_object" } });
+                result = JSON.parse(completion.choices[0].message.content || '{}');
+            } else {
+                const genAI = new GoogleGenerativeAI(Deno.env.get('GOOGLE_GEMINI_API_KEY') ?? '');
+                const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+                const geminiResult = await model.generateContent(prompt);
+                const textResponse = geminiResult.response.text();
+                result = extractJsonFromMarkdown(textResponse) || JSON.parse(textResponse);
+            }
             await supabaseClient.from('case_files_metadata').update({ file_category: result.category, suggested_name: result.suggestedName?.replace(/[\\/]/g, '_'), description: result.summary, tags: result.tags }).eq('id', file.id);
         } catch (e) {
-            await insertAgentActivity(supabaseClient, caseId, 'OpenAI', 'Error Handler', 'File Processing Error', `Failed to process file ${file.file_name}: ${e.message}`, 'error');
+            await insertAgentActivity(supabaseClient, caseId, 'AI Orchestrator', 'Error Handler', 'File Processing Error', `Failed to process file ${file.file_name}: ${e.message}`, 'error');
         }
     }
-    await insertAgentActivity(supabaseClient, caseId, 'OpenAI', 'File Processor', 'File Pre-processing Complete', 'All files have been categorized and summarized.', 'completed');
+    await insertAgentActivity(supabaseClient, caseId, 'AI Orchestrator', 'File Processor', 'File Pre-processing Complete', 'All files have been categorized and summarized.', 'completed');
 }
-
-async function preprocessFilesWithGemini(supabaseClient: SupabaseClient, genAI: GoogleGenerativeAI, caseId: string) {
-    await insertAgentActivity(supabaseClient, caseId, 'Gemini', 'File Processor', 'Starting File Pre-processing', 'Checking for files to categorize and summarize.', 'processing');
-    const { data: filesToProcess, error } = await supabaseClient.from('case_files_metadata').select('id, file_name, file_path').eq('case_id', caseId).or('description.is.null,file_category.is.null');
-    if (error || !filesToProcess || filesToProcess.length === 0) {
-        await insertAgentActivity(supabaseClient, caseId, 'Gemini', 'File Processor', 'No Files to Pre-process', 'All files are already categorized and summarized.', 'completed');
-        return;
-    }
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-    for (const file of filesToProcess) {
-        try {
-            const { data: fileBlob } = await supabaseClient.storage.from('evidence-files').download(file.file_path);
-            if (!fileBlob) continue;
-            const contentSnippet = (await fileBlob.text()).substring(0, 4000);
-            const prompt = `Analyze file info. Filename: "${file.file_name}", Snippet: "${contentSnippet}". Respond ONLY with JSON: {"category": "...", "suggestedName": "YYYY-MM-DD_Type_Desc.ext", "summary": "...", "tags": ["t1"]}`;
-            const geminiResult = await model.generateContent(prompt);
-            const textResponse = geminiResult.response.text();
-            const result = extractJsonFromMarkdown(textResponse) || JSON.parse(textResponse);
-            await supabaseClient.from('case_files_metadata').update({ file_category: result.category, suggested_name: result.suggestedName?.replace(/[\\/]/g, '_'), description: result.summary, tags: result.tags }).eq('id', file.id);
-        } catch (e) {
-            await insertAgentActivity(supabaseClient, caseId, 'Gemini', 'Error Handler', 'File Processing Error', `Failed to process file ${file.file_name}: ${e.message}`, 'error');
-        }
-    }
-    await insertAgentActivity(supabaseClient, caseId, 'Gemini', 'File Processor', 'File Pre-processing Complete', 'All files have been categorized and summarized.', 'completed');
-}
-
 
 // --- OPENAI HANDLERS ---
-async function handleOpenAIToolCall(supabaseClient: SupabaseClient, caseId: string, toolCall: any): Promise<{ tool_call_id: string; output: string }> {
-  if (toolCall.function.name === 'web_search') {
-    await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'Tool Executor', 'Web Search Initiated', `Performing web search for: ${toolCall.function.arguments}`, 'processing');
-    try {
-      const args = JSON.parse(toolCall.function.arguments);
-      const { data: searchResult, error: searchError } = await supabaseClient.functions.invoke('web-search', { body: JSON.stringify({ query: args.query }) });
-      if (searchError) throw new Error(`Web search failed: ${searchError.message}`);
-      const output = JSON.stringify(searchResult?.results || []);
-      await insertAgentActivity(supabaseClient, caseId, 'Web Search Agent', 'Tool Executor', 'Web Search Completed', output, 'completed');
-      return { tool_call_id: toolCall.id, output: output };
-    } catch (toolError: any) {
-      await insertAgentActivity(supabaseClient, caseId, 'Web Search Agent', 'Error Handler', 'Web Search Failed', `Web search failed: ${toolError.message}`, 'error');
-      return { tool_call_id: toolCall.id, output: `Error: ${toolError.message}` };
+async function handleOpenAICommand(supabaseClient: SupabaseClient, openai: OpenAI, caseId: string, command: string, payload: any, openaiThreadId: string, openaiAssistantId: string) {
+    if (command === 're_run_analysis') {
+        await insertAgentActivity(supabaseClient, caseId, 'User', 'Command', 'Re-run Analysis', 'User requested a full re-analysis of the case.', 'processing');
+        await preprocessFiles(supabaseClient, caseId, 'openai');
+        await supabaseClient.from('cases').update({ status: 'Generating Insights' }).eq('id', caseId);
+        const attachments = await handleNewFilesForOpenAI(supabaseClient, openai, caseId);
+        await openai.beta.threads.messages.create(openaiThreadId, { role: "user", content: "Perform a full re-analysis of all evidence files.", attachments });
+        const run = await openai.beta.threads.runs.create(openaiThreadId, { assistant_id: openaiAssistantId });
+        const finalStatus = await pollOpenAIRun(openai, supabaseClient, caseId, openaiThreadId, run.id);
+        if (finalStatus === 'completed') {
+            await handleCompletedRun(supabaseClient, openai, caseId, openaiThreadId, 'Full Re-analysis');
+            await supabaseClient.from('cases').update({ status: 'Analysis Complete' }).eq('id', caseId);
+        } else {
+            throw new Error(`OpenAI Assistant run failed with status: ${finalStatus}`);
+        }
     }
-  }
-  return { tool_call_id: toolCall.id, output: `Unknown tool: ${toolCall.function.name}` };
-}
-
-async function handleCompletedRun(supabaseClient: SupabaseClient, openai: OpenAI, caseId: string, threadId: string, activityType: string) {
-    const messages = await openai.beta.threads.messages.list(threadId, { order: 'desc', limit: 1 });
-    if (messages.data[0]?.role === 'assistant') {
-        const assistantResponse = messages.data[0].content.map(block => block.type === 'text' ? block.text.value : '').join('\n');
-        await updateCaseData(supabaseClient, caseId, assistantResponse);
-        await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'AI', activityType, assistantResponse, 'completed');
-    }
-}
-
-async function pollOpenAIRun(openai: OpenAI, supabaseClient: SupabaseClient, caseId: string, threadId: string, runId: string): Promise<string> {
-  const startTime = Date.now();
-  const TIMEOUT_MS = 55000;
-  while (Date.now() - startTime < TIMEOUT_MS) {
-    const retrievedRun = await openai.beta.threads.runs.retrieve(threadId, runId);
-    if (['completed', 'failed', 'cancelled', 'expired'].includes(retrievedRun.status)) return retrievedRun.status;
-    if (retrievedRun.status === 'requires_action' && retrievedRun.required_action?.type === 'submit_tool_outputs') {
-      const toolOutputs = await Promise.all(retrievedRun.required_action.submit_tool_outputs.tool_calls.map(tc => handleOpenAIToolCall(supabaseClient, caseId, tc)));
-      if (toolOutputs.length > 0) await openai.beta.threads.runs.submitToolOutputs(threadId, runId, { tool_outputs: toolOutputs });
-    }
-    await new Promise(resolve => setTimeout(resolve, 2000));
-  }
-  return 'timed_out';
 }
 
 async function handleNewFilesForOpenAI(supabaseClient: SupabaseClient, openai: OpenAI, caseId: string) {
@@ -168,36 +138,61 @@ async function handleNewFilesForOpenAI(supabaseClient: SupabaseClient, openai: O
     return results.filter(r => r !== null) as { file_id: string; tools: { type: string }[] }[];
 }
 
-async function handleOpenAICommand(supabaseClient: SupabaseClient, openai: OpenAI, caseId: string, command: string, payload: any, openaiThreadId: string, openaiAssistantId: string) {
-    let run: any = null;
-    let activityType = 'Response';
-    if (command === 're_run_analysis') {
-        activityType = 'Full Re-analysis';
-        await insertAgentActivity(supabaseClient, caseId, 'User', 'Command', 'Re-run Analysis', 'User requested a full re-analysis of the case.', 'processing');
-        await preprocessFilesWithOpenAI(supabaseClient, openai, caseId);
-        const attachments = await handleNewFilesForOpenAI(supabaseClient, openai, caseId);
-        await openai.beta.threads.messages.create(openaiThreadId, { role: "user", content: "Perform a full re-analysis of all evidence files.", attachments });
-        run = await openai.beta.threads.runs.create(openaiThreadId, { assistant_id: openaiAssistantId });
-    }
-    // Other OpenAI commands...
-    if (run) {
-        const finalStatus = await pollOpenAIRun(openai, supabaseClient, caseId, openaiThreadId, run.id);
-        if (finalStatus === 'completed') await handleCompletedRun(supabaseClient, openai, caseId, openaiThreadId, activityType);
-        else await insertAgentActivity(supabaseClient, caseId, 'AI Orchestrator', 'Error Handler', 'Run Failed', `The AI analysis run failed with status: ${finalStatus}.`, 'error');
+async function pollOpenAIRun(openai: OpenAI, supabaseClient: SupabaseClient, caseId: string, threadId: string, runId: string): Promise<string> {
+  const startTime = Date.now();
+  const TIMEOUT_MS = 55000;
+  while (Date.now() - startTime < TIMEOUT_MS) {
+    const retrievedRun = await openai.beta.threads.runs.retrieve(threadId, runId);
+    if (['completed', 'failed', 'cancelled', 'expired'].includes(retrievedRun.status)) return retrievedRun.status;
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  }
+  return 'timed_out';
+}
+
+async function handleCompletedRun(supabaseClient: SupabaseClient, openai: OpenAI, caseId: string, threadId: string, activityType: string) {
+    const messages = await openai.beta.threads.messages.list(threadId, { order: 'desc', limit: 1 });
+    if (messages.data[0]?.role === 'assistant') {
+        const assistantResponse = messages.data[0].content.map(block => block.type === 'text' ? block.text.value : '').join('\n');
+        await updateCaseData(supabaseClient, caseId, assistantResponse);
+        await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'AI', activityType, assistantResponse, 'completed');
     }
 }
 
 async function setupNewOpenAICase(supabaseClient: SupabaseClient, openai: OpenAI, caseId: string, payload: any) {
-    const { caseGoals, systemInstruction, openaiAssistantId: clientProvidedAssistantId } = payload;
-    const instructions = `You are a specialized AI assistant for California family law cases...`; // Simplified for brevity
-    let assistant;
-    if (clientProvidedAssistantId) {
-        assistant = await openai.beta.assistants.update(clientProvidedAssistantId, { instructions, model: "gpt-4o", tools: [{ type: "file_search" }, { type: "function", function: { name: "web_search", description: "Perform a web search.", parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } } }] });
-    } else {
-        assistant = await openai.beta.assistants.create({ name: `Family Law AI - Case ${caseId}`, instructions, model: "gpt-4o", tools: [{ type: "file_search" }, { type: "function", function: { name: "web_search", description: "Perform a web search.", parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } } }] });
-    }
+    const { caseGoals, systemInstruction } = payload;
+    const instructions = `You are a specialized AI assistant...`;
+    const assistant = await openai.beta.assistants.create({ name: `Family Law AI - Case ${caseId}`, instructions, model: "gpt-4o", tools: [{ type: "file_search" }] });
     const thread = await openai.beta.threads.create();
     await supabaseClient.from('cases').update({ openai_thread_id: thread.id, openai_assistant_id: assistant.id, status: 'In Progress' }).eq('id', caseId);
+}
+
+// --- GEMINI HANDLER ---
+async function handleGeminiCommand(supabaseClient: SupabaseClient, genAI: GoogleGenerativeAI, caseId: string, command: string) {
+    if (command === 're_run_analysis') {
+        await insertAgentActivity(supabaseClient, caseId, 'User', 'Command', 'Re-run Analysis', 'User requested a full re-analysis of the case using Gemini.', 'processing');
+        await preprocessFiles(supabaseClient, caseId, 'gemini');
+        await supabaseClient.from('cases').update({ status: 'Generating Insights' }).eq('id', caseId);
+
+        const { data: caseDetails } = await supabaseClient.from('cases').select('case_goals, system_instruction').eq('id', caseId).single();
+        const { data: files } = await supabaseClient.from('case_files_metadata').select('suggested_name, description').eq('case_id', caseId);
+        
+        const evidenceSummary = files?.map(f => `- ${f.suggested_name}: ${f.description}`).join('\n') || 'No evidence summaries available.';
+        const comprehensivePrompt = `
+            You are a specialized AI assistant for California family law cases. Perform a comprehensive analysis of the following evidence.
+            Case Goals: ${caseDetails?.case_goals || 'Not specified.'}
+            System Instructions: ${caseDetails?.system_instruction || 'None.'}
+            Evidence Summary:\n${evidenceSummary}
+            Based on all information, generate a complete case theory and key insights. Respond ONLY with a JSON object in a markdown code block.
+        `;
+
+        const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+        const result = await model.generateContent(comprehensivePrompt);
+        const responseText = result.response.text();
+        
+        await updateCaseData(supabaseClient, caseId, responseText);
+        await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'AI', 'Full Re-analysis', responseText, 'completed');
+        await supabaseClient.from('cases').update({ status: 'Analysis Complete' }).eq('id', caseId);
+    }
 }
 
 // --- MAIN SERVE FUNCTION ---
@@ -208,6 +203,8 @@ serve(async (req) => {
     const { caseId, command, payload } = await req.json();
     const userId = await getUserIdFromRequest(req, supabaseClient);
     if (!caseId || !userId || !command) throw new Error('caseId, userId, and command are required');
+
+    await supabaseClient.from('cases').update({ status: 'In Progress' }).eq('id', caseId);
 
     const { data: caseData, error: caseError } = await supabaseClient.from('cases').select('ai_model, openai_thread_id, openai_assistant_id').eq('id', caseId).single();
     if (caseError || !caseData) throw new Error('Case not found or error fetching case details.');
@@ -224,14 +221,9 @@ serve(async (req) => {
     } else if (ai_model === 'gemini') {
         const genAI = new GoogleGenerativeAI(Deno.env.get('GOOGLE_GEMINI_API_KEY') ?? '');
         if (command === 'setup_new_case_ai' || command === 'switch_ai_model') {
-            await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'Setup', 'Setup Complete', 'Gemini case ready.', 'completed');
             await supabaseClient.from('cases').update({ status: 'In Progress', openai_thread_id: null, openai_assistant_id: null }).eq('id', caseId);
-        } else if (command === 're_run_analysis') {
-            await insertAgentActivity(supabaseClient, caseId, 'User', 'Command', 'Re-run Analysis', 'User requested a full re-analysis of the case using Gemini.', 'processing');
-            await preprocessFilesWithGemini(supabaseClient, genAI, caseId);
-            await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'System', 'Analysis Complete', 'Gemini file pre-processing complete.', 'completed');
         } else {
-            await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'System', 'Command Received', `Received command '${command}' but Gemini logic is not yet implemented.`, 'completed');
+            await handleGeminiCommand(supabaseClient, genAI, caseId, command);
         }
     } else {
       throw new Error(`Unsupported AI model: ${ai_model}`);
@@ -239,6 +231,12 @@ serve(async (req) => {
     return new Response(JSON.stringify({ message: 'Command processed successfully.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
   } catch (error: any) {
     console.error('Edge Function error:', error.message, error.stack);
+    const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
+    const { caseId } = await req.json();
+    if (caseId) {
+        await supabaseClient.from('cases').update({ status: 'Error' }).eq('id', caseId);
+        await insertAgentActivity(supabaseClient, caseId, 'AI Orchestrator', 'Error Handler', 'Critical Failure', error.message, 'error');
+    }
     return new Response(JSON.stringify({ error: error.message }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 });
   }
 });
