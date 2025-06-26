@@ -47,7 +47,6 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
     const loadingToastId = toast.loading(`Preparing to upload ${allFiles.length} files...`);
 
     try {
-      // Create batches based on count and size
       const batches: File[][] = [];
       let currentBatch: File[] = [];
       let currentBatchSize = 0;
@@ -69,6 +68,7 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
       }
 
       toast.info(`Uploading ${allFiles.length} files in ${batches.length} batches.`);
+      let totalSuccessfulUploads = 0;
 
       for (let i = 0; i < batches.length; i++) {
         const batch = batches[i];
@@ -80,20 +80,42 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
           const relativePath = ((file as any).webkitRelativePath || file.name).replace(/\//g, '_');
           const filePath = `${user.id}/${caseId}/${relativePath}`;
           const { error } = await supabase.storage.from('evidence-files').upload(filePath, file, { upsert: true });
-          if (error) throw new Error(`Failed to upload ${relativePath}: ${error.message}`);
+          if (error) {
+            throw new Error(`Failed to upload ${file.name}: ${error.message}`);
+          }
           return relativePath;
         });
-        const uploadedFilePaths = await Promise.all(uploadPromises);
 
-        toast.loading(`Processing batch... ${progress}`, { id: loadingToastId });
-        const { error: functionError } = await supabase.functions.invoke('process-additional-files', {
-          body: { caseId, newFileNames: uploadedFilePaths },
+        const results = await Promise.allSettled(uploadPromises);
+        const successfulUploads = results
+          .filter(r => r.status === 'fulfilled')
+          .map(r => (r as PromiseFulfilledResult<string>).value);
+        
+        results.forEach(r => {
+          if (r.status === 'rejected') {
+            console.error("Upload failed for a file:", r.reason);
+            toast.error(r.reason.message);
+          }
         });
-        if (functionError) throw new Error(`Failed to process batch: ${functionError.message}`);
+
+        if (successfulUploads.length > 0) {
+          totalSuccessfulUploads += successfulUploads.length;
+          toast.loading(`Processing ${successfulUploads.length} successful uploads... ${progress}`, { id: loadingToastId });
+          const { error: functionError } = await supabase.functions.invoke('process-additional-files', {
+            body: { caseId, newFileNames: successfulUploads },
+          });
+          if (functionError) {
+            toast.error(`Failed to process batch metadata: ${functionError.message}`);
+          }
+        }
       }
 
-      toast.success("All files uploaded and processed successfully!", { id: loadingToastId });
-      toast.info("You can now run the analysis on all evidence.");
+      if (totalSuccessfulUploads > 0) {
+        toast.success(`Upload complete. ${totalSuccessfulUploads} files processed.`, { id: loadingToastId });
+        toast.info("You can now run the analysis on all evidence.");
+      } else {
+        toast.error("Upload failed. No files were successfully processed.", { id: loadingToastId });
+      }
 
     } catch (err: any) {
       console.error("File upload process error:", err);
