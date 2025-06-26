@@ -36,7 +36,7 @@ export const AgentActivityLog: React.FC<AgentActivityLogProps> = ({ caseId }) =>
         .from("agent_activities")
         .select("*")
         .eq("case_id", caseId)
-        .order("timestamp", { ascending: true });
+        .order("timestamp", { ascending: false }); // Changed to descending
 
       if (error) {
         console.error("Error fetching agent activities:", error);
@@ -59,7 +59,8 @@ export const AgentActivityLog: React.FC<AgentActivityLogProps> = ({ caseId }) =>
         (payload) => {
           console.log('Change received!', payload);
           if (payload.eventType === 'INSERT') {
-            setActivities((prev) => [...prev, payload.new as AgentActivity]);
+            // Add new activity to the top of the list
+            setActivities((prev) => [payload.new as AgentActivity, ...prev]);
           } else if (payload.eventType === 'UPDATE') {
             setActivities((prev) =>
               prev.map((activity) =>
