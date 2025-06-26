@@ -22,7 +22,8 @@ interface CaseToolsProps {
   caseId: string;
 }
 
-const BATCH_SIZE = 20; // Process 20 files at a time
+const MAX_BATCH_FILE_COUNT = 20;
+const MAX_BATCH_SIZE_MB = 4; // Supabase Edge Function payload limit is around 4.5MB
 
 export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
   const [isUploading, setIsUploading] = useState(false);
@@ -43,17 +44,40 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
     }
 
     setIsUploading(true);
-    const loadingToastId = toast.loading(`Starting upload of ${allFiles.length} files...`);
+    const loadingToastId = toast.loading(`Preparing to upload ${allFiles.length} files...`);
 
     try {
-      for (let i = 0; i < allFiles.length; i += BATCH_SIZE) {
-        const batch = allFiles.slice(i, i + BATCH_SIZE);
-        const progress = `(Files ${i + 1}-${Math.min(i + batch.length, allFiles.length)} of ${allFiles.length})`;
+      // Create batches based on count and size
+      const batches: File[][] = [];
+      let currentBatch: File[] = [];
+      let currentBatchSize = 0;
+
+      for (const file of allFiles) {
+        if (
+          currentBatch.length >= MAX_BATCH_FILE_COUNT ||
+          (currentBatchSize + file.size) > (MAX_BATCH_SIZE_MB * 1024 * 1024)
+        ) {
+          batches.push(currentBatch);
+          currentBatch = [];
+          currentBatchSize = 0;
+        }
+        currentBatch.push(file);
+        currentBatchSize += file.size;
+      }
+      if (currentBatch.length > 0) {
+        batches.push(currentBatch);
+      }
+
+      toast.info(`Uploading ${allFiles.length} files in ${batches.length} batches.`);
+
+      for (let i = 0; i < batches.length; i++) {
+        const batch = batches[i];
+        const progress = `(Batch ${i + 1} of ${batches.length})`;
         
         toast.loading(`Uploading batch... ${progress}`, { id: loadingToastId });
 
         const uploadPromises = batch.map(async (file) => {
-          const relativePath = (file as any).webkitRelativePath || file.name;
+          const relativePath = ((file as any).webkitRelativePath || file.name).replace(/\//g, '_');
           const filePath = `${user.id}/${caseId}/${relativePath}`;
           const { error } = await supabase.storage.from('evidence-files').upload(filePath, file, { upsert: true });
           if (error) throw new Error(`Failed to upload ${relativePath}: ${error.message}`);
@@ -76,7 +100,7 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
       toast.error(err.message || "An unexpected error occurred during upload.", { id: loadingToastId });
     } finally {
       setIsUploading(false);
-      event.target.value = ''; // Allow re-uploading the same folder
+      event.target.value = '';
     }
   };
 
