@@ -230,6 +230,32 @@ serve(async (req) => {
         return new Response(JSON.stringify({ message: 'Diagnostics complete. Check the agent activity log.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
     }
 
+    if (command === 'diagnose_gcp_connection') {
+      try {
+        const gcpServiceAccountKeyRaw = Deno.env.get('GCP_SERVICE_ACCOUNT_KEY');
+        if (!gcpServiceAccountKeyRaw) throw new Error("GCP_SERVICE_ACCOUNT_KEY secret is not set.");
+        const gcpServiceAccountKey = JSON.parse(gcpServiceAccountKeyRaw);
+        if (!gcpServiceAccountKey.client_email || !gcpServiceAccountKey.private_key) {
+            throw new Error("GCP_SERVICE_ACCOUNT_KEY is not a valid JSON key file.");
+        }
+        const gcpProjectId = Deno.env.get('GCP_PROJECT_ID');
+        if (!gcpProjectId) throw new Error("GCP_PROJECT_ID secret is not set.");
+
+        const discoveryEngineClient = new v1.SearchServiceClient({
+          projectId: gcpProjectId,
+          credentials: { client_email: gcpServiceAccountKey.client_email, private_key: gcpServiceAccountKey.private_key },
+        });
+        // The client constructor doesn't throw on bad credentials, so we need to make a simple call.
+        // This call will fail if permissions are wrong, but that's a good diagnostic.
+        await discoveryEngineClient.listDataStores({parent: `projects/${gcpProjectId}/locations/global/collections/default_collection`});
+        
+        return new Response(JSON.stringify({ message: 'GCP connection successful!' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
+      } catch (e) {
+        console.error("GCP Connection Diagnosis Error:", e);
+        throw new Error(`GCP Connection Test Failed: ${e.message}. Please verify your GCP_PROJECT_ID and GCP_SERVICE_ACCOUNT_KEY secrets. The service account may also need the 'Vertex AI User' role in your GCP project.`);
+      }
+    }
+
     const { data: caseData, error: caseError } = await supabaseClient.from('cases').select('ai_model').eq('id', caseId).single();
     if (caseError || !caseData) throw new Error('Case not found or error fetching case details.');
     

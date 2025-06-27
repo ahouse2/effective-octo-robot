@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Upload, PlayCircle, Share2, GitGraph, CalendarClock, Bug } from "lucide-react";
+import { Upload, PlayCircle, Share2, GitGraph, CalendarClock, Bug, TestTube2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useSession } from "@/components/SessionContextProvider";
@@ -31,6 +31,7 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isGeneratingTimeline, setIsGeneratingTimeline] = useState(false);
   const [isDiagnosing, setIsDiagnosing] = useState(false);
+  const [isTestingGcp, setIsTestingGcp] = useState(false);
   const { user } = useSession();
 
   const handleFileChangeAndUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -196,6 +197,26 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
     }
   };
 
+  const handleTestGcpConnection = async () => {
+    setIsTestingGcp(true);
+    const loadingToastId = toast.loading("Testing GCP connection...");
+    try {
+      const { error } = await supabase.functions.invoke('ai-orchestrator', {
+        body: { caseId, command: 'diagnose_gcp_connection', payload: {} },
+      });
+      if (error) {
+        const detailedError = error.context?.error || error.message;
+        throw new Error(detailedError);
+      }
+      toast.success("GCP connection successful! Your secrets are configured correctly.", { id: loadingToastId });
+    } catch (err: any) {
+      console.error("GCP Connection Test error:", err);
+      toast.error(err.message || "Failed to connect to GCP. Check secrets.", { id: loadingToastId });
+    } finally {
+      setIsTestingGcp(false);
+    }
+  };
+
   return (
     <div className="p-4 space-y-6">
       <div>
@@ -251,26 +272,18 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
         </div>
       </div>
       <div>
-        <Label className="text-base font-medium">Graph Analysis</Label>
-        <p className="text-sm text-muted-foreground mb-2">This feature is temporarily disabled for maintenance.</p>
-        <div className="grid grid-cols-2 gap-2">
-            <Button disabled variant="secondary">
-                <Share2 className="h-4 w-4 mr-2" />
-                Export to Neo4j
-            </Button>
-            <Button disabled variant="secondary">
-                <GitGraph className="h-4 w-4 mr-2" />
-                Visualize Graph
-            </Button>
-        </div>
-      </div>
-      <div>
         <Label className="text-base font-medium">Troubleshooting</Label>
-        <p className="text-sm text-muted-foreground mb-2">If things aren't working as expected, run diagnostics to check the case settings.</p>
-        <Button onClick={handleRunDiagnostics} disabled={isDiagnosing} variant="outline" className="w-full">
-          <Bug className="h-4 w-4 mr-2" />
-          {isDiagnosing ? "Running..." : "Run Diagnostics"}
-        </Button>
+        <p className="text-sm text-muted-foreground mb-2">Use these tools to diagnose issues with your case setup or cloud connections.</p>
+        <div className="space-y-2">
+          <Button onClick={handleRunDiagnostics} disabled={isDiagnosing} variant="outline" className="w-full">
+            <Bug className="h-4 w-4 mr-2" />
+            {isDiagnosing ? "Running..." : "Check Case Settings"}
+          </Button>
+          <Button onClick={handleTestGcpConnection} disabled={isTestingGcp} variant="outline" className="w-full">
+            <TestTube2 className="h-4 w-4 mr-2" />
+            {isTestingGcp ? "Testing..." : "Test GCP Connection"}
+          </Button>
+        </div>
       </div>
     </div>
   );
