@@ -86,7 +86,6 @@ async function handleOpenAICommand(supabaseClient: SupabaseClient, openai: OpenA
     let prompt = "";
 
     if (command === 're_run_analysis') {
-        await insertAgentActivity(supabaseClient, caseId, 'Orchestrator', 'System', 'Analysis Triggered', 'Full case re-analysis initiated by user with OpenAI.', 'processing');
         prompt = `Please perform a comprehensive analysis of all the evidence files associated with this case. Your primary objectives are to identify key themes, generate a high-level summary, create key insights, and update the case theory. Structure your response as a JSON object within a markdown block.`;
     } else if (command === 'user_prompt') {
         prompt = payload.promptContent;
@@ -108,11 +107,9 @@ async function handleOpenAICommand(supabaseClient: SupabaseClient, openai: OpenA
 async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: GoogleGenerativeAI, caseId: string, command: string, payload: any) {
     let promptContent = payload.promptContent;
     if (command === 're_run_analysis') {
-        await insertAgentActivity(supabaseClient, caseId, 'Orchestrator', 'System', 'Analysis Triggered', 'Full case re-analysis initiated by user with Gemini.', 'processing');
         promptContent = `Perform a comprehensive analysis of all documents. Summarize the key facts, events, and overall case narrative based on the entire evidence locker.`;
     }
     
-    await insertAgentActivity(supabaseClient, caseId, 'User', 'Command', 'Gemini RAG Query', promptContent, 'processing');
     await updateProgress(supabaseClient, caseId, 10, 'Initializing Gemini and Vertex AI...');
 
     const gcpProjectId = Deno.env.get('GCP_PROJECT_ID');
@@ -157,13 +154,32 @@ serve(async (req) => {
     const userId = await getUserIdFromRequest(req, supabaseClient);
     if (!caseId || !userId || !command) throw new Error('caseId, userId, and command are required');
 
-    // Always fetch the latest AI model setting from the case itself. This is the definitive fix.
+    if (command === 'diagnose_case_settings') {
+        const { data, error } = await supabaseClient.from('cases').select('*').eq('id', caseId).single();
+        if (error || !data) {
+            await insertAgentActivity(supabaseClient, caseId, 'Diagnostic Agent', 'System', 'Diagnostic Failed', `Could not fetch case settings: ${error?.message || 'Case not found.'}`, 'error');
+            throw new Error('Failed to run diagnostics.');
+        }
+        const settingsReport = `
+          --- Case Settings Report ---
+          Case ID: ${data.id}
+          Case Name: ${data.name}
+          AI Model: ${data.ai_model}
+          OpenAI Assistant ID: ${data.openai_assistant_id || 'Not set'}
+          OpenAI Thread ID: ${data.openai_thread_id || 'Not set'}
+          --------------------------
+        `;
+        await insertAgentActivity(supabaseClient, caseId, 'Diagnostic Agent', 'System', 'Diagnostic Report', settingsReport, 'completed');
+        return new Response(JSON.stringify({ message: 'Diagnostics complete. Check the agent activity log.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
+    }
+
     const { data: caseData, error: caseError } = await supabaseClient.from('cases').select('ai_model').eq('id', caseId).single();
     if (caseError || !caseData) throw new Error('Case not found or error fetching case details.');
     
     const { ai_model } = caseData;
 
-    await insertAgentActivity(supabaseClient, caseId, 'Orchestrator', 'System', 'Command Received', `Received command '${command}'. Routing to ${ai_model} handler.`, 'processing');
+    await insertAgentActivity(supabaseClient, caseId, 'Orchestrator', 'System', 'Command Received', `Received command '${command}'. Fetched case settings. Routing to AI model: [${ai_model}].`, 'processing');
+    
     await supabaseClient.from('cases').update({ status: 'In Progress' }).eq('id', caseId);
 
     if (ai_model === 'openai') {
@@ -173,6 +189,7 @@ serve(async (req) => {
         const genAI = new GoogleGenerativeAI(Deno.env.get('GOOGLE_GEMINI_API_KEY') ?? '');
         await handleGeminiRAGCommand(supabaseClient, genAI, caseId, command, payload);
     } else {
+      await insertAgentActivity(supabaseClient, caseId, 'Orchestrator', 'System', 'Routing Error', `Unsupported or null AI model configured: [${ai_model}]. Halting execution.`, 'error');
       throw new Error(`Unsupported AI model: ${ai_model}`);
     }
     return new Response(JSON.stringify({ message: 'Command processed successfully.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
