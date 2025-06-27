@@ -109,7 +109,8 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
             body: { caseId, newFileNames: successfulUploads },
           });
           if (functionError) {
-            toast.error(`Failed to process batch metadata: ${functionError.message}`);
+            const detailedError = functionError.context?.error || functionError.message;
+            toast.error(`Failed to process batch metadata: ${detailedError}`);
           }
         }
       }
@@ -140,10 +141,13 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
     const loadingToastId = toast.loading("Initiating full case analysis...");
 
     try {
-      const { data, error } = await supabase.functions.invoke('ai-orchestrator', {
+      const { error } = await supabase.functions.invoke('ai-orchestrator', {
         body: { caseId, command: 're_run_analysis', payload: {} },
       });
-      if (error) throw new Error(error.message);
+      if (error) {
+        const detailedError = error.context?.error || error.message;
+        throw new Error(detailedError);
+      }
       toast.success("Case analysis initiated successfully! The AI will now begin its work.", { id: loadingToastId });
     } catch (err: any) {
       console.error("Error analyzing case:", err);
@@ -160,7 +164,10 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
       const { error } = await supabase.functions.invoke('export-to-neo4j', {
         body: { caseId },
       });
-      if (error) throw error;
+      if (error) {
+        const detailedError = error.context?.error || error.message;
+        throw new Error(detailedError);
+      }
       toast.success("Case data successfully exported to Neo4j.", { id: loadingToastId });
     } catch (err: any) {
       console.error("Neo4j export error:", err);
@@ -177,7 +184,10 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
       const { error } = await supabase.functions.invoke('create-timeline-from-evidence', {
         body: { caseId },
       });
-      if (error) throw error;
+      if (error) {
+        const detailedError = error.context?.error || error.message;
+        throw new Error(detailedError);
+      }
       toast.success("Timeline generation complete. Check the Case Timeline.", { id: loadingToastId });
     } catch (err: any) {
       console.error("Timeline generation error:", err);
@@ -194,7 +204,10 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
       const { error } = await supabase.functions.invoke('ai-orchestrator', {
         body: { caseId, command: 'diagnose_case_settings', payload: {} },
       });
-      if (error) throw error;
+      if (error) {
+        const detailedError = error.context?.error || error.message;
+        throw new Error(detailedError);
+      }
       toast.success("Diagnostics complete. Please check the 'Log' tab for the settings report.", { id: loadingToastId });
     } catch (err: any) {
       console.error("Diagnostics error:", err);

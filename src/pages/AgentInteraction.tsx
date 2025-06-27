@@ -80,12 +80,18 @@ const AgentInteraction = () => {
             payload: { query: searchQuery },
           },
         });
-        if (error) throw error;
+        if (error) {
+          const detailedError = error.context?.error || error.message;
+          throw new Error(detailedError);
+        }
         toast.success("Web search initiated. Results will appear in chat.");
       } else {
         // Default behavior for regular chat messages
         const { error } = await supabase.functions.invoke('send-user-prompt', { body: { caseId, promptContent: userPrompt } });
-        if (error) throw error;
+        if (error) {
+          const detailedError = error.context?.error || error.message;
+          throw new Error(detailedError);
+        }
         toast.success("Prompt sent successfully!");
       }
       setUserPrompt("");
