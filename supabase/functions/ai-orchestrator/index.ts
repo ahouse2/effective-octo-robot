@@ -157,22 +157,7 @@ serve(async (req) => {
     const userId = await getUserIdFromRequest(req, supabaseClient);
     if (!caseId || !userId || !command) throw new Error('caseId, userId, and command are required');
 
-    // Handle model switching separately
-    if (command === 'switch_ai_model' || command === 'update_assistant_instructions') {
-        await insertAgentActivity(supabaseClient, caseId, 'Orchestrator', 'System', 'Configuration Updated', `Case settings updated. Command: ${command}`, 'completed');
-        if (command === 'switch_ai_model' && payload.newAiModel === 'gemini') {
-            await supabaseClient.from('cases').update({ openai_assistant_id: null, openai_thread_id: null }).eq('id', caseId);
-        }
-        // Re-initialize assistant if needed
-        const { data: caseData } = await supabaseClient.from('cases').select('ai_model').eq('id', caseId).single();
-        if (caseData?.ai_model === 'openai') {
-            const openai = new OpenAI({ apiKey: Deno.env.get('OPENAI_API_KEY') });
-            await getOrCreateAssistant(openai, supabaseClient, userId, caseId);
-        }
-        return new Response(JSON.stringify({ message: 'Configuration updated successfully.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
-    }
-
-    // For all other commands, fetch the case and route based on its current AI model
+    // Always fetch the latest AI model setting from the case itself. This is the definitive fix.
     const { data: caseData, error: caseError } = await supabaseClient.from('cases').select('ai_model').eq('id', caseId).single();
     if (caseError || !caseData) throw new Error('Case not found or error fetching case details.');
     

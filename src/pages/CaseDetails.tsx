@@ -39,7 +39,6 @@ const CaseDetails = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [caseStatus, setCaseStatus] = useState<string | null>(null);
   const { user } = useSession();
-  const [initialCaseData, setInitialCaseData] = useState<CaseDetailsFormValues | null>(null);
   const [isDownloadingReport, setIsDownloadingReport] = useState(false);
 
   const form = useForm<CaseDetailsFormValues>({
@@ -84,7 +83,6 @@ const CaseDetails = () => {
         };
         form.reset(fetchedData);
         setCaseStatus(data.status);
-        setInitialCaseData(fetchedData);
       }
       setLoading(false);
     };
@@ -119,33 +117,8 @@ const CaseDetails = () => {
         throw new Error("Failed to update case: " + updateError.message);
       }
 
-      const aiModelChanged = initialCaseData?.aiModel !== values.aiModel;
-      const goalsChanged = initialCaseData?.caseGoals !== values.caseGoals;
-      const instructionsChanged = initialCaseData?.systemInstruction !== values.systemInstruction;
-      const assistantIdChanged = initialCaseData?.openaiAssistantId !== values.openaiAssistantId;
-
-      if (aiModelChanged) {
-        toast.info("AI model switched. Initiating setup and re-analysis...");
-        await supabase.functions.invoke('ai-orchestrator', {
-          body: {
-            caseId: caseId,
-            command: 'switch_ai_model',
-            payload: { newAiModel: values.aiModel },
-          },
-        });
-      } else if (goalsChanged || instructionsChanged || assistantIdChanged) {
-        toast.info("AI assistant instructions are being updated.");
-        await supabase.functions.invoke('ai-orchestrator', {
-          body: {
-            caseId: caseId,
-            command: 'update_assistant_instructions',
-            payload: {},
-          },
-        });
-      }
-
       toast.success("Case details updated successfully!");
-      setInitialCaseData(values);
+      toast.info("Run analysis again for changes to take effect.");
 
     } catch (err: any) {
       console.error("Case update error:", err);
