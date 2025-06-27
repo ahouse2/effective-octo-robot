@@ -130,8 +130,11 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     let gcpServiceAccountKey;
     try {
         gcpServiceAccountKey = JSON.parse(gcpServiceAccountKeyRaw);
+        if (!gcpServiceAccountKey.client_email || !gcpServiceAccountKey.private_key) {
+            throw new Error("The 'GCP_SERVICE_ACCOUNT_KEY' secret is a valid JSON but is missing the required 'client_email' or 'private_key' fields.");
+        }
     } catch (e) {
-        throw new Error("Gemini analysis failed: The 'GCP_SERVICE_ACCOUNT_KEY' secret is not valid JSON. Please check the value in your project settings.");
+        throw new Error("Gemini analysis failed: The 'GCP_SERVICE_ACCOUNT_KEY' secret is not valid JSON. Please ensure you have copied the entire contents of the JSON key file, including the opening and closing curly braces {}.");
     }
 
     const discoveryEngineClient = new v1.SearchServiceClient({
@@ -146,7 +149,7 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
         [searchResponse] = await discoveryEngineClient.search({ servingConfig, query: promptContent, pageSize: 5 });
     } catch (e) {
         console.error("Vertex AI Search Error:", e);
-        throw new Error(`Failed to search documents in Vertex AI. Please check your GCP project permissions, that the Vertex AI Search API is enabled, and that your Data Store ID is correct. Original error: ${e.message}`);
+        throw new Error(`Failed to search documents in Vertex AI. Please check your GCP project permissions (the service account needs the 'Vertex AI User' role), that the Vertex AI Search API is enabled, and that your Data Store ID is correct. Original error: ${e.message}`);
     }
     
     const contextSnippets = searchResponse.results?.map(r => r.document?.derivedStructData?.fields?.content?.stringValue).filter(Boolean).join('\n\n---\n\n');
@@ -210,7 +213,6 @@ serve(async (req) => {
     
     let { ai_model } = caseData;
 
-    // If the model is Gemini, ensure OpenAI fields are null
     if (ai_model === 'gemini') {
         await supabaseClient.from('cases').update({ openai_assistant_id: null, openai_thread_id: null }).eq('id', caseId);
         await insertAgentActivity(supabaseClient, caseId, 'Orchestrator', 'System', 'Housekeeping', 'Cleared legacy OpenAI settings for Gemini case.', 'completed');
