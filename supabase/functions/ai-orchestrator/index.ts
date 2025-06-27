@@ -112,6 +112,7 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     
     await updateProgress(supabaseClient, caseId, 10, 'Initializing Gemini and Vertex AI...');
 
+    // --- Environment Variable Validation ---
     const gcpProjectId = Deno.env.get('GCP_PROJECT_ID');
     const gcpDataStoreId = Deno.env.get('GCP_VERTEX_AI_DATA_STORE_ID');
     const gcpServiceAccountKeyRaw = Deno.env.get('GCP_SERVICE_ACCOUNT_KEY');
@@ -130,9 +131,13 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     let gcpServiceAccountKey;
     try {
         gcpServiceAccountKey = JSON.parse(gcpServiceAccountKeyRaw);
+        if (!gcpServiceAccountKey.client_email || !gcpServiceAccountKey.private_key) {
+            throw new Error("Parsed service account key is missing 'client_email' or 'private_key'.");
+        }
     } catch (e) {
-        throw new Error("Gemini analysis failed: The 'GCP_SERVICE_ACCOUNT_KEY' secret is not valid JSON. Please check the value in your project settings.");
+        throw new Error("Gemini analysis failed: The 'GCP_SERVICE_ACCOUNT_KEY' secret is not valid JSON. Please ensure you have copied the entire contents of the JSON key file, including the opening and closing curly braces {}.");
     }
+    // --- End Validation ---
 
     const discoveryEngineClient = new v1.SearchServiceClient({
       projectId: gcpProjectId,
