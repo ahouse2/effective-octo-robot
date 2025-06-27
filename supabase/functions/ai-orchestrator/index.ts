@@ -105,13 +105,17 @@ async function handleOpenAICommand(supabaseClient: SupabaseClient, openai: OpenA
 // --- GEMINI RAG HANDLER ---
 
 async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: GoogleGenerativeAI, caseId: string, command: string, payload: any) {
+    console.log("GEMINI_HANDLER: Entered handleGeminiRAGCommand");
     let promptContent = payload.promptContent;
     if (command === 're_run_analysis') {
         promptContent = `Perform a comprehensive analysis of all documents. Summarize the key facts, events, and overall case narrative based on the entire evidence locker.`;
     }
     
     await updateProgress(supabaseClient, caseId, 10, 'Initializing Gemini and Vertex AI...');
+    console.log("GEMINI_HANDLER: Progress updated to 10%");
 
+    // --- Environment Variable Validation ---
+    console.log("GEMINI_HANDLER: Validating secrets...");
     const gcpProjectId = Deno.env.get('GCP_PROJECT_ID');
     const gcpDataStoreId = Deno.env.get('GCP_VERTEX_AI_DATA_STORE_ID');
     const gcpServiceAccountKeyRaw = Deno.env.get('GCP_SERVICE_ACCOUNT_KEY');
@@ -124,60 +128,78 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
             !gcpServiceAccountKeyRaw && 'GCP_SERVICE_ACCOUNT_KEY',
             !geminiApiKey && 'GOOGLE_GEMINI_API_KEY'
         ].filter(Boolean).join(', ');
+        console.error(`GEMINI_HANDLER: Missing secrets: ${missing}`);
         throw new Error(`Gemini analysis failed: Missing required Supabase secrets: ${missing}. Please configure them in your project settings.`);
     }
+    console.log("GEMINI_HANDLER: All secrets are present.");
 
     let gcpServiceAccountKey;
     try {
+        console.log("GEMINI_HANDLER: Parsing GCP_SERVICE_ACCOUNT_KEY...");
         gcpServiceAccountKey = JSON.parse(gcpServiceAccountKeyRaw);
         if (!gcpServiceAccountKey.client_email || !gcpServiceAccountKey.private_key) {
+            console.error("GEMINI_HANDLER: Service account key is missing required fields.");
             throw new Error("The 'GCP_SERVICE_ACCOUNT_KEY' secret is a valid JSON but is missing the required 'client_email' or 'private_key' fields.");
         }
+        console.log("GEMINI_HANDLER: Service account key parsed successfully.");
     } catch (e) {
+        console.error("GEMINI_HANDLER: Failed to parse service account key.", e);
         throw new Error("Gemini analysis failed: The 'GCP_SERVICE_ACCOUNT_KEY' secret is not valid JSON. Please ensure you have copied the entire contents of the JSON key file, including the opening and closing curly braces {}.");
     }
-
+    
+    console.log("GEMINI_HANDLER: Initializing Discovery Engine client...");
     const discoveryEngineClient = new v1.SearchServiceClient({
       projectId: gcpProjectId,
       credentials: { client_email: gcpServiceAccountKey.client_email, private_key: gcpServiceAccountKey.private_key },
     });
+    console.log("GEMINI_HANDLER: Discovery Engine client initialized.");
 
     await updateProgress(supabaseClient, caseId, 25, 'Searching for relevant documents in Vertex AI...');
+    console.log("GEMINI_HANDLER: Progress updated to 25%. Starting search.");
     let searchResponse;
     try {
         const servingConfig = discoveryEngineClient.servingConfigPath(gcpProjectId, 'global', gcpDataStoreId, 'default_serving_config');
+        console.log(`GEMINI_HANDLER: Searching with config: ${servingConfig}`);
         [searchResponse] = await discoveryEngineClient.search({ servingConfig, query: promptContent, pageSize: 5 });
+        console.log("GEMINI_HANDLER: Search completed successfully.");
     } catch (e) {
-        console.error("Vertex AI Search Error:", e);
+        console.error("GEMINI_HANDLER: Vertex AI Search Error:", e);
         throw new Error(`Failed to search documents in Vertex AI. Please check your GCP project permissions (the service account needs the 'Vertex AI User' role), that the Vertex AI Search API is enabled, and that your Data Store ID is correct. Original error: ${e.message}`);
     }
     
     const contextSnippets = searchResponse.results?.map(r => r.document?.derivedStructData?.fields?.content?.stringValue).filter(Boolean).join('\n\n---\n\n');
+    console.log(`GEMINI_HANDLER: Found ${searchResponse.results?.length || 0} snippets.`);
 
     if (!contextSnippets) {
+        console.log("GEMINI_HANDLER: No context snippets found. Ending process.");
         await insertAgentActivity(supabaseClient, caseId, 'Gemini', 'System', 'No Context Found', 'Could not find relevant documents in Vertex AI for this query.', 'completed');
         await updateProgress(supabaseClient, caseId, 100, 'Analysis complete: No relevant documents found.');
         return;
     }
 
     await updateProgress(supabaseClient, caseId, 60, 'Synthesizing response with Gemini...');
+    console.log("GEMINI_HANDLER: Progress updated to 60%. Synthesizing response.");
     const { data: caseDetails } = await supabaseClient.from('cases').select('case_goals, system_instruction').eq('id', caseId).single();
     const synthesisPrompt = `Based on the following context from case documents, answer the user's question. User's Question: "${promptContent}". Case Goals: ${caseDetails?.case_goals || 'Not specified.'}. System Instructions: ${caseDetails?.system_instruction || 'None.'}. Context from Documents: --- ${contextSnippets} --- Your Answer:`;
 
     const model = genAI.getGenerativeModel({ model: "gemini-pro" });
     let result;
     try {
+        console.log("GEMINI_HANDLER: Generating content with Gemini...");
         result = await model.generateContent(synthesisPrompt);
+        console.log("GEMINI_HANDLER: Content generation successful.");
     } catch (e) {
-        console.error("Gemini Generation Error:", e);
+        console.error("GEMINI_HANDLER: Gemini Generation Error:", e);
         throw new Error(`Failed to generate content with Gemini. Please check your Gemini API key and permissions. Original error: ${e.message}`);
     }
     
     const responseText = result.response.text();
+    console.log("GEMINI_HANDLER: Response received from Gemini.");
 
     await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'AI', 'RAG Response', responseText, 'completed');
     await supabaseClient.from('cases').update({ status: 'Analysis Complete' }).eq('id', caseId);
     await updateProgress(supabaseClient, caseId, 100, 'Analysis complete!');
+    console.log("GEMINI_HANDLER: Process completed successfully.");
 }
 
 // --- MAIN SERVE FUNCTION ---
