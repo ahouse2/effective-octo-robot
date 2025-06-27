@@ -112,7 +112,6 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     
     await updateProgress(supabaseClient, caseId, 10, 'Initializing Gemini and Vertex AI...');
 
-    // --- Environment Variable Validation ---
     const gcpProjectId = Deno.env.get('GCP_PROJECT_ID');
     const gcpDataStoreId = Deno.env.get('GCP_VERTEX_AI_DATA_STORE_ID');
     const gcpServiceAccountKeyRaw = Deno.env.get('GCP_SERVICE_ACCOUNT_KEY');
@@ -131,13 +130,9 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     let gcpServiceAccountKey;
     try {
         gcpServiceAccountKey = JSON.parse(gcpServiceAccountKeyRaw);
-        if (!gcpServiceAccountKey.client_email || !gcpServiceAccountKey.private_key) {
-            throw new Error("Parsed service account key is missing 'client_email' or 'private_key'.");
-        }
     } catch (e) {
-        throw new Error("Gemini analysis failed: The 'GCP_SERVICE_ACCOUNT_KEY' secret is not valid JSON. Please ensure you have copied the entire contents of the JSON key file, including the opening and closing curly braces {}.");
+        throw new Error("Gemini analysis failed: The 'GCP_SERVICE_ACCOUNT_KEY' secret is not valid JSON. Please check the value in your project settings.");
     }
-    // --- End Validation ---
 
     const discoveryEngineClient = new v1.SearchServiceClient({
       projectId: gcpProjectId,
@@ -213,7 +208,13 @@ serve(async (req) => {
     const { data: caseData, error: caseError } = await supabaseClient.from('cases').select('ai_model').eq('id', caseId).single();
     if (caseError || !caseData) throw new Error('Case not found or error fetching case details.');
     
-    const { ai_model } = caseData;
+    let { ai_model } = caseData;
+
+    // If the model is Gemini, ensure OpenAI fields are null
+    if (ai_model === 'gemini') {
+        await supabaseClient.from('cases').update({ openai_assistant_id: null, openai_thread_id: null }).eq('id', caseId);
+        await insertAgentActivity(supabaseClient, caseId, 'Orchestrator', 'System', 'Housekeeping', 'Cleared legacy OpenAI settings for Gemini case.', 'completed');
+    }
 
     await insertAgentActivity(supabaseClient, caseId, 'Orchestrator', 'System', 'Command Received', `Received command '${command}'. Fetched case settings. Routing to AI model: [${ai_model}].`, 'processing');
     
