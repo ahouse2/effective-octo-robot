@@ -112,16 +112,17 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     
     await updateProgress(supabaseClient, caseId, 10, 'Initializing Gemini and Vertex AI...');
 
-    // --- Environment Variable Validation ---
     const gcpProjectId = Deno.env.get('GCP_PROJECT_ID');
     const gcpDataStoreId = Deno.env.get('GCP_VERTEX_AI_DATA_STORE_ID');
     const gcpServiceAccountKeyRaw = Deno.env.get('GCP_SERVICE_ACCOUNT_KEY');
+    const geminiApiKey = Deno.env.get('GOOGLE_GEMINI_API_KEY');
 
-    if (!gcpProjectId || !gcpDataStoreId || !gcpServiceAccountKeyRaw) {
+    if (!gcpProjectId || !gcpDataStoreId || !gcpServiceAccountKeyRaw || !geminiApiKey) {
         const missing = [
             !gcpProjectId && 'GCP_PROJECT_ID',
             !gcpDataStoreId && 'GCP_VERTEX_AI_DATA_STORE_ID',
-            !gcpServiceAccountKeyRaw && 'GCP_SERVICE_ACCOUNT_KEY'
+            !gcpServiceAccountKeyRaw && 'GCP_SERVICE_ACCOUNT_KEY',
+            !geminiApiKey && 'GOOGLE_GEMINI_API_KEY'
         ].filter(Boolean).join(', ');
         throw new Error(`Gemini analysis failed: Missing required Supabase secrets: ${missing}. Please configure them in your project settings.`);
     }
@@ -132,7 +133,6 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     } catch (e) {
         throw new Error("Gemini analysis failed: The 'GCP_SERVICE_ACCOUNT_KEY' secret is not valid JSON. Please check the value in your project settings.");
     }
-    // --- End Validation ---
 
     const discoveryEngineClient = new v1.SearchServiceClient({
       projectId: gcpProjectId,
@@ -140,8 +140,15 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     });
 
     await updateProgress(supabaseClient, caseId, 25, 'Searching for relevant documents in Vertex AI...');
-    const servingConfig = discoveryEngineClient.servingConfigPath(gcpProjectId, 'global', gcpDataStoreId, 'default_serving_config');
-    const [searchResponse] = await discoveryEngineClient.search({ servingConfig, query: promptContent, pageSize: 5 });
+    let searchResponse;
+    try {
+        const servingConfig = discoveryEngineClient.servingConfigPath(gcpProjectId, 'global', gcpDataStoreId, 'default_serving_config');
+        [searchResponse] = await discoveryEngineClient.search({ servingConfig, query: promptContent, pageSize: 5 });
+    } catch (e) {
+        console.error("Vertex AI Search Error:", e);
+        throw new Error(`Failed to search documents in Vertex AI. Please check your GCP project permissions, that the Vertex AI Search API is enabled, and that your Data Store ID is correct. Original error: ${e.message}`);
+    }
+    
     const contextSnippets = searchResponse.results?.map(r => r.document?.derivedStructData?.fields?.content?.stringValue).filter(Boolean).join('\n\n---\n\n');
 
     if (!contextSnippets) {
@@ -155,7 +162,14 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     const synthesisPrompt = `Based on the following context from case documents, answer the user's question. User's Question: "${promptContent}". Case Goals: ${caseDetails?.case_goals || 'Not specified.'}. System Instructions: ${caseDetails?.system_instruction || 'None.'}. Context from Documents: --- ${contextSnippets} --- Your Answer:`;
 
     const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-    const result = await model.generateContent(synthesisPrompt);
+    let result;
+    try {
+        result = await model.generateContent(synthesisPrompt);
+    } catch (e) {
+        console.error("Gemini Generation Error:", e);
+        throw new Error(`Failed to generate content with Gemini. Please check your Gemini API key and permissions. Original error: ${e.message}`);
+    }
+    
     const responseText = result.response.text();
 
     await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'AI', 'RAG Response', responseText, 'completed');
