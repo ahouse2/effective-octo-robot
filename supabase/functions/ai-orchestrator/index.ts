@@ -129,10 +129,7 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     if (!contextSnippets) {
         await insertAgentActivity(supabaseClient, caseId, 'Gemini', 'System', 'No Context Found', 'Could not find relevant documents in Vertex AI for this query.', 'completed');
         await updateProgress(supabaseClient, caseId, 100, 'Analysis complete: No relevant documents found.');
-        return new Response(JSON.stringify({ message: 'Analysis complete: No relevant documents found.' }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            status: 200,
-        });
+        return; // End execution for this path
     }
 
     await updateProgress(supabaseClient, caseId, 60, 'Synthesizing response with Gemini...');
@@ -190,12 +187,13 @@ serve(async (req) => {
         await handleOpenAICommand(supabaseClient, openai, caseId, userId, command, payload);
     } else if (ai_model === 'gemini') {
         const genAI = new GoogleGenerativeAI(Deno.env.get('GOOGLE_GEMINI_API_KEY') ?? '');
-        const response = await handleGeminiRAGCommand(supabaseClient, genAI, caseId, command, payload);
-        if (response) return response;
+        await handleGeminiRAGCommand(supabaseClient, genAI, caseId, command, payload);
     } else {
       await insertAgentActivity(supabaseClient, caseId, 'Orchestrator', 'System', 'Routing Error', `Unsupported or null AI model configured: [${ai_model}]. Halting execution.`, 'error');
       throw new Error(`Unsupported AI model: ${ai_model}`);
     }
+
+    // This is now the single point of return for all successful command executions.
     return new Response(JSON.stringify({ message: 'Command processed successfully.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
   } catch (error: any) {
     console.error('Edge Function error:', error.message, error.stack);
