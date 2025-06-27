@@ -112,9 +112,27 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     
     await updateProgress(supabaseClient, caseId, 10, 'Initializing Gemini and Vertex AI...');
 
+    // --- Environment Variable Validation ---
     const gcpProjectId = Deno.env.get('GCP_PROJECT_ID');
     const gcpDataStoreId = Deno.env.get('GCP_VERTEX_AI_DATA_STORE_ID');
-    const gcpServiceAccountKey = JSON.parse(Deno.env.get('GCP_SERVICE_ACCOUNT_KEY') ?? '{}');
+    const gcpServiceAccountKeyRaw = Deno.env.get('GCP_SERVICE_ACCOUNT_KEY');
+
+    if (!gcpProjectId || !gcpDataStoreId || !gcpServiceAccountKeyRaw) {
+        const missing = [
+            !gcpProjectId && 'GCP_PROJECT_ID',
+            !gcpDataStoreId && 'GCP_VERTEX_AI_DATA_STORE_ID',
+            !gcpServiceAccountKeyRaw && 'GCP_SERVICE_ACCOUNT_KEY'
+        ].filter(Boolean).join(', ');
+        throw new Error(`Gemini analysis failed: Missing required Supabase secrets: ${missing}. Please configure them in your project settings.`);
+    }
+
+    let gcpServiceAccountKey;
+    try {
+        gcpServiceAccountKey = JSON.parse(gcpServiceAccountKeyRaw);
+    } catch (e) {
+        throw new Error("Gemini analysis failed: The 'GCP_SERVICE_ACCOUNT_KEY' secret is not valid JSON. Please check the value in your project settings.");
+    }
+    // --- End Validation ---
 
     const discoveryEngineClient = new v1.SearchServiceClient({
       projectId: gcpProjectId,
@@ -129,7 +147,7 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     if (!contextSnippets) {
         await insertAgentActivity(supabaseClient, caseId, 'Gemini', 'System', 'No Context Found', 'Could not find relevant documents in Vertex AI for this query.', 'completed');
         await updateProgress(supabaseClient, caseId, 100, 'Analysis complete: No relevant documents found.');
-        return; // End execution for this path
+        return;
     }
 
     await updateProgress(supabaseClient, caseId, 60, 'Synthesizing response with Gemini...');
@@ -193,7 +211,6 @@ serve(async (req) => {
       throw new Error(`Unsupported AI model: ${ai_model}`);
     }
 
-    // This is now the single point of return for all successful command executions.
     return new Response(JSON.stringify({ message: 'Command processed successfully.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
   } catch (error: any) {
     console.error('Edge Function error:', error.message, error.stack);
