@@ -29,7 +29,6 @@ const MAX_BATCH_SIZE_MB = 4; // Supabase Edge Function payload limit is around 4
 export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
   const [isGeneratingTimeline, setIsGeneratingTimeline] = useState(false);
   const [isDiagnosing, setIsDiagnosing] = useState(false);
   const { user } = useSession();
@@ -157,26 +156,6 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
     }
   };
 
-  const handleExportToNeo4j = async () => {
-    setIsExporting(true);
-    const loadingToastId = toast.loading("Exporting case data to Neo4j...");
-    try {
-      const { error } = await supabase.functions.invoke('export-to-neo4j', {
-        body: { caseId },
-      });
-      if (error) {
-        const detailedError = error.context?.error || error.message;
-        throw new Error(detailedError);
-      }
-      toast.success("Case data successfully exported to Neo4j.", { id: loadingToastId });
-    } catch (err: any) {
-      console.error("Neo4j export error:", err);
-      toast.error(err.message || "Failed to export to Neo4j.", { id: loadingToastId });
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
   const handleGenerateTimeline = async () => {
     setIsGeneratingTimeline(true);
     const loadingToastId = toast.loading("Starting automated timeline generation...");
@@ -273,17 +252,15 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
       </div>
       <div>
         <Label className="text-base font-medium">Graph Analysis</Label>
-        <p className="text-sm text-muted-foreground mb-2">Export data to Neo4j and visualize the relationships.</p>
+        <p className="text-sm text-muted-foreground mb-2">This feature is temporarily disabled for maintenance.</p>
         <div className="grid grid-cols-2 gap-2">
-            <Button onClick={handleExportToNeo4j} disabled={isExporting} variant="secondary">
+            <Button disabled variant="secondary">
                 <Share2 className="h-4 w-4 mr-2" />
-                {isExporting ? "Exporting..." : "Export to Neo4j"}
+                Export to Neo4j
             </Button>
-            <Button asChild variant="secondary">
-                <Link to={`/graph-analysis/${caseId}`}>
-                    <GitGraph className="h-4 w-4 mr-2" />
-                    Visualize Graph
-                </Link>
+            <Button disabled variant="secondary">
+                <GitGraph className="h-4 w-4 mr-2" />
+                Visualize Graph
             </Button>
         </div>
       </div>
