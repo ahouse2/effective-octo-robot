@@ -12,7 +12,6 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useSession } from "@/components/SessionContextProvider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator"; // Import Separator
 
 const profileFormSchema = z.object({
   firstName: z.string().min(1, { message: "First name is required." }).max(50, { message: "First name too long." }),
@@ -20,7 +19,6 @@ const profileFormSchema = z.object({
   defaultAiModel: z.enum(["openai", "gemini"], {
     required_error: "Please select a default AI model.",
   }),
-  openaiAssistantId: z.string().optional(), // New field for OpenAI Assistant ID
 });
 
 type ProfileFormValues = z.infer<typeof profileFormSchema>;
@@ -36,7 +34,6 @@ const UserProfile = () => {
       firstName: "",
       lastName: "",
       defaultAiModel: "openai",
-      openaiAssistantId: "", // Initialize new field
     },
   });
 
@@ -50,7 +47,7 @@ const UserProfile = () => {
       setLoadingProfile(true);
       const { data, error } = await supabase
         .from('profiles')
-        .select('first_name, last_name, default_ai_model, openai_assistant_id') // Select openai_assistant_id
+        .select('first_name, last_name, default_ai_model')
         .eq('id', user.id)
         .single();
 
@@ -62,7 +59,6 @@ const UserProfile = () => {
           firstName: data.first_name || "",
           lastName: data.last_name || "",
           defaultAiModel: (data.default_ai_model as "openai" | "gemini") || "openai",
-          openaiAssistantId: data.openai_assistant_id || "", // Set from fetched data
         });
       }
       setLoadingProfile(false);
@@ -89,7 +85,6 @@ const UserProfile = () => {
           first_name: values.firstName,
           last_name: values.lastName,
           default_ai_model: values.defaultAiModel,
-          openai_assistant_id: values.openaiAssistantId || null, // Save the OpenAI Assistant ID
         })
         .eq('id', user.id);
 
@@ -198,27 +193,6 @@ const UserProfile = () => {
                       </Select>
                       <FormDescription>
                         This model will be pre-selected when you create new cases or start new analyses.
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="openaiAssistantId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Your OpenAI Assistant ID (Optional)</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="asst_..."
-                          {...field}
-                          disabled={isSubmitting || form.watch("aiModel") === "gemini"} // Disable if Gemini is selected
-                          value={field.value || ""} // Ensure controlled component
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        Provide a specific OpenAI Assistant ID if you want to use a pre-configured assistant for your cases. If left blank, a new one will be created for your first case.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
