@@ -111,6 +111,7 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     }
     
     await updateProgress(supabaseClient, caseId, 10, 'Initializing Gemini and Vertex AI...');
+    await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Process Started', 'Initializing Gemini and Vertex AI clients.', 'processing');
     
     const gcpProjectId = Deno.env.get('GCP_PROJECT_ID');
     const gcpDataStoreId = Deno.env.get('GCP_VERTEX_AI_DATA_STORE_ID');
@@ -129,6 +130,7 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     });
 
     await updateProgress(supabaseClient, caseId, 25, 'Searching for relevant documents in Vertex AI...');
+    await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Vertex AI Search', `Searching for documents with query: "${promptContent}"`, 'processing');
     
     let searchResponse;
     try {
@@ -140,7 +142,8 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
             contentSearchSpec: { snippetSpec: { returnSnippet: true } } 
         });
     } catch (e) {
-        throw new Error(`Failed to search documents in Vertex AI. Check GCP permissions and Data Store location. Original error: ${e.message}`);
+        await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Vertex AI Search Failed', `Error during Vertex AI search: ${e.message}`, 'error');
+        throw e;
     }
     
     const contextSnippetsArray: string[] = [];
@@ -162,6 +165,7 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
         }
     }
     const contextSnippets = contextSnippetsArray.join('\n\n---\n\n');
+    await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Search Complete', `Found ${contextSnippetsArray.length} context snippets.`, 'completed');
 
     if (!contextSnippets) {
         await insertAgentActivity(supabaseClient, caseId, 'Gemini', 'System', 'No Context Found', 'Could not find relevant documents in Vertex AI for this query.', 'completed');
@@ -172,9 +176,16 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     await updateProgress(supabaseClient, caseId, 60, 'Synthesizing response with Gemini...');
     const { data: caseDetails } = await supabaseClient.from('cases').select('case_goals, system_instruction').eq('id', caseId).single();
     const synthesisPrompt = `Based on the following context from case documents, answer the user's question. User's Question: "${promptContent}". Case Goals: ${caseDetails?.case_goals || 'Not specified.'}. System Instructions: ${caseDetails?.system_instruction || 'None.'}. Context from Documents: --- ${contextSnippets} --- Your Answer:`;
+    await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Prompt Synthesis', `Sending prompt of length ${synthesisPrompt.length} to Gemini.`, 'processing');
 
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
-    const result = await model.generateContent(synthesisPrompt);
+    let result;
+    try {
+        result = await model.generateContent(synthesisPrompt);
+    } catch (e) {
+        await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Gemini API Call Failed', `Error calling the Gemini API: ${e.message}`, 'error');
+        throw e;
+    }
     
     const response = result.response;
     if (!response) {
