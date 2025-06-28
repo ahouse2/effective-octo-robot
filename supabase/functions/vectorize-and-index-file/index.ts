@@ -48,7 +48,7 @@ serve(async (req) => {
     });
     const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
     const genAI = new GoogleGenerativeAI(geminiApiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
 
     // --- Download file from Supabase Storage ---
     const { data: fileBlob, error: downloadError } = await supabaseClient.storage
@@ -101,7 +101,7 @@ serve(async (req) => {
     });
 
   } catch (error: any) {
-    console.error('Vectorize and Index Error:', error);
+    console.error('Vectorize and Index Error:', error.message, error.stack);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

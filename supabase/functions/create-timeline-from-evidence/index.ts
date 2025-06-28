@@ -37,7 +37,6 @@ serve(async (req) => {
 
     await insertAgentActivity(supabaseClient, caseId, 'Starting timeline generation process...', 'processing');
 
-    // 1. Fetch case details to determine the AI model
     const { data: caseData, error: caseError } = await supabaseClient
       .from('cases')
       .select('ai_model')
@@ -47,7 +46,6 @@ serve(async (req) => {
     if (caseError || !caseData) throw new Error(`Failed to fetch case details: ${caseError?.message || 'Case not found'}`);
     const aiModel = caseData.ai_model;
 
-    // 2. Fetch all file metadata for the case
     const { data: files, error: filesError } = await supabaseClient
       .from('case_files_metadata')
       .select('id, file_name, description, suggested_name')
@@ -59,7 +57,6 @@ serve(async (req) => {
       return new Response(JSON.stringify({ message: "No files to analyze." }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // 3. Prepare the context for the AI
     const evidenceContext = files.map(file => 
       `File: "${file.suggested_name || file.file_name}" (ID: ${file.id})\nSummary: ${file.description || 'No summary available.'}`
     ).join('\n\n');
@@ -68,7 +65,6 @@ serve(async (req) => {
       You are a specialized AI agent tasked with creating a chronological timeline of events from a set of case evidence summaries.
       Analyze the following evidence context and extract key events. For each event, provide a date (if available), a concise title, and a brief description.
       The date should be in YYYY-MM-DD format if possible. If no specific date is found, use the file's context to estimate or state "Date Unknown".
-      
       Your response MUST be a JSON object, with a single key "timeline_events" which is an array of objects. Each object should have "event_date", "title", and "description" keys.
       Do not wrap the JSON in a markdown block.
       
@@ -91,7 +87,6 @@ serve(async (req) => {
 
     let responseContent: string | null = null;
 
-    // 4. Call the appropriate AI model
     if (aiModel === 'openai') {
       const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
       if (!openaiApiKey) throw new Error("OPENAI_API_KEY is not set.");
@@ -106,7 +101,7 @@ serve(async (req) => {
       const geminiApiKey = Deno.env.get('GOOGLE_GEMINI_API_KEY');
       if (!geminiApiKey) throw new Error("GOOGLE_GEMINI_API_KEY is not set.");
       const genAI = new GoogleGenerativeAI(geminiApiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest", generationConfig: { responseMimeType: "application/json" } });
+      const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro", generationConfig: { responseMimeType: "application/json" } });
       const result = await model.generateContent(prompt);
       responseContent = result.response.text();
     } else {
@@ -120,7 +115,6 @@ serve(async (req) => {
 
     if (!events || !Array.isArray(events)) throw new Error("AI response did not contain a valid 'timeline_events' array.");
 
-    // 5. Insert the new timeline events into the database
     const eventsToInsert = events.map((event: any) => ({
       case_id: caseId,
       timestamp: event.event_date && event.event_date !== "Date Unknown" ? new Date(event.event_date) : new Date(),
@@ -142,7 +136,7 @@ serve(async (req) => {
     });
 
   } catch (error: any) {
-    console.error('Timeline Generation Error:', error);
+    console.error('Timeline Generation Error:', error.message, error.stack);
     try {
       const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
       if (caseId) {
