@@ -105,7 +105,6 @@ async function handleOpenAICommand(supabaseClient: SupabaseClient, openai: OpenA
 // --- GEMINI RAG HANDLER ---
 
 async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: GoogleGenerativeAI, caseId: string, command: string, payload: any) {
-    console.log("GEMINI_HANDLER: Entered handleGeminiRAGCommand");
     let promptContent = payload.promptContent;
     if (command === 're_run_analysis') {
         promptContent = `Perform a comprehensive analysis of all documents. Summarize the key facts, events, and overall case narrative based on the entire evidence locker.`;
@@ -174,7 +173,7 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     const { data: caseDetails } = await supabaseClient.from('cases').select('case_goals, system_instruction').eq('id', caseId).single();
     const synthesisPrompt = `Based on the following context from case documents, answer the user's question. User's Question: "${promptContent}". Case Goals: ${caseDetails?.case_goals || 'Not specified.'}. System Instructions: ${caseDetails?.system_instruction || 'None.'}. Context from Documents: --- ${contextSnippets} --- Your Answer:`;
 
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
     const result = await model.generateContent(synthesisPrompt);
     
     const response = result.response;
@@ -194,9 +193,17 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
 // --- MAIN SERVE FUNCTION ---
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+
+  let body;
+  try {
+    body = await req.json();
+  } catch (e) {
+    return new Response(JSON.stringify({ error: 'Invalid JSON in request body' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  }
+
   try {
     const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '', { auth: { persistSession: false } });
-    const { caseId, command, payload } = await req.json();
+    const { caseId, command, payload } = body;
     const userId = await getUserIdFromRequest(req, supabaseClient);
     if (!caseId || !userId || !command) throw new Error('caseId, userId, and command are required');
 
@@ -294,9 +301,9 @@ serve(async (req) => {
   } catch (error: any) {
     console.error('Edge Function error:', error.message, error.stack);
     const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
-    const { caseId } = await req.json().catch(() => ({ caseId: null }));
-    if (caseId) {
-        await supabaseClient.from('cases').update({ status: 'Error', analysis_status_message: error.message }).eq('id', caseId);
+    const caseIdFromRequest = body?.caseId;
+    if (caseIdFromRequest) {
+        await supabaseClient.from('cases').update({ status: 'Error', analysis_status_message: error.message }).eq('id', caseIdFromRequest);
     }
     return new Response(JSON.stringify({ error: error.message }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 });
   }
