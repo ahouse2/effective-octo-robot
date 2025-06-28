@@ -8,6 +8,15 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function extractJson(text: string): string | null {
+  const jsonRegex = /```json\s*([\s\S]*?)\s*```|({[\s\S]*}|\[[\s\S]*\])/;
+  const match = text.match(jsonRegex);
+  if (match) {
+    return match[1] || match[0];
+  }
+  return null;
+}
+
 async function insertAgentActivity(supabaseClient: SupabaseClient, caseId: string, content: string, status: 'processing' | 'completed' | 'error') {
   await supabaseClient.from('agent_activities').insert({
     case_id: caseId,
@@ -101,7 +110,7 @@ serve(async (req) => {
       const geminiApiKey = Deno.env.get('GOOGLE_GEMINI_API_KEY');
       if (!geminiApiKey) throw new Error("GOOGLE_GEMINI_API_KEY is not set.");
       const genAI = new GoogleGenerativeAI(geminiApiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-pro", generationConfig: { responseMimeType: "application/json" } });
+      const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
       const result = await model.generateContent(prompt);
       responseContent = result.response.text();
     } else {
@@ -110,7 +119,12 @@ serve(async (req) => {
 
     if (!responseContent) throw new Error("AI returned an empty response.");
 
-    const timelineData = JSON.parse(responseContent);
+    const extractedJsonString = extractJson(responseContent);
+    if (!extractedJsonString) {
+      throw new Error(`AI did not return a valid JSON object. Response: ${responseContent}`);
+    }
+
+    const timelineData = JSON.parse(extractedJsonString);
     const events = timelineData.timeline_events;
 
     if (!events || !Array.isArray(events)) throw new Error("AI response did not contain a valid 'timeline_events' array.");
