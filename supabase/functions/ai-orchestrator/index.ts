@@ -140,7 +140,7 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
             query: promptContent, 
             pageSize: 10,
             contentSearchSpec: { snippetSpec: { returnSnippet: true } } 
-        }, { timeout: 60000 });
+        }, { timeout: 120000 });
     } catch (e) {
         await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Vertex AI Search Failed', `Error during Vertex AI search: ${e.message}`, 'error');
         throw e;
@@ -236,7 +236,7 @@ serve(async (req) => {
             query: payload.query,
             pageSize: 10,
             contentSearchSpec: { snippetSpec: { returnSnippet: true }, summarySpec: { includeCitations: true } }
-        }, { timeout: 60000 });
+        }, { timeout: 120000 });
         const results = searchResponse.results?.map(r => ({
             id: r.document?.id,
             snippets: r.document?.derivedStructData?.fields?.snippets?.listValue?.values?.map(v => v.structValue?.fields?.snippet?.stringValue) || []
