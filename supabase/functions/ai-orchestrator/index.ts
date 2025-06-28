@@ -276,6 +276,26 @@ serve(async (req) => {
       }
     }
 
+    if (command === 'diagnose_gemini_connection') {
+        try {
+            const geminiApiKey = Deno.env.get('GOOGLE_GEMINI_API_KEY');
+            if (!geminiApiKey) throw new Error("GOOGLE_GEMINI_API_KEY secret is not set.");
+    
+            const genAI = new GoogleGenerativeAI(geminiApiKey);
+            // Use a known, stable model for the test
+            const model = genAI.getGenerativeModel({ model: "gemini-pro" }); 
+            
+            await model.generateContent("test");
+    
+            await insertAgentActivity(supabaseClient, caseId, 'Diagnostic Agent', 'System', 'Gemini Connection Test', 'Successfully connected to Google Gemini API with the provided key.', 'completed');
+            return new Response(JSON.stringify({ message: 'Gemini API connection successful!' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
+        } catch (e) {
+            console.error("Gemini Connection Diagnosis Error:", e);
+            await insertAgentActivity(supabaseClient, caseId, 'Diagnostic Agent', 'System', 'Gemini Connection Test Failed', `Failed to connect to Gemini API: ${e.message}`, 'error');
+            throw new Error(`Gemini Connection Test Failed: ${e.message}. Please verify your GOOGLE_GEMINI_API_KEY secret and ensure it is valid and has the necessary permissions.`);
+        }
+    }
+
     const { data: caseData, error: caseError } = await supabaseClient.from('cases').select('ai_model').eq('id', caseId).single();
     if (caseError || !caseData) throw new Error('Case not found or error fetching case details.');
     

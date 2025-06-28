@@ -32,6 +32,7 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
   const [isGeneratingTimeline, setIsGeneratingTimeline] = useState(false);
   const [isDiagnosing, setIsDiagnosing] = useState(false);
   const [isTestingGcp, setIsTestingGcp] = useState(false);
+  const [isTestingGemini, setIsTestingGemini] = useState(false);
   const { user } = useSession();
 
   const handleFileChangeAndUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -217,6 +218,26 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
     }
   };
 
+  const handleTestGeminiConnection = async () => {
+    setIsTestingGemini(true);
+    const loadingToastId = toast.loading("Testing Gemini API connection...");
+    try {
+      const { error } = await supabase.functions.invoke('ai-orchestrator', {
+        body: { caseId, command: 'diagnose_gemini_connection', payload: {} },
+      });
+      if (error) {
+        const detailedError = error.context?.error || error.message;
+        throw new Error(detailedError);
+      }
+      toast.success("Gemini API connection successful! Your key is valid.", { id: loadingToastId });
+    } catch (err: any) {
+      console.error("Gemini Connection Test error:", err);
+      toast.error(err.message || "Failed to connect to Gemini. Check secrets.", { id: loadingToastId });
+    } finally {
+      setIsTestingGemini(false);
+    }
+  };
+
   return (
     <div className="p-4 space-y-6">
       <div>
@@ -282,6 +303,10 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
           <Button onClick={handleTestGcpConnection} disabled={isTestingGcp} variant="outline" className="w-full">
             <TestTube2 className="h-4 w-4 mr-2" />
             {isTestingGcp ? "Testing..." : "Test GCP Connection"}
+          </Button>
+          <Button onClick={handleTestGeminiConnection} disabled={isTestingGemini} variant="outline" className="w-full">
+            <TestTube2 className="h-4 w-4 mr-2" />
+            {isTestingGemini ? "Testing..." : "Test Gemini API Key"}
           </Button>
         </div>
       </div>
