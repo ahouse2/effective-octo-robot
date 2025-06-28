@@ -101,7 +101,7 @@ serve(async (req) => {
       const geminiApiKey = Deno.env.get('GOOGLE_GEMINI_API_KEY');
       if (!geminiApiKey) throw new Error("GOOGLE_GEMINI_API_KEY is not set.");
       const genAI = new GoogleGenerativeAI(geminiApiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro", generationConfig: { responseMimeType: "application/json" } });
+      const model = genAI.getGenerativeModel({ model: "gemini-pro", generationConfig: { responseMimeType: "application/json" } });
       const result = await model.generateContent(prompt);
       responseContent = result.response.text();
     } else {
