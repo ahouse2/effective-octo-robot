@@ -173,7 +173,7 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     const { data: caseDetails } = await supabaseClient.from('cases').select('case_goals, system_instruction').eq('id', caseId).single();
     const synthesisPrompt = `Based on the following context from case documents, answer the user's question. User's Question: "${promptContent}". Case Goals: ${caseDetails?.case_goals || 'Not specified.'}. System Instructions: ${caseDetails?.system_instruction || 'None.'}. Context from Documents: --- ${contextSnippets} --- Your Answer:`;
 
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
     const result = await model.generateContent(synthesisPrompt);
     
     const response = result.response;
@@ -283,16 +283,16 @@ serve(async (req) => {
     
             const genAI = new GoogleGenerativeAI(geminiApiKey);
             // Test the specific, advanced model
-            const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" }); 
+            const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" }); 
             
             await model.generateContent("test");
     
-            await insertAgentActivity(supabaseClient, caseId, 'Diagnostic Agent', 'System', 'Gemini Connection Test', 'Successfully connected to Google Gemini API with the gemini-2.5-pro model.', 'completed');
-            return new Response(JSON.stringify({ message: 'Gemini API connection successful for gemini-2.5-pro!' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
+            await insertAgentActivity(supabaseClient, caseId, 'Diagnostic Agent', 'System', 'Gemini Connection Test', 'Successfully connected to Google Gemini API with the gemini-1.5-pro model.', 'completed');
+            return new Response(JSON.stringify({ message: 'Gemini API connection successful for gemini-1.5-pro!' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
         } catch (e) {
             console.error("Gemini Connection Diagnosis Error:", e);
-            await insertAgentActivity(supabaseClient, caseId, 'Diagnostic Agent', 'System', 'Gemini Connection Test Failed', `Failed to connect to Gemini API using gemini-2.5-pro: ${e.message}`, 'error');
-            throw new Error(`Gemini Connection Test Failed for gemini-2.5-pro: ${e.message}. Please verify your GOOGLE_GEMINI_API_KEY secret and ensure it has permissions for this model.`);
+            await insertAgentActivity(supabaseClient, caseId, 'Diagnostic Agent', 'System', 'Gemini Connection Test Failed', `Failed to connect to Gemini API using gemini-1.5-pro: ${e.message}`, 'error');
+            throw new Error(`Gemini Connection Test Failed for gemini-1.5-pro: ${e.message}. Please verify your GOOGLE_GEMINI_API_KEY secret and ensure it has permissions for this model.`);
         }
     }
 
