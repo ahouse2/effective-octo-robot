@@ -263,11 +263,11 @@ serve(async (req) => {
         const gcpProjectId = Deno.env.get('GCP_PROJECT_ID');
         if (!gcpProjectId) throw new Error("GCP_PROJECT_ID secret is not set.");
 
-        const dataStoreClient = new v1.DataStoreServiceClient({
+        const discoveryEngineClient = new v1.SearchServiceClient({
           projectId: gcpProjectId,
           credentials: { client_email: gcpServiceAccountKey.client_email, private_key: gcpServiceAccountKey.private_key },
         });
-        await dataStoreClient.listDataStores({parent: `projects/${gcpProjectId}/locations/global/collections/default_collection`});
+        await discoveryEngineClient.listDataStores({parent: `projects/${gcpProjectId}/locations/global/collections/default_collection`});
         
         return new Response(JSON.stringify({ message: 'GCP connection successful!' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
       } catch (e) {
