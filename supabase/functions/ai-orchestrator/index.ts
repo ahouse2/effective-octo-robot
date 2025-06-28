@@ -282,17 +282,17 @@ serve(async (req) => {
             if (!geminiApiKey) throw new Error("GOOGLE_GEMINI_API_KEY secret is not set.");
     
             const genAI = new GoogleGenerativeAI(geminiApiKey);
-            // Use a known, stable model for the test
-            const model = genAI.getGenerativeModel({ model: "gemini-pro" }); 
+            // Test the specific, advanced model
+            const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" }); 
             
             await model.generateContent("test");
     
-            await insertAgentActivity(supabaseClient, caseId, 'Diagnostic Agent', 'System', 'Gemini Connection Test', 'Successfully connected to Google Gemini API with the provided key.', 'completed');
-            return new Response(JSON.stringify({ message: 'Gemini API connection successful!' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
+            await insertAgentActivity(supabaseClient, caseId, 'Diagnostic Agent', 'System', 'Gemini Connection Test', 'Successfully connected to Google Gemini API with the gemini-2.5-pro model.', 'completed');
+            return new Response(JSON.stringify({ message: 'Gemini API connection successful for gemini-2.5-pro!' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
         } catch (e) {
             console.error("Gemini Connection Diagnosis Error:", e);
-            await insertAgentActivity(supabaseClient, caseId, 'Diagnostic Agent', 'System', 'Gemini Connection Test Failed', `Failed to connect to Gemini API: ${e.message}`, 'error');
-            throw new Error(`Gemini Connection Test Failed: ${e.message}. Please verify your GOOGLE_GEMINI_API_KEY secret and ensure it is valid and has the necessary permissions.`);
+            await insertAgentActivity(supabaseClient, caseId, 'Diagnostic Agent', 'System', 'Gemini Connection Test Failed', `Failed to connect to Gemini API using gemini-2.5-pro: ${e.message}`, 'error');
+            throw new Error(`Gemini Connection Test Failed for gemini-2.5-pro: ${e.message}. Please verify your GOOGLE_GEMINI_API_KEY secret and ensure it has permissions for this model.`);
         }
     }
 
