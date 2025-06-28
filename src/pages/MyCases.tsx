@@ -152,17 +152,17 @@ const MyCases = () => {
             {filteredCases.map((caseItem) => (
               <Card
                 key={caseItem.id}
-                className="flex flex-col hover:shadow-lg transition-shadow duration-300"
+                className="flex flex-col transition-all duration-300 ease-in-out hover:shadow-lg dark:hover:shadow-primary/10"
               >
                 <CardHeader className="pb-4">
                   <div className="flex justify-between items-start gap-2">
-                    <CardTitle className="text-lg">{caseItem.name}</CardTitle>
+                    <CardTitle className="text-lg flex-grow min-w-0 break-words">{caseItem.name}</CardTitle>
                     <Badge variant={
                       caseItem.status === "Analysis Complete" ? "default" :
                       caseItem.status === "In Progress" ? "secondary" :
                       caseItem.status === "Error" ? "destructive" :
                       "outline"
-                    } className="flex-shrink-0">
+                    } className="flex-shrink-0 ml-2">
                       {caseItem.status}
                     </Badge>
                   </div>
