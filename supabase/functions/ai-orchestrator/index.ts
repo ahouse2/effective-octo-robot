@@ -202,7 +202,16 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
         throw new Error(`Failed to generate content with Gemini. Please check your Gemini API key and permissions. Original error: ${e.message}`);
     }
     
-    const responseText = result.response.text();
+    const response = result.response;
+    if (response.promptFeedback?.blockReason) {
+        const blockReason = response.promptFeedback.blockReason;
+        const safetyRatings = response.promptFeedback.safetyRatings.map(r => `${r.category}: ${r.probability}`).join(', ');
+        const errorMessage = `The AI's response was blocked for safety reasons. Reason: ${blockReason}. Details: [${safetyRatings}]. Please try rephrasing your prompt or check the content of the documents.`;
+        console.error("GEMINI_HANDLER: Response blocked.", errorMessage);
+        throw new Error(errorMessage);
+    }
+    
+    const responseText = response.text();
     console.log("GEMINI_HANDLER: Response received from Gemini.");
 
     await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'AI', 'RAG Response', responseText, 'completed');
