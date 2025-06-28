@@ -133,17 +133,35 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Vertex AI Search', `Searching for documents with query: "${promptContent}"`, 'processing');
     
     let searchResponse;
-    try {
-        const servingConfig = `projects/${gcpProjectId}/locations/global/collections/default_collection/dataStores/${gcpDataStoreId}/servingConfigs/default_serving_config`;
-        [searchResponse] = await discoveryEngineClient.search({ 
-            servingConfig, 
-            query: promptContent, 
-            pageSize: 10,
-            contentSearchSpec: { snippetSpec: { returnSnippet: true } } 
-        }, { timeout: 120000 });
-    } catch (e) {
-        await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Vertex AI Search Failed', `Error during Vertex AI search: ${e.message}`, 'error');
-        throw e;
+    const maxRetries = 3;
+    let attempt = 0;
+    let lastError: Error | null = null;
+
+    while (attempt < maxRetries) {
+        try {
+            const servingConfig = `projects/${gcpProjectId}/locations/global/collections/default_collection/dataStores/${gcpDataStoreId}/servingConfigs/default_serving_config`;
+            [searchResponse] = await discoveryEngineClient.search({ 
+                servingConfig, 
+                query: promptContent, 
+                pageSize: 10,
+                contentSearchSpec: { snippetSpec: { returnSnippet: true } } 
+            }, { timeout: 120000 });
+            
+            lastError = null;
+            break; 
+        } catch (e) {
+            lastError = e;
+            attempt++;
+            await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Vertex AI Search Retry', `Attempt ${attempt} failed. Retrying in 3 seconds... Error: ${e.message}`, 'processing');
+            if (attempt < maxRetries) {
+                await new Promise(resolve => setTimeout(resolve, 3000));
+            }
+        }
+    }
+
+    if (lastError) {
+        await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Vertex AI Search Failed', `All ${maxRetries} search attempts failed. Last error: ${lastError.message}`, 'error');
+        throw lastError;
     }
     
     const contextSnippetsArray: string[] = [];
