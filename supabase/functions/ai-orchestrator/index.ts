@@ -211,6 +211,28 @@ serve(async (req) => {
     const userId = await getUserIdFromRequest(req, supabaseClient);
     if (!caseId || !userId || !command) throw new Error('caseId, userId, and command are required');
 
+    if (command === 'search_evidence') {
+        const gcpProjectId = Deno.env.get('GCP_PROJECT_ID');
+        const gcpDataStoreId = Deno.env.get('GCP_VERTEX_AI_DATA_STORE_ID');
+        const gcpServiceAccountKey = JSON.parse(Deno.env.get('GCP_SERVICE_ACCOUNT_KEY') ?? '{}');
+        const discoveryEngineClient = new v1.SearchServiceClient({
+            projectId: gcpProjectId,
+            credentials: { client_email: gcpServiceAccountKey.client_email, private_key: gcpServiceAccountKey.private_key },
+        });
+        const servingConfig = discoveryEngineClient.servingConfigPath(gcpProjectId, 'global', gcpDataStoreId, 'default_serving_config');
+        const [searchResponse] = await discoveryEngineClient.search({
+            servingConfig,
+            query: payload.query,
+            pageSize: 10,
+            contentSearchSpec: { snippetSpec: { returnSnippet: true }, summarySpec: { includeCitations: true } }
+        });
+        const results = searchResponse.results?.map(r => ({
+            id: r.document?.id,
+            snippets: r.document?.derivedStructData?.fields?.snippets?.listValue?.values?.map(v => v.structValue?.fields?.snippet?.stringValue) || []
+        })) || [];
+        return new Response(JSON.stringify({ results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
+    }
+
     if (command === 'diagnose_case_settings') {
         const { data, error } = await supabaseClient.from('cases').select('*').eq('id', caseId).single();
         if (error || !data) {
@@ -245,8 +267,6 @@ serve(async (req) => {
           projectId: gcpProjectId,
           credentials: { client_email: gcpServiceAccountKey.client_email, private_key: gcpServiceAccountKey.private_key },
         });
-        // The client constructor doesn't throw on bad credentials, so we need to make a simple call.
-        // This call will fail if permissions are wrong, but that's a good diagnostic.
         await discoveryEngineClient.listDataStores({parent: `projects/${gcpProjectId}/locations/global/collections/default_collection`});
         
         return new Response(JSON.stringify({ message: 'GCP connection successful!' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });

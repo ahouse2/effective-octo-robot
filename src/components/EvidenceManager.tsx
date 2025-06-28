@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Folder, FileText, Download, Trash, RefreshCw, LayoutGrid, ListTree } from "lucide-react";
+import { Folder, FileText, Download, Trash, RefreshCw, LayoutGrid, ListTree, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useSession } from "@/components/SessionContextProvider";
@@ -21,6 +21,8 @@ import {
 import { EditFileMetadataDialog } from "./EditFileMetadataDialog";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { DocumentViewer } from "./DocumentViewer";
+import { Input } from "@/components/ui/input";
+import { debounce } from "lodash";
 
 interface FileMetadata {
   id: string;
@@ -34,8 +36,8 @@ interface FileMetadata {
   suggested_name: string | null;
 }
 
-interface EvidenceManagerProps {
-  caseId: string;
+interface SearchResult extends FileMetadata {
+  snippets: string[];
 }
 
 // Recursive component to render the folder tree view
@@ -98,7 +100,7 @@ const FolderTreeView = ({ node, level = 0, handleDeleteFile, handleFileClick }: 
 };
 
 export const EvidenceManager: React.FC<EvidenceManagerProps> = ({ caseId }) => {
-  const [files, setFiles] = useState<FileMetadata[]>([]);
+  const [allFiles, setAllFiles] = useState<FileMetadata[]>([]);
   const [groupedFiles, setGroupedFiles] = useState<Record<string, FileMetadata[]>>({});
   const [folderStructure, setFolderStructure] = useState<any>({});
   const [viewMode, setViewMode] = useState<'category' | 'folder'>('category');
@@ -107,6 +109,9 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({ caseId }) => {
   const { user } = useSession();
   const [isViewerOpen, setIsViewerOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<FileMetadata | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[] | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
 
   const fetchFiles = async () => {
     setLoading(true);
@@ -122,7 +127,7 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({ caseId }) => {
       console.error(error);
     } else {
       const fetchedFiles = data || [];
-      setFiles(fetchedFiles);
+      setAllFiles(fetchedFiles);
 
       // Group by AI category
       const groupedByCategory = fetchedFiles.reduce((acc, file) => {
@@ -167,6 +172,40 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({ caseId }) => {
       return () => { supabase.removeChannel(channel); };
     }
   }, [caseId, user]);
+
+  const handleSearch = async (query: string) => {
+    if (!query) {
+      setSearchResults(null);
+      return;
+    }
+    setIsSearching(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('ai-orchestrator', {
+        body: { caseId, command: 'search_evidence', payload: { query } },
+      });
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+
+      // Join search results with local file metadata
+      const enrichedResults = data.results.map((result: any) => {
+        const fileInfo = allFiles.find(f => f.id === result.id);
+        return fileInfo ? { ...fileInfo, snippets: result.snippets } : null;
+      }).filter(Boolean);
+
+      setSearchResults(enrichedResults);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to perform search.");
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const debouncedSearch = useCallback(debounce(handleSearch, 300), [allFiles]);
+
+  useEffect(() => {
+    debouncedSearch(searchQuery);
+    return () => debouncedSearch.cancel();
+  }, [searchQuery, debouncedSearch]);
 
   const handleDownloadZip = async (category?: string) => {
     const downloadKey = category || 'all';
@@ -231,6 +270,27 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({ caseId }) => {
     setIsViewerOpen(true);
   };
 
+  const renderSearchResults = () => (
+    <div className="space-y-4">
+      {isSearching ? (
+        <p className="text-center py-4">Searching...</p>
+      ) : searchResults && searchResults.length > 0 ? (
+        searchResults.map(file => (
+          <div key={file.id} className="p-3 border rounded-lg">
+            <p className="font-semibold text-primary cursor-pointer hover:underline" onClick={() => handleFileClick(file)}>{file.suggested_name || file.file_name}</p>
+            <div className="mt-2 space-y-1">
+              {file.snippets.map((snippet, i) => (
+                <p key={i} className="text-sm text-muted-foreground border-l-2 pl-2" dangerouslySetInnerHTML={{ __html: snippet }} />
+              ))}
+            </div>
+          </div>
+        ))
+      ) : (
+        <p className="text-center py-4">No results found for "{searchQuery}".</p>
+      )}
+    </div>
+  );
+
   return (
     <>
       <Card>
@@ -238,7 +298,7 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({ caseId }) => {
           <div className="flex justify-between items-center">
             <div>
               <CardTitle>Evidence Manager</CardTitle>
-              <CardDescription>View files by AI category or original folder structure.</CardDescription>
+              <CardDescription>View, search, and manage your case files.</CardDescription>
             </div>
             <div className="flex items-center space-x-2">
               <ToggleGroup type="single" value={viewMode} onValueChange={(value) => { if (value) setViewMode(value as 'category' | 'folder') }} className="mr-2">
@@ -252,17 +312,34 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({ caseId }) => {
               <Button variant="ghost" size="icon" onClick={fetchFiles} disabled={loading}>
                 <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               </Button>
-              <Button onClick={() => handleDownloadZip()} disabled={isDownloading['all'] || files.length === 0}>
+              <Button onClick={() => handleDownloadZip()} disabled={isDownloading['all'] || allFiles.length === 0}>
                 <Download className="h-4 w-4 mr-2" />
                 {isDownloading['all'] ? "Zipping..." : "Download All"}
               </Button>
             </div>
           </div>
+          <div className="relative mt-4">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Search within evidence files..."
+              className="w-full pl-8"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <Button variant="ghost" size="icon" className="absolute right-1 top-1 h-7 w-7" onClick={() => setSearchQuery("")}>
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {loading ? (
             <p className="text-center py-4">Loading evidence...</p>
-          ) : files.length === 0 ? (
+          ) : searchResults ? (
+            renderSearchResults()
+          ) : allFiles.length === 0 ? (
             <p className="text-center py-4">No evidence files have been uploaded or categorized yet.</p>
           ) : (
             <ScrollArea className="h-[400px] pr-4">
