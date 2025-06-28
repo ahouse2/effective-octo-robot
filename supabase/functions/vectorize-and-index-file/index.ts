@@ -48,7 +48,7 @@ serve(async (req) => {
     });
     const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
     const genAI = new GoogleGenerativeAI(geminiApiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
 
     // --- Download file from Supabase Storage ---
     const { data: fileBlob, error: downloadError } = await supabaseClient.storage
