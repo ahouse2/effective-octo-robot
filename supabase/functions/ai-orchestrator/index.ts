@@ -134,7 +134,7 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     
     let searchResponse;
     try {
-        const servingConfig = discoveryEngineClient.servingConfigPath(gcpProjectId, 'global', gcpDataStoreId, 'default_serving_config');
+        const servingConfig = `projects/${gcpProjectId}/locations/global/collections/default_collection/dataStores/${gcpDataStoreId}/servingConfigs/default_serving_config`;
         [searchResponse] = await discoveryEngineClient.search({ 
             servingConfig, 
             query: promptContent, 
@@ -230,7 +230,7 @@ serve(async (req) => {
             projectId: gcpProjectId,
             credentials: { client_email: gcpServiceAccountKey.client_email, private_key: gcpServiceAccountKey.private_key },
         });
-        const servingConfig = discoveryEngineClient.servingConfigPath(gcpProjectId, 'global', gcpDataStoreId, 'default_serving_config');
+        const servingConfig = `projects/${gcpProjectId}/locations/global/collections/default_collection/dataStores/${gcpDataStoreId}/servingConfigs/default_serving_config`;
         const [searchResponse] = await discoveryEngineClient.search({
             servingConfig,
             query: payload.query,
