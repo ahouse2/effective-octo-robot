@@ -140,7 +140,7 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
             contentSearchSpec: { snippetSpec: { returnSnippet: true } } 
         });
     } catch (e) {
-        throw new Error(`Failed to search documents in Vertex AI. Check GCP permissions. Original error: ${e.message}`);
+        throw new Error(`Failed to search documents in Vertex AI. Check GCP permissions and Data Store location. Original error: ${e.message}`);
     }
     
     const contextSnippetsArray: string[] = [];
@@ -177,6 +177,10 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     const result = await model.generateContent(synthesisPrompt);
     
     const response = result.response;
+    if (!response) {
+        throw new Error("The AI model did not return a valid response. This could be due to a network issue or an internal error at Google AI.");
+    }
+
     if (response.promptFeedback?.blockReason) {
         const blockReason = response.promptFeedback.blockReason;
         const safetyRatings = response.promptFeedback.safetyRatings?.map(r => `${r.category}: ${r.probability}`).join(', ');
@@ -197,11 +201,6 @@ serve(async (req) => {
   let body;
   try {
     body = await req.json();
-  } catch (e) {
-    return new Response(JSON.stringify({ error: 'Invalid JSON in request body' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-  }
-
-  try {
     const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '', { auth: { persistSession: false } });
     const { caseId, command, payload } = body;
     const userId = await getUserIdFromRequest(req, supabaseClient);
@@ -278,20 +277,11 @@ serve(async (req) => {
     let { ai_model } = caseData;
 
     if (ai_model === 'gemini') {
-        await supabaseClient.from('cases').update({ openai_assistant_id: null, openai_thread_id: null }).eq('id', caseId);
-        await insertAgentActivity(supabaseClient, caseId, 'Orchestrator', 'System', 'Housekeeping', 'Cleared legacy OpenAI settings for Gemini case.', 'completed');
-    }
-
-    await insertAgentActivity(supabaseClient, caseId, 'Orchestrator', 'System', 'Command Received', `Received command '${command}'. Fetched case settings. Routing to AI model: [${ai_model}].`, 'processing');
-    
-    await supabaseClient.from('cases').update({ status: 'In Progress' }).eq('id', caseId);
-
-    if (ai_model === 'openai') {
-        const openai = new OpenAI({ apiKey: Deno.env.get('OPENAI_API_KEY') });
-        await handleOpenAICommand(supabaseClient, openai, caseId, userId, command, payload);
-    } else if (ai_model === 'gemini') {
         const genAI = new GoogleGenerativeAI(Deno.env.get('GOOGLE_GEMINI_API_KEY') ?? '');
         await handleGeminiRAGCommand(supabaseClient, genAI, caseId, command, payload);
+    } else if (ai_model === 'openai') {
+        const openai = new OpenAI({ apiKey: Deno.env.get('OPENAI_API_KEY') });
+        await handleOpenAICommand(supabaseClient, openai, caseId, userId, command, payload);
     } else {
       await insertAgentActivity(supabaseClient, caseId, 'Orchestrator', 'System', 'Routing Error', `Unsupported or null AI model configured: [${ai_model}]. Halting execution.`, 'error');
       throw new Error(`Unsupported AI model: ${ai_model}`);
