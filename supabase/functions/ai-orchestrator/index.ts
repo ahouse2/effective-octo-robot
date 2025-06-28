@@ -160,15 +160,24 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     try {
         const servingConfig = discoveryEngineClient.servingConfigPath(gcpProjectId, 'global', gcpDataStoreId, 'default_serving_config');
         console.log(`GEMINI_HANDLER: Searching with config: ${servingConfig}`);
-        [searchResponse] = await discoveryEngineClient.search({ servingConfig, query: promptContent, pageSize: 5 });
+        [searchResponse] = await discoveryEngineClient.search({ 
+            servingConfig, 
+            query: promptContent, 
+            pageSize: 10,
+            contentSearchSpec: { snippetSpec: { returnSnippet: true } } 
+        });
         console.log("GEMINI_HANDLER: Search completed successfully.");
     } catch (e) {
         console.error("GEMINI_HANDLER: Vertex AI Search Error:", e);
         throw new Error(`Failed to search documents in Vertex AI. Please check your GCP project permissions (the service account needs the 'Vertex AI User' role), that the Vertex AI Search API is enabled, and that your Data Store ID is correct. Original error: ${e.message}`);
     }
     
-    const contextSnippets = searchResponse.results?.map(r => r.document?.derivedStructData?.fields?.content?.stringValue).filter(Boolean).join('\n\n---\n\n');
-    console.log(`GEMINI_HANDLER: Found ${searchResponse.results?.length || 0} snippets.`);
+    const contextSnippets = searchResponse.results
+        ?.flatMap(r => r.document?.derivedStructData?.fields?.snippets?.listValue?.values?.map(v => v.structValue?.fields?.snippet?.stringValue) || [])
+        .filter(Boolean)
+        .join('\n\n---\n\n');
+
+    console.log(`GEMINI_HANDLER: Found ${contextSnippets ? contextSnippets.split('\n\n---\n\n').length : 0} snippets.`);
 
     if (!contextSnippets) {
         console.log("GEMINI_HANDLER: No context snippets found. Ending process.");
