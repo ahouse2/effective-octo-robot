@@ -62,7 +62,7 @@ serve(async (req) => {
       servingConfig,
       query,
       pageSize: 10,
-      contentSearchSpec: { snippetSpec: { returnSnippet: true }, summarySpec: { includeCitations: true } }
+      contentSearchSpec: { snippetSpec: { returnSnippet: true } } // Removed summarySpec to improve performance
     }, { timeout: 120000 });
 
     return new Response(JSON.stringify(searchResponse), {
