@@ -160,26 +160,60 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
     setIsResummarizing(true);
     const loadingToastId = toast.loading("Starting re-summarization for all files...");
     try {
-      const { data: files, error: filesError } = await supabase
-        .from('case_files_metadata')
-        .select('id, file_path, case_id')
-        .eq('case_id', caseId);
+      let allFiles: any[] = [];
+      let hasMore = true;
+      let page = 0;
+      const pageSize = 1000; // Supabase default limit
 
-      if (filesError) throw filesError;
-      if (!files || files.length === 0) {
+      toast.info("Fetching file list...", { id: loadingToastId });
+
+      while (hasMore) {
+        const from = page * pageSize;
+        const to = from + pageSize - 1;
+        
+        const { data: files, error: filesError } = await supabase
+          .from('case_files_metadata')
+          .select('id, file_path, case_id')
+          .eq('case_id', caseId)
+          .range(from, to);
+
+        if (filesError) throw filesError;
+
+        if (files && files.length > 0) {
+          allFiles = allFiles.concat(files);
+        }
+
+        if (!files || files.length < pageSize) {
+          hasMore = false;
+        } else {
+          page++;
+        }
+      }
+
+      if (allFiles.length === 0) {
         toast.info("No files found in this case to re-summarize.", { id: loadingToastId });
+        setIsResummarizing(false);
         return;
       }
 
-      toast.info(`Found ${files.length} files. Submitting to summarizer agent...`, { id: loadingToastId });
+      toast.info(`Found ${allFiles.length} files. Submitting to summarizer agent... This may take a while.`, { id: loadingToastId });
 
-      for (const file of files) {
-        await supabase.functions.invoke('summarize-file', {
-          body: { filePath: file.file_path, fileId: file.id, caseId: file.case_id },
-        });
+      const batchSize = 10; // Invoke 10 functions at a time
+      for (let i = 0; i < allFiles.length; i += batchSize) {
+          const batch = allFiles.slice(i, i + batchSize);
+          const currentBatchNum = i / batchSize + 1;
+          const totalBatches = Math.ceil(allFiles.length / batchSize);
+          toast.info(`Processing batch ${currentBatchNum} of ${totalBatches}...`, { id: loadingToastId });
+          
+          const promises = batch.map(file => 
+              supabase.functions.invoke('summarize-file', {
+                  body: { filePath: file.file_path, fileId: file.id, caseId: file.case_id },
+              })
+          );
+          await Promise.all(promises);
       }
 
-      toast.success(`Successfully submitted all ${files.length} files for re-summarization.`, { id: loadingToastId });
+      toast.success(`Successfully submitted all ${allFiles.length} files for re-summarization.`, { id: loadingToastId });
     } catch (err: any) {
       console.error("Re-summarization error:", err);
       toast.error(err.message || "Failed to start re-summarization.", { id: loadingToastId });
