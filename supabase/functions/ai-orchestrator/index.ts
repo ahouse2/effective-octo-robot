@@ -104,34 +104,44 @@ async function handleOpenAICommand(supabaseClient: SupabaseClient, openai: OpenA
 // --- GEMINI RAG HANDLER (NEW SIMPLIFIED VERSION) ---
 async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: GoogleGenerativeAI, caseId: string, command: string, payload: any) {
     let promptContent = payload.promptContent;
+    let files;
+    let dbSearchError;
+
     if (command === 're_run_analysis') {
         promptContent = `Perform a comprehensive analysis of all documents. Summarize the key facts, events, and overall case narrative based on the entire evidence locker.`;
+        await updateProgress(supabaseClient, caseId, 10, 'Gathering all evidence summaries...');
+        await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Process Started', 'Gathering all available evidence for a full analysis.', 'processing');
+        
+        const { data, error } = await supabaseClient
+            .from('case_files_metadata')
+            .select('suggested_name, description')
+            .eq('case_id', caseId)
+            .not('description', 'is', null);
+        files = data;
+        dbSearchError = error;
+
+    } else { // This handles a specific user prompt
+        await updateProgress(supabaseClient, caseId, 10, 'Searching for relevant documents in Supabase...');
+        await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Process Started', 'Performing text search on file summaries within Supabase.', 'processing');
+        
+        const stopWords = new Set(['a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'has', 'he', 'in', 'is', 'it', 'its', 'of', 'on', 'that', 'the', 'to', 'was', 'were', 'will', 'with', 'this', 'those', 'all', 'any', 'etc']);
+        const searchTerms = Array.from(new Set(
+            promptContent.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").split(/\s+/).filter(term => term.length > 3 && !stopWords.has(term))
+        ));
+
+        if (searchTerms.length === 0) {
+            await insertAgentActivity(supabaseClient, caseId, 'Gemini', 'System', 'No Search Terms', 'Could not extract meaningful search terms from the prompt.', 'completed');
+            return;
+        }
+
+        const { data, error } = await supabaseClient
+            .from('case_files_metadata')
+            .select('suggested_name, description')
+            .eq('case_id', caseId)
+            .or(searchTerms.map(term => `description.ilike.%${term}%`).join(','));
+        files = data;
+        dbSearchError = error;
     }
-    
-    await updateProgress(supabaseClient, caseId, 10, 'Searching for relevant documents in Supabase...');
-    await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Process Started', 'Performing text search on file summaries within Supabase.', 'processing');
-    
-    const stopWords = new Set(['a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'has', 'he', 'in', 'is', 'it', 'its', 'of', 'on', 'that', 'the', 'to', 'was', 'were', 'will', 'with', 'this', 'that', 'these', 'those', 'all', 'any', 'etc']);
-
-    const searchTerms = Array.from(new Set(
-        promptContent
-            .toLowerCase()
-            .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"")
-            .split(/\s+/)
-            .filter(term => term.length > 3 && !stopWords.has(term))
-    ));
-
-    if (searchTerms.length === 0) {
-        await insertAgentActivity(supabaseClient, caseId, 'Gemini', 'System', 'No Search Terms', 'Could not extract meaningful search terms from the prompt.', 'completed');
-        await updateProgress(supabaseClient, caseId, 100, 'Analysis complete: No meaningful search terms found.');
-        return;
-    }
-
-    const { data: files, error: dbSearchError } = await supabaseClient
-        .from('case_files_metadata')
-        .select('suggested_name, description')
-        .eq('case_id', caseId)
-        .or(searchTerms.map(term => `description.ilike.%${term}%`).join(','));
 
     if (dbSearchError) {
         await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Database Search Failed', `Error searching file metadata: ${dbSearchError.message}`, 'error');
