@@ -2,7 +2,6 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import OpenAI from 'https://esm.sh/openai@4.52.7';
 import { GoogleGenerativeAI } from 'https://esm.sh/@google/generative-ai@0.15.0';
-import { v1 } from 'npm:@google-cloud/discoveryengine@2.2.0';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -110,58 +109,21 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
         promptContent = `Perform a comprehensive analysis of all documents. Summarize the key facts, events, and overall case narrative based on the entire evidence locker.`;
     }
     
-    await updateProgress(supabaseClient, caseId, 10, 'Initializing Gemini and Vertex AI...');
-    await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Process Started', 'Initializing Gemini and Vertex AI clients.', 'processing');
+    await updateProgress(supabaseClient, caseId, 10, 'Initializing Gemini and invoking search function...');
+    await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Process Started', 'Invoking dedicated Vertex AI Search function.', 'processing');
     
-    const gcpProjectId = Deno.env.get('GCP_PROJECT_ID');
-    const gcpDataStoreId = Deno.env.get('GCP_VERTEX_AI_DATA_STORE_ID');
-    const gcpServiceAccountKeyRaw = Deno.env.get('GCP_SERVICE_ACCOUNT_KEY');
-    const geminiApiKey = Deno.env.get('GOOGLE_GEMINI_API_KEY');
+    const { data: searchResponse, error: searchError } = await supabaseClient.functions.invoke(
+        'vertex-ai-search',
+        { body: { query: promptContent, caseId } }
+    );
 
-    if (!gcpProjectId || !gcpDataStoreId || !gcpServiceAccountKeyRaw || !geminiApiKey) {
-        throw new Error(`Gemini analysis failed: Missing required Supabase secrets.`);
+    if (searchError) {
+        await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Search Function Failed', `Error invoking vertex-ai-search function: ${searchError.message}`, 'error');
+        throw new Error(`Failed to invoke vertex-ai-search function: ${searchError.message}`);
     }
-
-    const gcpServiceAccountKey = JSON.parse(gcpServiceAccountKeyRaw);
-    
-    const discoveryEngineClient = new v1.SearchServiceClient({
-      projectId: gcpProjectId,
-      credentials: { client_email: gcpServiceAccountKey.client_email, private_key: gcpServiceAccountKey.private_key },
-    });
-
-    await updateProgress(supabaseClient, caseId, 25, 'Searching for relevant documents in Vertex AI...');
-    await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Vertex AI Search', `Searching for documents with query: "${promptContent}"`, 'processing');
-    
-    let searchResponse;
-    const maxRetries = 3;
-    let attempt = 0;
-    let lastError: Error | null = null;
-
-    while (attempt < maxRetries) {
-        try {
-            const servingConfig = `projects/${gcpProjectId}/locations/global/collections/default_collection/dataStores/${gcpDataStoreId}/servingConfigs/default_serving_config`;
-            [searchResponse] = await discoveryEngineClient.search({ 
-                servingConfig, 
-                query: promptContent, 
-                pageSize: 10,
-                contentSearchSpec: { snippetSpec: { returnSnippet: true } } 
-            }, { timeout: 120000 });
-            
-            lastError = null;
-            break; 
-        } catch (e) {
-            lastError = e;
-            attempt++;
-            await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Vertex AI Search Retry', `Attempt ${attempt} failed. Retrying in 3 seconds... Error: ${e.message}`, 'processing');
-            if (attempt < maxRetries) {
-                await new Promise(resolve => setTimeout(resolve, 3000));
-            }
-        }
-    }
-
-    if (lastError) {
-        await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Vertex AI Search Failed', `All ${maxRetries} search attempts failed. Last error: ${lastError.message}`, 'error');
-        throw lastError;
+    if (searchResponse.error) {
+        await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Search Function Error', `Error from vertex-ai-search function: ${searchResponse.error}`, 'error');
+        throw new Error(`Error from vertex-ai-search function: ${searchResponse.error}`);
     }
     
     const contextSnippetsArray: string[] = [];
@@ -241,23 +203,16 @@ serve(async (req) => {
     if (!caseId || !userId || !command) throw new Error('caseId, userId, and command are required');
 
     if (command === 'search_evidence') {
-        const gcpProjectId = Deno.env.get('GCP_PROJECT_ID');
-        const gcpDataStoreId = Deno.env.get('GCP_VERTEX_AI_DATA_STORE_ID');
-        const gcpServiceAccountKey = JSON.parse(Deno.env.get('GCP_SERVICE_ACCOUNT_KEY') ?? '{}');
-        const discoveryEngineClient = new v1.SearchServiceClient({
-            projectId: gcpProjectId,
-            credentials: { client_email: gcpServiceAccountKey.client_email, private_key: gcpServiceAccountKey.private_key },
-        });
-        const servingConfig = `projects/${gcpProjectId}/locations/global/collections/default_collection/dataStores/${gcpDataStoreId}/servingConfigs/default_serving_config`;
-        const [searchResponse] = await discoveryEngineClient.search({
-            servingConfig,
-            query: payload.query,
-            pageSize: 10,
-            contentSearchSpec: { snippetSpec: { returnSnippet: true }, summarySpec: { includeCitations: true } }
-        }, { timeout: 120000 });
-        const results = searchResponse.results?.map(r => ({
+        const { data: searchResponse, error: searchError } = await supabaseClient.functions.invoke(
+            'vertex-ai-search',
+            { body: { query: payload.query, caseId } }
+        );
+        if (searchError) throw new Error(`Failed to invoke vertex-ai-search function: ${searchError.message}`);
+        if (searchResponse.error) throw new Error(`Error from vertex-ai-search function: ${searchResponse.error}`);
+
+        const results = searchResponse.results?.map((r: any) => ({
             id: r.document?.id,
-            snippets: r.document?.derivedStructData?.fields?.snippets?.listValue?.values?.map(v => v.structValue?.fields?.snippet?.stringValue) || []
+            snippets: r.document?.derivedStructData?.fields?.snippets?.listValue?.values?.map((v: any) => v.structValue?.fields?.snippet?.stringValue) || []
         })) || [];
         return new Response(JSON.stringify({ results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
     }
@@ -283,25 +238,12 @@ serve(async (req) => {
 
     if (command === 'diagnose_gcp_connection') {
       try {
-        const gcpServiceAccountKeyRaw = Deno.env.get('GCP_SERVICE_ACCOUNT_KEY');
-        if (!gcpServiceAccountKeyRaw) throw new Error("GCP_SERVICE_ACCOUNT_KEY secret is not set.");
-        const gcpServiceAccountKey = JSON.parse(gcpServiceAccountKeyRaw);
-        if (!gcpServiceAccountKey.client_email || !gcpServiceAccountKey.private_key) {
-            throw new Error("GCP_SERVICE_ACCOUNT_KEY is not a valid JSON key file.");
-        }
-        const gcpProjectId = Deno.env.get('GCP_PROJECT_ID');
-        if (!gcpProjectId) throw new Error("GCP_PROJECT_ID secret is not set.");
-
-        const discoveryEngineClient = new v1.SearchServiceClient({
-          projectId: gcpProjectId,
-          credentials: { client_email: gcpServiceAccountKey.client_email, private_key: gcpServiceAccountKey.private_key },
-        });
-        await discoveryEngineClient.listDataStores({parent: `projects/${gcpProjectId}/locations/global/collections/default_collection`});
-        
+        const { error } = await supabaseClient.functions.invoke('vertex-ai-search', { body: { query: 'test_connection' } });
+        if (error) throw error;
         return new Response(JSON.stringify({ message: 'GCP connection successful!' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
       } catch (e) {
         console.error("GCP Connection Diagnosis Error:", e);
-        throw new Error(`GCP Connection Test Failed: ${e.message}. Please verify your GCP_PROJECT_ID and GCP_SERVICE_ACCOUNT_KEY secrets. The service account may also need the 'Vertex AI User' role in your GCP project.`);
+        throw new Error(`GCP Connection Test Failed: ${e.message}. Please verify your GCP secrets and that the vertex-ai-search function is deployed.`);
       }
     }
 
@@ -311,7 +253,6 @@ serve(async (req) => {
             if (!geminiApiKey) throw new Error("GOOGLE_GEMINI_API_KEY secret is not set.");
     
             const genAI = new GoogleGenerativeAI(geminiApiKey);
-            // Test the specific, advanced model
             const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" }); 
             
             await model.generateContent("test");
