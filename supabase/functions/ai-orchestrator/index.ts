@@ -101,57 +101,36 @@ async function handleOpenAICommand(supabaseClient: SupabaseClient, openai: OpenA
     await updateProgress(supabaseClient, caseId, 50, 'OpenAI is processing the request...');
 }
 
-// --- GEMINI RAG HANDLER ---
-
+// --- GEMINI RAG HANDLER (NEW SIMPLIFIED VERSION) ---
 async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: GoogleGenerativeAI, caseId: string, command: string, payload: any) {
     let promptContent = payload.promptContent;
     if (command === 're_run_analysis') {
         promptContent = `Perform a comprehensive analysis of all documents. Summarize the key facts, events, and overall case narrative based on the entire evidence locker.`;
     }
     
-    await updateProgress(supabaseClient, caseId, 10, 'Initializing Gemini and invoking search function...');
-    await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Process Started', 'Invoking dedicated Vertex AI Search function.', 'processing');
+    await updateProgress(supabaseClient, caseId, 10, 'Searching for relevant documents in Supabase...');
+    await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Process Started', 'Performing text search on file summaries within Supabase.', 'processing');
     
-    const { data: searchResponse, error: searchError } = await supabaseClient.functions.invoke(
-        'vertex-ai-search',
-        { body: { query: promptContent, caseId } }
-    );
+    const searchTerms = promptContent.split(' ').filter(term => term.length > 3);
+    const { data: files, error: dbSearchError } = await supabaseClient
+        .from('case_files_metadata')
+        .select('suggested_name, description')
+        .eq('case_id', caseId)
+        .or(searchTerms.map(term => `description.ilike.%${term}%`).join(','));
 
-    if (searchError) {
-        await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Search Function Failed', `Error invoking vertex-ai-search function: ${searchError.message}`, 'error');
-        throw new Error(`Failed to invoke vertex-ai-search function: ${searchError.message}`);
+    if (dbSearchError) {
+        await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Database Search Failed', `Error searching file metadata: ${dbSearchError.message}`, 'error');
+        throw new Error(`Failed to search file metadata: ${dbSearchError.message}`);
     }
-    if (searchResponse.error) {
-        await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Search Function Error', `Error from vertex-ai-search function: ${searchResponse.error}`, 'error');
-        throw new Error(`Error from vertex-ai-search function: ${searchResponse.error}`);
-    }
-    
-    const contextSnippetsArray: string[] = [];
-    if (searchResponse && searchResponse.results) {
-        for (const result of searchResponse.results) {
-            try {
-                const snippetsList = result.document?.derivedStructData?.fields?.snippets?.listValue?.values;
-                if (snippetsList) {
-                    for (const snippetValue of snippetsList) {
-                        const snippetText = snippetValue.structValue?.fields?.snippet?.stringValue;
-                        if (snippetText) {
-                            contextSnippetsArray.push(snippetText);
-                        }
-                    }
-                }
-            } catch (e) {
-                console.error("GEMINI_HANDLER: Error processing a search result snippet. Skipping result.", e);
-            }
-        }
-    }
-    const contextSnippets = contextSnippetsArray.join('\n\n---\n\n');
-    await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Search Complete', `Found ${contextSnippetsArray.length} context snippets.`, 'completed');
 
-    if (!contextSnippets) {
-        await insertAgentActivity(supabaseClient, caseId, 'Gemini', 'System', 'No Context Found', 'Could not find relevant documents in Vertex AI for this query.', 'completed');
+    if (!files || files.length === 0) {
+        await insertAgentActivity(supabaseClient, caseId, 'Gemini', 'System', 'No Context Found', 'Could not find relevant documents for this query.', 'completed');
         await updateProgress(supabaseClient, caseId, 100, 'Analysis complete: No relevant documents found.');
         return;
     }
+
+    const contextSnippets = files.map(file => `From file "${file.suggested_name}":\n${file.description}`).join('\n\n---\n\n');
+    await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Search Complete', `Found ${files.length} potentially relevant files.`, 'completed');
 
     await updateProgress(supabaseClient, caseId, 60, 'Synthesizing response with Gemini...');
     const { data: caseDetails } = await supabaseClient.from('cases').select('case_goals, system_instruction').eq('id', caseId).single();
@@ -159,17 +138,11 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Prompt Synthesis', `Sending prompt of length ${synthesisPrompt.length} to Gemini.`, 'processing');
 
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
-    let result;
-    try {
-        result = await model.generateContent(synthesisPrompt);
-    } catch (e) {
-        await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Gemini API Call Failed', `Error calling the Gemini API: ${e.message}`, 'error');
-        throw e;
-    }
+    const result = await model.generateContent(synthesisPrompt);
     
     const response = result.response;
     if (!response) {
-        throw new Error("The AI model did not return a valid response. This could be due to a network issue or an internal error at Google AI.");
+        throw new Error("The AI model did not return a valid response.");
     }
 
     if (response.promptFeedback?.blockReason) {
@@ -202,47 +175,6 @@ serve(async (req) => {
     const userId = await getUserIdFromRequest(req, supabaseClient);
     if (!caseId || !userId || !command) throw new Error('caseId, userId, and command are required');
 
-    if (command === 're_index_all_files') {
-        await insertAgentActivity(supabaseClient, caseId, 'System', 'Indexer', 'Re-indexing Started', 'Fetching all files for re-indexing.', 'processing');
-        
-        const { data: files, error: filesError } = await supabaseClient
-            .from('case_files_metadata')
-            .select('id, file_path, case_id')
-            .eq('case_id', caseId);
-
-        if (filesError) throw new Error(`Failed to fetch files for re-indexing: ${filesError.message}`);
-        if (!files || files.length === 0) {
-            await insertAgentActivity(supabaseClient, caseId, 'System', 'Indexer', 'Re-indexing Complete', 'No files found to re-index.', 'completed');
-            return new Response(JSON.stringify({ message: 'No files to re-index.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
-        }
-
-        await insertAgentActivity(supabaseClient, caseId, 'System', 'Indexer', 'Re-indexing In Progress', `Found ${files.length} files. Submitting to vectorization service.`, 'processing');
-
-        for (const file of files) {
-            await supabaseClient.functions.invoke('vectorize-and-index-file', {
-                body: { filePath: file.file_path, fileId: file.id, caseId: file.case_id },
-            });
-        }
-
-        await insertAgentActivity(supabaseClient, caseId, 'System', 'Indexer', 'Re-indexing Complete', `Successfully submitted all ${files.length} files for re-indexing.`, 'completed');
-        return new Response(JSON.stringify({ message: `Submitted ${files.length} files for re-indexing.` }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
-    }
-
-    if (command === 'search_evidence') {
-        const { data: searchResponse, error: searchError } = await supabaseClient.functions.invoke(
-            'vertex-ai-search',
-            { body: { query: payload.query, caseId } }
-        );
-        if (searchError) throw new Error(`Failed to invoke vertex-ai-search function: ${searchError.message}`);
-        if (searchResponse.error) throw new Error(`Error from vertex-ai-search function: ${searchResponse.error}`);
-
-        const results = searchResponse.results?.map((r: any) => ({
-            id: r.document?.id,
-            snippets: r.document?.derivedStructData?.fields?.snippets?.listValue?.values?.map((v: any) => v.structValue?.fields?.snippet?.stringValue) || []
-        })) || [];
-        return new Response(JSON.stringify({ results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
-    }
-
     if (command === 'diagnose_case_settings') {
         const { data, error } = await supabaseClient.from('cases').select('*').eq('id', caseId).single();
         if (error || !data) {
@@ -260,17 +192,6 @@ serve(async (req) => {
         `;
         await insertAgentActivity(supabaseClient, caseId, 'Diagnostic Agent', 'System', 'Diagnostic Report', settingsReport, 'completed');
         return new Response(JSON.stringify({ message: 'Diagnostics complete. Check the agent activity log.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
-    }
-
-    if (command === 'diagnose_gcp_connection') {
-      try {
-        const { error } = await supabaseClient.functions.invoke('vertex-ai-search', { body: { query: 'test_connection', caseId: caseId } });
-        if (error) throw error;
-        return new Response(JSON.stringify({ message: 'GCP connection successful!' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
-      } catch (e) {
-        console.error("GCP Connection Diagnosis Error:", e);
-        throw new Error(`GCP Connection Test Failed: ${e.message}. Please verify your GCP secrets and that the vertex-ai-search function is deployed.`);
-      }
     }
 
     if (command === 'diagnose_gemini_connection') {
