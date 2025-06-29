@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Upload, PlayCircle, Share2, GitGraph, CalendarClock, Bug, TestTube2 } from "lucide-react";
+import { Upload, PlayCircle, Bug, TestTube2, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useSession } from "@/components/SessionContextProvider";
@@ -17,7 +17,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Link } from "react-router-dom";
 
 interface CaseToolsProps {
   caseId: string;
@@ -29,10 +28,10 @@ const MAX_BATCH_SIZE_MB = 4; // Supabase Edge Function payload limit is around 4
 export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isGeneratingTimeline, setIsGeneratingTimeline] = useState(false);
   const [isDiagnosing, setIsDiagnosing] = useState(false);
   const [isTestingGcp, setIsTestingGcp] = useState(false);
   const [isTestingGemini, setIsTestingGemini] = useState(false);
+  const [isReindexing, setIsReindexing] = useState(false);
   const { user } = useSession();
 
   const handleFileChangeAndUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -158,23 +157,23 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
     }
   };
 
-  const handleGenerateTimeline = async () => {
-    setIsGeneratingTimeline(true);
-    const loadingToastId = toast.loading("Starting automated timeline generation...");
+  const handleReindex = async () => {
+    setIsReindexing(true);
+    const loadingToastId = toast.loading("Starting re-indexing process for all files...");
     try {
-      const { error } = await supabase.functions.invoke('create-timeline-from-evidence', {
-        body: { caseId },
+      const { error } = await supabase.functions.invoke('ai-orchestrator', {
+        body: { caseId, command: 're_index_all_files', payload: {} },
       });
       if (error) {
         const detailedError = error.context?.error || error.message;
         throw new Error(detailedError);
       }
-      toast.success("Timeline generation complete. Check the Case Timeline.", { id: loadingToastId });
+      toast.success("Re-indexing process initiated. This may take some time.", { id: loadingToastId });
     } catch (err: any) {
-      console.error("Timeline generation error:", err);
-      toast.error(err.message || "Failed to generate timeline.", { id: loadingToastId });
+      console.error("Re-indexing error:", err);
+      toast.error(err.message || "Failed to start re-indexing.", { id: loadingToastId });
     } finally {
-      setIsGeneratingTimeline(false);
+      setIsReindexing(false);
     }
   };
 
@@ -286,10 +285,6 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
-          <Button onClick={handleGenerateTimeline} disabled={isGeneratingTimeline} className="w-full">
-            <CalendarClock className="h-4 w-4 mr-2" />
-            {isGeneratingTimeline ? "Generating..." : "Generate Timeline"}
-          </Button>
         </div>
       </div>
       <div>
@@ -308,6 +303,28 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
             <TestTube2 className="h-4 w-4 mr-2" />
             {isTestingGemini ? "Testing..." : "Test Gemini API Key"}
           </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button disabled={isReindexing} variant="destructive" className="w-full">
+                <RefreshCw className="h-4 w-4 mr-2" />
+                {isReindexing ? "Re-indexing..." : "Re-index All Files"}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Confirm Re-indexing</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will re-process and re-index all files for this case in Vertex AI Search. This is necessary after a system update or to fix search issues. This may incur costs. Are you sure?
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleReindex}>
+                  Confirm & Start Re-indexing
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
     </div>

@@ -66,7 +66,7 @@ serve(async (req) => {
       // Trigger vectorization for each new file
       for (const meta of insertedMetadata) {
         await supabaseClient.functions.invoke('vectorize-and-index-file', {
-          body: { filePath: meta.file_path, fileId: meta.id },
+          body: { filePath: meta.file_path, fileId: meta.id, caseId: meta.case_id },
         });
       }
     }

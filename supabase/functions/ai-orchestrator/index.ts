@@ -202,6 +202,32 @@ serve(async (req) => {
     const userId = await getUserIdFromRequest(req, supabaseClient);
     if (!caseId || !userId || !command) throw new Error('caseId, userId, and command are required');
 
+    if (command === 're_index_all_files') {
+        await insertAgentActivity(supabaseClient, caseId, 'System', 'Indexer', 'Re-indexing Started', 'Fetching all files for re-indexing.', 'processing');
+        
+        const { data: files, error: filesError } = await supabaseClient
+            .from('case_files_metadata')
+            .select('id, file_path, case_id')
+            .eq('case_id', caseId);
+
+        if (filesError) throw new Error(`Failed to fetch files for re-indexing: ${filesError.message}`);
+        if (!files || files.length === 0) {
+            await insertAgentActivity(supabaseClient, caseId, 'System', 'Indexer', 'Re-indexing Complete', 'No files found to re-index.', 'completed');
+            return new Response(JSON.stringify({ message: 'No files to re-index.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
+        }
+
+        await insertAgentActivity(supabaseClient, caseId, 'System', 'Indexer', 'Re-indexing In Progress', `Found ${files.length} files. Submitting to vectorization service.`, 'processing');
+
+        for (const file of files) {
+            await supabaseClient.functions.invoke('vectorize-and-index-file', {
+                body: { filePath: file.file_path, fileId: file.id, caseId: file.case_id },
+            });
+        }
+
+        await insertAgentActivity(supabaseClient, caseId, 'System', 'Indexer', 'Re-indexing Complete', `Successfully submitted all ${files.length} files for re-indexing.`, 'completed');
+        return new Response(JSON.stringify({ message: `Submitted ${files.length} files for re-indexing.` }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
+    }
+
     if (command === 'search_evidence') {
         const { data: searchResponse, error: searchError } = await supabaseClient.functions.invoke(
             'vertex-ai-search',
@@ -238,7 +264,7 @@ serve(async (req) => {
 
     if (command === 'diagnose_gcp_connection') {
       try {
-        const { error } = await supabaseClient.functions.invoke('vertex-ai-search', { body: { query: 'test_connection' } });
+        const { error } = await supabaseClient.functions.invoke('vertex-ai-search', { body: { query: 'test_connection', caseId: caseId } });
         if (error) throw error;
         return new Response(JSON.stringify({ message: 'GCP connection successful!' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
       } catch (e) {

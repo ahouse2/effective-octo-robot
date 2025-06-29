@@ -38,7 +38,6 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Check if client failed to initialize
   if (initError || !discoveryEngineClient) {
       return new Response(JSON.stringify({ error: `Client initialization failed: ${initError}` }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -47,22 +46,23 @@ serve(async (req) => {
   }
 
   try {
-    const { query } = await req.json();
-    if (!query) throw new Error("Query is required.");
+    const { query, caseId } = await req.json();
+    if (!query || !caseId) throw new Error("Query and caseId are required.");
 
     const gcpDataStoreId = Deno.env.get('GCP_VERTEX_AI_DATA_STORE_ID');
     if (!gcpDataStoreId) {
       throw new Error("GCP_VERTEX_AI_DATA_STORE_ID secret is not set.");
     }
     
-    const gcpProjectId = Deno.env.get('GCP_PROJECT_ID'); // Re-get for the servingConfig path
+    const gcpProjectId = Deno.env.get('GCP_PROJECT_ID');
     const servingConfig = `projects/${gcpProjectId}/locations/global/collections/default_collection/dataStores/${gcpDataStoreId}/servingConfigs/default_serving_config`;
     
     const [searchResponse] = await discoveryEngineClient.search({
       servingConfig,
       query,
+      filter: `case_id: ANY("${caseId}")`,
       pageSize: 10,
-      contentSearchSpec: { snippetSpec: { returnSnippet: true } } // Removed summarySpec to improve performance
+      contentSearchSpec: { snippetSpec: { returnSnippet: true } }
     }, { timeout: 120000 });
 
     return new Response(JSON.stringify(searchResponse), {

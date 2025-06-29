@@ -25,8 +25,8 @@ serve(async (req) => {
   }
 
   try {
-    const { filePath, fileId } = await req.json();
-    if (!filePath || !fileId) throw new Error("filePath and fileId are required.");
+    const { filePath, fileId, caseId } = await req.json();
+    if (!filePath || !fileId || !caseId) throw new Error("filePath, fileId, and caseId are required.");
 
     // --- Get GCP & Gemini Credentials from Supabase Secrets ---
     const gcpProjectId = Deno.env.get('GCP_PROJECT_ID');
@@ -80,17 +80,23 @@ serve(async (req) => {
     }
 
     // --- Import Document to Vertex AI Search ---
-    const parent = discoveryEngineClient.branchPath(gcpProjectId, 'global', gcpDataStoreId, 'default_branch');
+    const parent = `projects/${gcpProjectId}/locations/global/collections/default_collection/dataStores/${gcpDataStoreId}/branches/default_branch`;
     const [operation] = await discoveryEngineClient.importDocuments({
       parent: parent,
+      reconciliationMode: 'INCREMENTAL',
       inlineSource: {
         documents: [{
           parent: parent,
           id: fileId,
           jsonData: JSON.stringify({
-            content: btoa(documentContentForIndexing), // Content must be base64 encoded
-            mime_type: 'text/plain', // We now index the text description for all file types
+            content: btoa(documentContentForIndexing),
+            mime_type: 'text/plain',
           }),
+          structData: {
+            fields: {
+              case_id: { stringValue: caseId },
+            },
+          },
         }],
       },
     });
