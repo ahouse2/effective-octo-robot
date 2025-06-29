@@ -111,7 +111,22 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     await updateProgress(supabaseClient, caseId, 10, 'Searching for relevant documents in Supabase...');
     await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Process Started', 'Performing text search on file summaries within Supabase.', 'processing');
     
-    const searchTerms = promptContent.split(' ').filter(term => term.length > 3);
+    const stopWords = new Set(['a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'has', 'he', 'in', 'is', 'it', 'its', 'of', 'on', 'that', 'the', 'to', 'was', 'were', 'will', 'with', 'this', 'that', 'these', 'those', 'all', 'any', 'etc']);
+
+    const searchTerms = Array.from(new Set(
+        promptContent
+            .toLowerCase()
+            .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"")
+            .split(/\s+/)
+            .filter(term => term.length > 3 && !stopWords.has(term))
+    ));
+
+    if (searchTerms.length === 0) {
+        await insertAgentActivity(supabaseClient, caseId, 'Gemini', 'System', 'No Search Terms', 'Could not extract meaningful search terms from the prompt.', 'completed');
+        await updateProgress(supabaseClient, caseId, 100, 'Analysis complete: No meaningful search terms found.');
+        return;
+    }
+
     const { data: files, error: dbSearchError } = await supabaseClient
         .from('case_files_metadata')
         .select('suggested_name, description')
