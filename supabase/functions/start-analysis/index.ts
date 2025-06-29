@@ -45,11 +45,9 @@ serve(async (req) => {
       });
     }
 
-    // Insert initial records
     await supabaseClient.from('agent_activities').insert({ case_id: caseId, agent_name: 'System', agent_role: 'Setup', activity_type: 'Case Created', content: `Case record created. Ready for evidence upload.`, status: 'completed' });
     await supabaseClient.from('case_theories').insert({ case_id: caseId, status: 'initial' });
 
-    // Process file metadata and trigger vectorization
     if (fileNames && fileNames.length > 0) {
       const fileMetadataInserts = fileNames.map((fileName: string) => ({
         case_id: caseId,
@@ -63,15 +61,14 @@ serve(async (req) => {
         throw new Error('Failed to create file metadata records.');
       }
 
-      // Trigger vectorization for each new file
       for (const meta of insertedMetadata) {
-        await supabaseClient.functions.invoke('vectorize-and-index-file', {
+        await supabaseClient.functions.invoke('summarize-file', {
           body: { filePath: meta.file_path, fileId: meta.id, caseId: meta.case_id },
         });
       }
     }
 
-    return new Response(JSON.stringify({ message: 'Case created and files are being vectorized. Start analysis from the Tools tab.', caseId }), {
+    return new Response(JSON.stringify({ message: 'Case created and files are being summarized. You can run a full analysis once summarization is complete.', caseId }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });

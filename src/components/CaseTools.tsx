@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Upload, PlayCircle, Bug, TestTube2 } from "lucide-react";
+import { Upload, PlayCircle, Bug, TestTube2, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useSession } from "@/components/SessionContextProvider";
@@ -30,6 +30,7 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isDiagnosing, setIsDiagnosing] = useState(false);
   const [isTestingGemini, setIsTestingGemini] = useState(false);
+  const [isResummarizing, setIsResummarizing] = useState(false);
   const { user } = useSession();
 
   const handleFileChangeAndUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -155,6 +156,38 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
     }
   };
 
+  const handleResummarize = async () => {
+    setIsResummarizing(true);
+    const loadingToastId = toast.loading("Starting re-summarization for all files...");
+    try {
+      const { data: files, error: filesError } = await supabase
+        .from('case_files_metadata')
+        .select('id, file_path, case_id')
+        .eq('case_id', caseId);
+
+      if (filesError) throw filesError;
+      if (!files || files.length === 0) {
+        toast.info("No files found in this case to re-summarize.", { id: loadingToastId });
+        return;
+      }
+
+      toast.info(`Found ${files.length} files. Submitting to summarizer agent...`, { id: loadingToastId });
+
+      for (const file of files) {
+        await supabase.functions.invoke('summarize-file', {
+          body: { filePath: file.file_path, fileId: file.id, caseId: file.case_id },
+        });
+      }
+
+      toast.success(`Successfully submitted all ${files.length} files for re-summarization.`, { id: loadingToastId });
+    } catch (err: any) {
+      console.error("Re-summarization error:", err);
+      toast.error(err.message || "Failed to start re-summarization.", { id: loadingToastId });
+    } finally {
+      setIsResummarizing(false);
+    }
+  };
+
   const handleRunDiagnostics = async () => {
     setIsDiagnosing(true);
     const loadingToastId = toast.loading("Running diagnostics...");
@@ -257,6 +290,28 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
             <TestTube2 className="h-4 w-4 mr-2" />
             {isTestingGemini ? "Testing..." : "Test Gemini API Key"}
           </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button disabled={isResummarizing} variant="destructive" className="w-full">
+                <RefreshCw className="h-4 w-4 mr-2" />
+                {isResummarizing ? "Re-summarizing..." : "Re-summarize All Files"}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Confirm Re-summarization</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will re-process and re-summarize all files for this case. This is necessary if summaries are missing or need to be updated. This may incur costs. Are you sure?
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleResummarize}>
+                  Confirm & Start Re-summarizing
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
     </div>

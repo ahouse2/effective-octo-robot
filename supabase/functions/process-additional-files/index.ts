@@ -56,13 +56,20 @@ serve(async (req) => {
           file_path: `${userId}/${caseId}/${relativePath}`,
         };
 
-        const { error } = await supabaseClient
+        const { data: newMeta, error } = await supabaseClient
           .from('case_files_metadata')
-          .insert(fileMetadataInsert);
+          .insert(fileMetadataInsert)
+          .select()
+          .single();
 
         if (error) {
           throw new Error(error.message);
         }
+        
+        await supabaseClient.functions.invoke('summarize-file', {
+            body: { filePath: newMeta.file_path, fileId: newMeta.id, caseId: newMeta.case_id },
+        });
+
         successfulInserts.push(relativePath);
       } catch (error) {
         console.error(`Failed to insert metadata for file: ${relativePath}. Reason:`, error.message);
