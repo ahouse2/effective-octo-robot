@@ -2,31 +2,31 @@ import { toast } from "sonner";
 
 const triggerDownload = (blob: Blob, filename: string) => {
   try {
-    // Create a URL for the blob
+    console.log(`[Download] Triggering download for: ${filename}, Blob size: ${blob.size}, Blob type: ${blob.type}`);
     const url = window.URL.createObjectURL(blob);
-    
-    // Create a temporary anchor element
     const a = document.createElement('a');
     a.style.display = 'none';
     a.href = url;
     a.download = filename;
     
-    // Append to the DOM, trigger the click, and remove it
     document.body.appendChild(a);
     a.click();
-    document.body.removeChild(a);
     
-    // Release the object URL
+    // Cleanup
     window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+    console.log(`[Download] Download triggered for ${filename}.`);
   } catch (error) {
-    console.error("Error triggering download:", error);
-    throw error; // Re-throw to be caught by the caller
+    console.error("[Download] Error in triggerDownload:", error);
+    toast.error("A browser error prevented the download.");
+    throw error;
   }
 };
 
 export const downloadTextFile = (content: string, filename: string) => {
+  console.log(`[Download] Creating text file for download: ${filename}`);
   if (typeof content !== 'string' || !filename) {
-    console.error("Invalid arguments for downloadTextFile", { content, filename });
+    console.error("[Download] Invalid arguments for downloadTextFile", { content, filename });
     toast.error("Failed to export: Invalid data provided.");
     return;
   }
@@ -35,19 +35,19 @@ export const downloadTextFile = (content: string, filename: string) => {
     triggerDownload(blob, filename);
     toast.success("Export successful!");
   } catch (error: any) {
-    console.error("Error downloading text file:", error);
-    toast.error(`Failed to export file: ${error.message}`);
+    console.error("[Download] Error in downloadTextFile:", error);
   }
 };
 
 export const downloadBlob = (blob: unknown, filename: string) => {
+    console.log(`[Download] Preparing blob for download: ${filename}`);
     if (!(blob instanceof Blob)) {
-        console.error("Invalid data provided to downloadBlob. Expected a Blob, but received:", typeof blob, blob);
+        console.error("[Download] Invalid data provided to downloadBlob. Expected a Blob, but received:", typeof blob, blob);
         toast.error("Failed to download: The server did not return a valid file.");
         return;
     }
     if (!filename) {
-        console.error("Invalid arguments for downloadBlob", { blob, filename });
+        console.error("[Download] Invalid arguments for downloadBlob", { blob, filename });
         toast.error("Failed to download: Filename is missing.");
         return;
     }
@@ -55,7 +55,6 @@ export const downloadBlob = (blob: unknown, filename: string) => {
         triggerDownload(blob, filename);
         toast.success("Download started successfully!");
     } catch (error: any) {
-        console.error("Error downloading blob:", error);
-        toast.error(`Failed to start download: ${error.message}`);
+        console.error("[Download] Error in downloadBlob:", error);
     }
 };
