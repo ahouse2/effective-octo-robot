@@ -18,7 +18,6 @@ import { FileMentionInput } from "@/components/FileMentionInput";
 import { CaseTools } from "@/components/CaseTools";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { EditCaseDirectivesDialog } from "@/components/EditCaseDirectivesDialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface CaseDetails {
   name: string;
@@ -155,12 +154,10 @@ const AgentInteraction = () => {
   );
 
   const intelligencePanel = (
-    <ScrollArea className="h-full">
-      <div className="flex h-full flex-col space-y-4 p-4">
-        <CaseTheorySummary caseId={caseId} />
-        <CaseInsightsCard caseId={caseId} />
-      </div>
-    </ScrollArea>
+    <div className="h-full overflow-y-auto p-4 space-y-4">
+      <CaseTheorySummary caseId={caseId} />
+      <CaseInsightsCard caseId={caseId} />
+    </div>
   );
 
   const rightPanel = (
