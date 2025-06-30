@@ -17,7 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Download } from "lucide-react";
 import { useSession } from "@/components/SessionContextProvider";
 import { CaseTimeline } from "@/components/CaseTimeline";
-import { Separator } from "@/components/ui/separator";
+import { downloadBlob } from "@/lib/download";
 
 const caseDetailsSchema = z.object({
   name: z.string().min(1, { message: "Case name is required." }).max(100, { message: "Case name too long." }),
@@ -148,15 +148,7 @@ const CaseDetails = () => {
         const caseName = form.getValues("name").replace(/\s+/g, '_');
         const fileName = `Case_Report_${caseName}_${caseId}.md`;
 
-        const url = URL.createObjectURL(data);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        toast.success("Report downloaded successfully!");
+        downloadBlob(data, fileName);
 
     } catch (err: any) {
         console.error("Error generating report:", err);

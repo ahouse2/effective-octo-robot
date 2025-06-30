@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
+import { downloadTextFile } from "@/lib/download";
 
 interface CaseTheory {
   id: string;
@@ -39,9 +40,9 @@ export const CaseTheorySummary: React.FC<CaseTheorySummaryProps> = ({ caseId }) 
         .from("case_theories")
         .select("*")
         .eq("case_id", caseId)
-        .single(); // Expecting only one theory per case
+        .single();
 
-      if (error && error.code !== 'PGRST116') { // PGRST116 means no rows found
+      if (error && error.code !== 'PGRST116') {
         console.error("Error fetching case theory:", error);
         setError("Failed to load case theory. Please try again.");
         toast.error("Failed to load case theory.");
@@ -49,14 +50,13 @@ export const CaseTheorySummary: React.FC<CaseTheorySummaryProps> = ({ caseId }) 
       } else if (data) {
         setCaseTheory(data);
       } else {
-        setCaseTheory(null); // No theory found yet
+        setCaseTheory(null);
       }
       setLoading(false);
     };
 
     fetchCaseTheory();
 
-    // Real-time subscription for case theory updates
     const channel = supabase
       .channel(`case_theories_for_case_${caseId}`)
       .on(
@@ -90,7 +90,7 @@ export const CaseTheorySummary: React.FC<CaseTheorySummaryProps> = ({ caseId }) 
 
     content += `## Fact Patterns:\n`;
     if (caseTheory.fact_patterns && caseTheory.fact_patterns.length > 0) {
-      caseTheory.fact_patterns.forEach((fact, index) => {
+      caseTheory.fact_patterns.forEach((fact) => {
         content += `- ${fact}\n`;
       });
     } else {
@@ -100,7 +100,7 @@ export const CaseTheorySummary: React.FC<CaseTheorySummaryProps> = ({ caseId }) 
 
     content += `## Legal Arguments:\n`;
     if (caseTheory.legal_arguments && caseTheory.legal_arguments.length > 0) {
-      caseTheory.legal_arguments.forEach((arg, index) => {
+      caseTheory.legal_arguments.forEach((arg) => {
         content += `- ${arg}\n`;
       });
     } else {
@@ -110,23 +110,14 @@ export const CaseTheorySummary: React.FC<CaseTheorySummaryProps> = ({ caseId }) 
 
     content += `## Potential Outcomes:\n`;
     if (caseTheory.potential_outcomes && caseTheory.potential_outcomes.length > 0) {
-      caseTheory.potential_outcomes.forEach((outcome, index) => {
+      caseTheory.potential_outcomes.forEach((outcome) => {
         content += `- ${outcome}\n`;
       });
     } else {
       content += `[No potential outcomes yet]\n`;
     }
 
-    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `case_theory_${caseId}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    toast.success("Case theory exported successfully!");
+    downloadTextFile(content, `case_theory_${caseId}.txt`);
   };
 
   if (loading) {

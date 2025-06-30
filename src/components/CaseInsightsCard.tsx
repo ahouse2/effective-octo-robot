@@ -1,17 +1,18 @@
 import React, { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Lightbulb, TrendingUp, Scale, Info, Download } from "lucide-react"; // Added Download icon
+import { Lightbulb, TrendingUp, Scale, Info, Download } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { downloadTextFile } from "@/lib/download";
 
 interface CaseInsight {
   id: string;
   case_id: string;
   title: string;
   description: string;
-  insight_type: 'key_fact' | 'risk_assessment' | 'outcome_trend' | 'general'; // Define possible types
+  insight_type: 'key_fact' | 'risk_assessment' | 'outcome_trend' | 'general';
   timestamp: string;
 }
 
@@ -38,7 +39,7 @@ export const CaseInsightsCard: React.FC<CaseInsightsCardProps> = ({ caseId }) =>
         .from("case_insights")
         .select("*")
         .eq("case_id", caseId)
-        .order("timestamp", { ascending: false }); // Order by most recent first
+        .order("timestamp", { ascending: false });
 
       if (error) {
         console.error("Error fetching case insights:", error);
@@ -52,7 +53,6 @@ export const CaseInsightsCard: React.FC<CaseInsightsCardProps> = ({ caseId }) =>
 
     fetchCaseInsights();
 
-    // Real-time subscription for new insights
     const channel = supabase
       .channel(`case_insights_for_case_${caseId}`)
       .on(
@@ -107,20 +107,11 @@ export const CaseInsightsCard: React.FC<CaseInsightsCardProps> = ({ caseId }) =>
       content += `Timestamp: ${new Date(insight.timestamp).toLocaleString()}\n`;
       content += `Description:\n${insight.description}\n\n`;
       if (index < insights.length - 1) {
-        content += `---\n\n`; // Separator between insights
+        content += `---\n\n`;
       }
     });
 
-    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `case_insights_${caseId}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    toast.success("Case insights exported successfully!");
+    downloadTextFile(content, `case_insights_${caseId}.txt`);
   };
 
   if (loading) {

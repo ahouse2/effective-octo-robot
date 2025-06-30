@@ -23,6 +23,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { DocumentViewer } from "./DocumentViewer";
 import { Input } from "@/components/ui/input";
 import { debounce } from "lodash";
+import { downloadBlob } from "@/lib/download";
 
 interface FileMetadata {
   id: string;
@@ -40,7 +41,10 @@ interface SearchResult extends FileMetadata {
   snippets: string[];
 }
 
-// Recursive component to render the folder tree view
+interface EvidenceManagerProps {
+  caseId: string;
+}
+
 const FolderTreeView = ({ node, level = 0, handleDeleteFile, handleFileClick }: { node: any, level?: number, handleDeleteFile: (fileId: string, filePath: string, fileName: string) => void, handleFileClick: (file: FileMetadata) => void }) => {
   return (
     <ul className={level > 0 ? "pl-4" : ""}>
@@ -129,7 +133,6 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({ caseId }) => {
       const fetchedFiles = data || [];
       setAllFiles(fetchedFiles);
 
-      // Group by AI category
       const groupedByCategory = fetchedFiles.reduce((acc, file) => {
         const category = file.file_category || "Uncategorized";
         if (!acc[category]) acc[category] = [];
@@ -138,7 +141,6 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({ caseId }) => {
       }, {} as Record<string, FileMetadata[]>);
       setGroupedFiles(groupedByCategory);
 
-      // Build folder structure
       const root: any = {};
       fetchedFiles.forEach(file => {
         const pathParts = file.file_path.split('/').slice(2);
@@ -186,7 +188,6 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({ caseId }) => {
       if (error) throw error;
       if (data.error) throw new Error(data.error);
 
-      // Join search results with local file metadata
       const enrichedResults = data.results.map((result: any) => {
         const fileInfo = allFiles.find(f => f.id === result.id);
         return fileInfo ? { ...fileInfo, snippets: result.snippets } : null;
@@ -224,15 +225,7 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({ caseId }) => {
         ? `case_${caseId}_${category.replace(/\s+/g, '_')}.zip`
         : `organized_case_${caseId}.zip`;
 
-      const url = URL.createObjectURL(data);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      toast.success("Download started successfully!");
+      downloadBlob(data, fileName);
 
     } catch (err: any) {
       console.error("Error downloading zip:", err);

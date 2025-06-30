@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Upload, PlayCircle, Bug, TestTube2, RefreshCw } from "lucide-react";
+import { Upload, PlayCircle, Bug, TestTube2, RefreshCw, Clock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useSession } from "@/components/SessionContextProvider";
@@ -23,7 +23,7 @@ interface CaseToolsProps {
 }
 
 const MAX_BATCH_FILE_COUNT = 20;
-const MAX_BATCH_SIZE_MB = 4; // Supabase Edge Function payload limit is around 4.5MB
+const MAX_BATCH_SIZE_MB = 4;
 
 export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
   const [isUploading, setIsUploading] = useState(false);
@@ -31,6 +31,7 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
   const [isDiagnosing, setIsDiagnosing] = useState(false);
   const [isTestingGemini, setIsTestingGemini] = useState(false);
   const [isResummarizing, setIsResummarizing] = useState(false);
+  const [isGeneratingTimeline, setIsGeneratingTimeline] = useState(false);
   const { user } = useSession();
 
   const handleFileChangeAndUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -156,64 +157,50 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
     }
   };
 
+  const handleGenerateTimeline = async () => {
+    setIsGeneratingTimeline(true);
+    const loadingToastId = toast.loading("Generating timeline from evidence...");
+    try {
+      const { error } = await supabase.functions.invoke('create-timeline-from-evidence', {
+        body: { caseId },
+      });
+      if (error) {
+        const detailedError = error.context?.error || error.message;
+        throw new Error(detailedError);
+      }
+      toast.success("Timeline generation complete! Check the Case Details page.", { id: loadingToastId });
+    } catch (err: any) {
+      console.error("Timeline generation error:", err);
+      toast.error(err.message || "Failed to generate timeline.", { id: loadingToastId });
+    } finally {
+      setIsGeneratingTimeline(false);
+    }
+  };
+
   const handleResummarize = async () => {
     setIsResummarizing(true);
     const loadingToastId = toast.loading("Starting re-summarization for all files...");
     try {
-      let allFiles: any[] = [];
-      let hasMore = true;
-      let page = 0;
-      const pageSize = 1000; // Supabase default limit
+      const { data: files, error: filesError } = await supabase
+        .from('case_files_metadata')
+        .select('id, file_path, case_id')
+        .eq('case_id', caseId);
 
-      toast.info("Fetching file list...", { id: loadingToastId });
-
-      while (hasMore) {
-        const from = page * pageSize;
-        const to = from + pageSize - 1;
-        
-        const { data: files, error: filesError } = await supabase
-          .from('case_files_metadata')
-          .select('id, file_path, case_id')
-          .eq('case_id', caseId)
-          .range(from, to);
-
-        if (filesError) throw filesError;
-
-        if (files && files.length > 0) {
-          allFiles = allFiles.concat(files);
-        }
-
-        if (!files || files.length < pageSize) {
-          hasMore = false;
-        } else {
-          page++;
-        }
-      }
-
-      if (allFiles.length === 0) {
+      if (filesError) throw filesError;
+      if (!files || files.length === 0) {
         toast.info("No files found in this case to re-summarize.", { id: loadingToastId });
-        setIsResummarizing(false);
         return;
       }
 
-      toast.info(`Found ${allFiles.length} files. Submitting to summarizer agent... This may take a while.`, { id: loadingToastId });
+      toast.info(`Found ${files.length} files. Submitting to summarizer agent...`, { id: loadingToastId });
 
-      const batchSize = 10; // Invoke 10 functions at a time
-      for (let i = 0; i < allFiles.length; i += batchSize) {
-          const batch = allFiles.slice(i, i + batchSize);
-          const currentBatchNum = i / batchSize + 1;
-          const totalBatches = Math.ceil(allFiles.length / batchSize);
-          toast.info(`Processing batch ${currentBatchNum} of ${totalBatches}...`, { id: loadingToastId });
-          
-          const promises = batch.map(file => 
-              supabase.functions.invoke('summarize-file', {
-                  body: { filePath: file.file_path, fileId: file.id, caseId: file.case_id },
-              })
-          );
-          await Promise.all(promises);
+      for (const file of files) {
+        await supabase.functions.invoke('summarize-file', {
+          body: { filePath: file.file_path, fileId: file.id, caseId: file.case_id },
+        });
       }
 
-      toast.success(`Successfully submitted all ${allFiles.length} files for re-summarization.`, { id: loadingToastId });
+      toast.success(`Successfully submitted all ${files.length} files for re-summarization.`, { id: loadingToastId });
     } catch (err: any) {
       console.error("Re-summarization error:", err);
       toast.error(err.message || "Failed to start re-summarization.", { id: loadingToastId });
@@ -306,6 +293,28 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction onClick={handleAnalyzeCase}>
                   Confirm & Start
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button disabled={isGeneratingTimeline} className="w-full" variant="secondary">
+                <Clock className="h-4 w-4 mr-2" />
+                {isGeneratingTimeline ? "Generating Timeline..." : "Generate Case Timeline"}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Confirm Timeline Generation</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will analyze all evidence summaries to create a chronological timeline of events. This may incur costs.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleGenerateTimeline}>
+                  Confirm & Generate
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
