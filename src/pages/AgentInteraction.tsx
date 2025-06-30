@@ -7,7 +7,6 @@ import { EvidenceManager } from "@/components/EvidenceManager";
 import { CaseChatDisplay } from "@/components/CaseChatDisplay";
 import { AgentActivityLog } from "@/components/AgentActivityLog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { useParams, useNavigate } from "react-router-dom";
 import { Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -154,11 +153,9 @@ const AgentInteraction = () => {
   );
 
   const intelligencePanel = (
-    <div className="relative h-full w-full">
-      <div className="absolute inset-0 overflow-y-auto p-4 space-y-4">
-        <CaseTheorySummary caseId={caseId} />
-        <CaseInsightsCard caseId={caseId} />
-      </div>
+    <div className="h-full overflow-y-auto p-4 space-y-4">
+      <CaseTheorySummary caseId={caseId} />
+      <CaseInsightsCard caseId={caseId} />
     </div>
   );
 
@@ -203,19 +200,20 @@ const AgentInteraction = () => {
   return (
     <Layout>
       <div className="h-full p-4">
-        <ResizablePanelGroup direction="horizontal" className="h-full rounded-lg border">
-          <ResizablePanel defaultSize={25} minSize={20}>
+        <div className="flex h-full rounded-lg border">
+          {/* Left Panel */}
+          <div className="w-[25%] min-w-[300px] border-r">
             {intelligencePanel}
-          </ResizablePanel>
-          <ResizableHandle withHandle />
-          <ResizablePanel defaultSize={50} minSize={30}>
+          </div>
+          {/* Middle Panel */}
+          <div className="w-[50%] min-w-[400px] border-r">
             {chatPanel}
-          </ResizablePanel>
-          <ResizableHandle withHandle />
-          <ResizablePanel defaultSize={25} minSize={20}>
+          </div>
+          {/* Right Panel */}
+          <div className="flex-1">
             {rightPanel}
-          </ResizablePanel>
-        </ResizablePanelGroup>
+          </div>
+        </div>
       </div>
     </Layout>
   );
