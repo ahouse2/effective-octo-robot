@@ -10,6 +10,15 @@ const corsHeaders = {
 
 // --- UTILITY FUNCTIONS ---
 
+function extractJson(text: string): string | null {
+  const jsonRegex = /```json\s*([\s\S]*?)\s*```|({[\s\S]*}|\[[\s\S]*\])/;
+  const match = text.match(jsonRegex);
+  if (match) {
+    return match[1] || match[0];
+  }
+  return null;
+}
+
 async function getUserIdFromRequest(req: Request, supabaseClient: SupabaseClient): Promise<string | null> {
   try {
     const authHeader = req.headers.get('Authorization');
@@ -149,27 +158,62 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     }
 
     if (!files || files.length === 0) {
-        await insertAgentActivity(supabaseClient, caseId, 'Gemini', 'System', 'No Context Found', 'Could not find relevant documents for this query.', 'completed');
+        await insertAgentActivity(supabaseClient, caseId, 'Gemini', 'System', 'No Context Found', 'Could not find relevant documents for this query. Ensure files have been summarized.', 'completed');
         await updateProgress(supabaseClient, caseId, 100, 'Analysis complete: No relevant documents found.');
         return;
     }
 
+    await updateProgress(supabaseClient, caseId, 30, `Found ${files.length} files to analyze.`);
     const contextSnippets = files.map(file => `From file "${file.suggested_name}":\n${file.description}`).join('\n\n---\n\n');
     await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Search Complete', `Found ${files.length} potentially relevant files.`, 'completed');
 
-    await updateProgress(supabaseClient, caseId, 60, 'Synthesizing response with Gemini...');
+    await updateProgress(supabaseClient, caseId, 50, 'Synthesizing analysis with Gemini...');
     const { data: caseDetails } = await supabaseClient.from('cases').select('case_goals, system_instruction').eq('id', caseId).single();
-    const synthesisPrompt = `Based on the following context from case documents, answer the user's question. User's Question: "${promptContent}". Case Goals: ${caseDetails?.case_goals || 'Not specified.'}. System Instructions: ${caseDetails?.system_instruction || 'None.'}. Context from Documents: --- ${contextSnippets} --- Your Answer:`;
+    
+    const analysisPrompt = `
+      You are a master legal analyst AI. Based on the provided context from multiple evidence files, perform a comprehensive analysis. Your response MUST be a single JSON object containing two keys: "case_theory" and "case_insights".
+
+      1.  **case_theory**: An object with three keys: "fact_patterns", "legal_arguments", and "potential_outcomes". Each should be an array of strings.
+      2.  **case_insights**: An array of objects, where each object has "title", "description", and "insight_type" ('key_fact', 'risk_assessment', 'outcome_trend', or 'general').
+
+      Example JSON structure:
+      \`\`\`json
+      {
+        "case_theory": {
+          "fact_patterns": ["Consistent communication breakdown between parties.", "Evidence of hidden financial assets in file 'Bank Statement 2023.pdf'."],
+          "legal_arguments": ["Breach of fiduciary duty regarding community property.", "Argument for primary custody based on documented instability."],
+          "potential_outcomes": ["Unequal division of assets due to financial misconduct.", "Supervised visitation for one party."]
+        },
+        "case_insights": [
+          {
+            "title": "Undisclosed Financial Account",
+            "description": "The file 'Bank Statement 2023.pdf' shows a previously undisclosed bank account with a significant balance, which is a major key fact.",
+            "insight_type": "key_fact"
+          },
+          {
+            "title": "Risk of Asset Dissipation",
+            "description": "There is a high risk that one party is actively hiding or dissipating community assets, which needs immediate legal attention.",
+            "insight_type": "risk_assessment"
+          }
+        ]
+      }
+      \`\`\`
+
+      Here is the context from the evidence files:
+      ---
+      ${contextSnippets}
+      ---
+    `;
+
+    const synthesisPrompt = command === 're_run_analysis' ? analysisPrompt : `Based on the following context from case documents, answer the user's question. User's Question: "${promptContent}". Case Goals: ${caseDetails?.case_goals || 'Not specified.'}. System Instructions: ${caseDetails?.system_instruction || 'None.'}. Context from Documents: --- ${contextSnippets} --- Your Answer:`;
+    
     await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Prompt Synthesis', `Sending prompt of length ${synthesisPrompt.length} to Gemini.`, 'processing');
 
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
     const result = await model.generateContent(synthesisPrompt);
     
     const response = result.response;
-    if (!response) {
-        throw new Error("The AI model did not return a valid response.");
-    }
-
+    if (!response) throw new Error("The AI model did not return a valid response.");
     if (response.promptFeedback?.blockReason) {
         const blockReason = response.promptFeedback.blockReason;
         const safetyRatings = response.promptFeedback.safetyRatings?.map(r => `${r.category}: ${r.probability}`).join(', ');
@@ -177,8 +221,39 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     }
     
     const responseText = response.text();
+    await updateProgress(supabaseClient, caseId, 80, 'Parsing AI response and updating database...');
 
-    await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'AI', 'RAG Response', responseText, 'completed');
+    if (command === 're_run_analysis') {
+        const jsonString = extractJson(responseText);
+        if (!jsonString) throw new Error("AI did not return a valid JSON object.");
+        
+        const analysisResult = JSON.parse(jsonString);
+
+        if (analysisResult.case_theory) {
+            await supabaseClient.from('case_theories').update({
+                fact_patterns: analysisResult.case_theory.fact_patterns,
+                legal_arguments: analysisResult.case_theory.legal_arguments,
+                potential_outcomes: analysisResult.case_theory.potential_outcomes,
+                status: 'refined',
+                last_updated: new Date().toISOString()
+            }).eq('case_id', caseId);
+        }
+
+        if (analysisResult.case_insights && analysisResult.case_insights.length > 0) {
+            await supabaseClient.from('case_insights').delete().eq('case_id', caseId);
+            const insightsToInsert = analysisResult.case_insights.map((insight: any) => ({
+                case_id: caseId,
+                title: insight.title,
+                description: insight.description,
+                insight_type: insight.insight_type
+            }));
+            await supabaseClient.from('case_insights').insert(insightsToInsert);
+        }
+        await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'AI', 'Full Analysis Complete', `Successfully parsed and saved new case theory and ${analysisResult.case_insights?.length || 0} insights.`, 'completed');
+    } else {
+        await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'AI', 'RAG Response', responseText, 'completed');
+    }
+
     await supabaseClient.from('cases').update({ status: 'Analysis Complete' }).eq('id', caseId);
     await updateProgress(supabaseClient, caseId, 100, 'Analysis complete!');
 }
