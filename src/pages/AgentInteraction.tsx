@@ -154,9 +154,11 @@ const AgentInteraction = () => {
   );
 
   const intelligencePanel = (
-    <div className="h-full overflow-y-auto p-4 space-y-4">
-      <CaseTheorySummary caseId={caseId} />
-      <CaseInsightsCard caseId={caseId} />
+    <div className="relative h-full w-full">
+      <div className="absolute inset-0 overflow-y-auto p-4 space-y-4">
+        <CaseTheorySummary caseId={caseId} />
+        <CaseInsightsCard caseId={caseId} />
+      </div>
     </div>
   );
 
