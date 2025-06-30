@@ -18,6 +18,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Link } from "react-router-dom";
+import { Textarea } from "./ui/textarea";
 
 interface CaseToolsProps {
   caseId: string;
@@ -35,6 +36,7 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
   const [isGeneratingTimeline, setIsGeneratingTimeline] = useState(false);
   const [isExportingToGraph, setIsExportingToGraph] = useState(false);
   const [isAnalyzingGraph, setIsAnalyzingGraph] = useState(false);
+  const [timelineFocus, setTimelineFocus] = useState("");
   const { user } = useSession();
 
   const handleFileChangeAndUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -162,16 +164,17 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
 
   const handleGenerateTimeline = async () => {
     setIsGeneratingTimeline(true);
-    const loadingToastId = toast.loading("Generating timeline from evidence...");
+    const loadingToastId = toast.loading(timelineFocus ? `Generating timeline for "${timelineFocus}"...` : "Generating general timeline...");
     try {
       const { error } = await supabase.functions.invoke('create-timeline-from-evidence', {
-        body: { caseId },
+        body: { caseId, focus: timelineFocus || null },
       });
       if (error) {
         const detailedError = error.context?.error || error.message;
         throw new Error(detailedError);
       }
       toast.success("Timeline generation complete! Check the Case Details page.", { id: loadingToastId });
+      setTimelineFocus("");
     } catch (err: any) {
       console.error("Timeline generation error:", err);
       toast.error(err.message || "Failed to generate timeline.", { id: loadingToastId });
@@ -380,28 +383,20 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
         <Label className="text-base font-medium">Data & Export Tools</Label>
         <p className="text-sm text-muted-foreground mb-2">Generate new data representations or export them.</p>
         <div className="space-y-2">
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button disabled={isGeneratingTimeline} className="w-full" variant="secondary">
-                <Clock className="h-4 w-4 mr-2" />
-                {isGeneratingTimeline ? "Generating..." : "Generate Case Timeline"}
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Confirm Timeline Generation</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will analyze all evidence summaries to create a chronological timeline of events. This may incur costs.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleGenerateTimeline}>
-                  Confirm & Generate
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          <div className="space-y-2 rounded-md border p-4">
+            <Label htmlFor="timeline-focus">Focused Timeline Generation</Label>
+            <Textarea
+              id="timeline-focus"
+              placeholder="Optional: Enter a fact pattern or legal argument to focus on..."
+              value={timelineFocus}
+              onChange={(e) => setTimelineFocus(e.target.value)}
+              className="min-h-[60px]"
+            />
+            <Button onClick={handleGenerateTimeline} disabled={isGeneratingTimeline} className="w-full" variant="secondary">
+              <Clock className="h-4 w-4 mr-2" />
+              {isGeneratingTimeline ? "Generating..." : "Generate Timeline"}
+            </Button>
+          </div>
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button disabled={isExportingToGraph} className="w-full" variant="secondary">

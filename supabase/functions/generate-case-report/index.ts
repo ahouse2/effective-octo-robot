@@ -26,12 +26,14 @@ serve(async (req) => {
       { data: caseData, error: caseError },
       { data: theoryData, error: theoryError },
       { data: insightsData, error: insightsError },
-      { data: filesData, error: filesError }
+      { data: filesData, error: filesError },
+      { data: timelineEventsData, error: timelineEventsError }
     ] = await Promise.all([
       supabaseClient.from('cases').select('*').eq('id', caseId).single(),
       supabaseClient.from('case_theories').select('*').eq('case_id', caseId).single(),
-      supabaseClient.from('case_insights').select('*').eq('case_id', caseId).order('timestamp', { ascending: true }),
-      supabaseClient.from('case_files_metadata').select('*').eq('case_id', caseId).order('uploaded_at', { ascending: true })
+      supabaseClient.from('case_insights').select('*').eq('case_id', caseId).not('insight_type', 'eq', 'auto_generated_event').order('timestamp', { ascending: true }),
+      supabaseClient.from('case_files_metadata').select('*').eq('case_id', caseId).order('uploaded_at', { ascending: true }),
+      supabaseClient.from('case_insights').select('*').eq('case_id', caseId).eq('insight_type', 'auto_generated_event').order('timestamp', { ascending: true })
     ]);
 
     if (caseError) throw new Error(`Failed to fetch case details: ${caseError.message}`);
@@ -46,6 +48,7 @@ serve(async (req) => {
     report += `## Case Directives\n\n`;
     report += `### Primary Goals\n${caseData.case_goals || 'Not specified.'}\n\n`;
     report += `### System Instructions for AI\n${caseData.system_instruction || 'Not specified.'}\n\n`;
+    report += `### User-Specified Legal Arguments\n${caseData.user_specified_arguments || 'Not specified.'}\n\n`;
 
     // Add Case Theory section
     report += `## AI-Generated Case Theory\n\n`;
@@ -89,6 +92,17 @@ serve(async (req) => {
       });
     } else {
       report += `No key insights have been generated yet.\n\n`;
+    }
+
+    // Add Timeline of Events section
+    report += `## Timeline of Key Events\n\n`;
+    if (timelineEventsData && timelineEventsData.length > 0) {
+        timelineEventsData.forEach((event: any) => {
+            report += `**${new Date(event.timestamp).toLocaleDateString()}**: ${event.title}\n`;
+            report += `> ${event.description}\n\n`;
+        });
+    } else {
+        report += `No timeline events have been generated yet.\n\n`;
     }
 
     // Add Evidence Log section as a Markdown table

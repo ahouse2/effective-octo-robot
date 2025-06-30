@@ -24,6 +24,7 @@ const caseDetailsSchema = z.object({
   type: z.string().min(1, { message: "Case type is required." }).max(50, { message: "Case type too long." }),
   caseGoals: z.string().optional(),
   systemInstruction: z.string().optional(),
+  userSpecifiedArguments: z.string().optional(),
   aiModel: z.enum(["openai", "gemini"], {
     required_error: "Please select an AI model.",
   }),
@@ -48,6 +49,7 @@ const CaseDetails = () => {
       type: "",
       caseGoals: "",
       systemInstruction: "",
+      userSpecifiedArguments: "",
       aiModel: "openai",
       openaiAssistantId: "",
     },
@@ -64,7 +66,7 @@ const CaseDetails = () => {
       setLoading(true);
       const { data, error } = await supabase
         .from('cases')
-        .select('name, type, status, case_goals, system_instruction, ai_model, openai_assistant_id')
+        .select('name, type, status, case_goals, system_instruction, user_specified_arguments, ai_model, openai_assistant_id')
         .eq('id', caseId)
         .single();
 
@@ -78,6 +80,7 @@ const CaseDetails = () => {
           type: data.type,
           caseGoals: data.case_goals || "",
           systemInstruction: data.system_instruction || "",
+          userSpecifiedArguments: data.user_specified_arguments || "",
           aiModel: (data.ai_model as "openai" | "gemini") || "openai",
           openaiAssistantId: data.openai_assistant_id || "",
         };
@@ -107,6 +110,7 @@ const CaseDetails = () => {
           type: values.type,
           case_goals: values.caseGoals,
           system_instruction: values.systemInstruction,
+          user_specified_arguments: values.userSpecifiedArguments,
           ai_model: values.aiModel,
           openai_assistant_id: values.aiModel === 'openai' ? (values.openaiAssistantId || null) : null,
           last_updated: new Date().toISOString(),
@@ -277,6 +281,27 @@ const CaseDetails = () => {
                         </FormControl>
                         <FormDescription>
                           Use this field to give the AI agents detailed directives on how to approach the analysis.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="userSpecifiedArguments"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Specific Legal Arguments to Investigate</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            placeholder="e.g., 'Breach of fiduciary duty regarding community property', 'Violation of the Child's Best Interest standard'"
+                            className="min-h-[100px]"
+                            {...field}
+                            disabled={isSubmitting}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          List any specific legal arguments you want the AI to actively look for evidence to support or refute.
                         </FormDescription>
                         <FormMessage />
                       </FormItem>

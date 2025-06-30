@@ -168,13 +168,22 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Search Complete', `Found ${files.length} potentially relevant files.`, 'completed');
 
     await updateProgress(supabaseClient, caseId, 50, 'Synthesizing analysis with Gemini...');
-    const { data: caseDetails } = await supabaseClient.from('cases').select('case_goals, system_instruction').eq('id', caseId).single();
+    const { data: caseDetails } = await supabaseClient.from('cases').select('case_goals, system_instruction, user_specified_arguments').eq('id', caseId).single();
     
     const analysisPrompt = `
-      You are a master legal analyst AI. Based on the provided context from multiple evidence files, perform a comprehensive analysis. Your response MUST be a single JSON object containing two keys: "case_theory" and "case_insights".
+      You are a master legal analyst AI specializing in California family law. Your primary value is to identify non-obvious patterns, correlations, and discrepancies across the entire evidence set that a human analyst might miss. Connect disparate pieces of information to form a cohesive narrative.
+      
+      Based on the provided context from multiple evidence files, perform a comprehensive analysis. Your response MUST be a single JSON object containing two keys: "case_theory" and "case_insights".
 
       1.  **case_theory**: An object with three keys: "fact_patterns", "legal_arguments", and "potential_outcomes". Each should be an array of strings.
       2.  **case_insights**: An array of objects, where each object has "title", "description", and "insight_type" ('key_fact', 'risk_assessment', 'outcome_trend', or 'general').
+
+      The user has provided the following directives:
+      - **Primary Case Goals:** ${caseDetails?.case_goals || 'Not specified.'}
+      - **Specific Legal Arguments to Investigate:** ${caseDetails?.user_specified_arguments || 'None specified.'}
+      - **General System Instructions:** ${caseDetails?.system_instruction || 'None.'}
+
+      Pay special attention to evidence that supports or refutes the user-specified legal arguments.
 
       Example JSON structure:
       \`\`\`json
@@ -189,11 +198,6 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
             "title": "Undisclosed Financial Account",
             "description": "The file 'Bank Statement 2023.pdf' shows a previously undisclosed bank account with a significant balance, which is a major key fact.",
             "insight_type": "key_fact"
-          },
-          {
-            "title": "Risk of Asset Dissipation",
-            "description": "There is a high risk that one party is actively hiding or dissipating community assets, which needs immediate legal attention.",
-            "insight_type": "risk_assessment"
           }
         ]
       }

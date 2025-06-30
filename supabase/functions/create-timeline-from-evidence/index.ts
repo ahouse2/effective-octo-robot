@@ -34,9 +34,11 @@ serve(async (req) => {
   }
 
   let caseId: string | null = null;
+  let focus: string | null = null;
   try {
     const body = await req.json();
     caseId = body.caseId;
+    focus = body.focus; // New optional parameter
     if (!caseId) throw new Error("Case ID is required.");
 
     const supabaseClient = createClient(
@@ -44,7 +46,10 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    await insertAgentActivity(supabaseClient, caseId, 'Starting timeline generation process...', 'processing');
+    const activityMessage = focus 
+      ? `Starting timeline generation focused on: "${focus}"...`
+      : 'Starting general timeline generation process...';
+    await insertAgentActivity(supabaseClient, caseId, activityMessage, 'processing');
 
     const { data: caseData, error: caseError } = await supabaseClient
       .from('cases')
@@ -70,9 +75,14 @@ serve(async (req) => {
       `File: "${file.suggested_name || file.file_name}" (ID: ${file.id})\nSummary: ${file.description || 'No summary available.'}`
     ).join('\n\n');
 
+    const focusInstruction = focus
+      ? `Your analysis MUST focus exclusively on events related to the following topic: "${focus}". Ignore any events not directly relevant to this topic.`
+      : 'Extract all key events chronologically.';
+
     const prompt = `
       You are a specialized AI agent tasked with creating a chronological timeline of events from a set of case evidence summaries.
-      Analyze the following evidence context and extract key events. For each event, provide a date (if available), a concise title, and a brief description.
+      Analyze the following evidence context. ${focusInstruction}
+      For each event, provide a date (if available), a concise title, and a brief description.
       The date should be in YYYY-MM-DD format if possible. If no specific date is found, use the file's context to estimate or state "Date Unknown".
       Your response MUST be a JSON object, with a single key "timeline_events" which is an array of objects. Each object should have "event_date", "title", and "description" keys.
       Do not wrap the JSON in a markdown block.
@@ -154,7 +164,7 @@ serve(async (req) => {
     try {
       const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
       if (caseId) {
-        await insertAgentActivity(supabaseClient, caseId, `Error during timeline generation: ${error.message}`, 'error');
+        await insertAgentActivity(supabaseClient, `Error during timeline generation: ${error.message}`, 'error');
       }
     } catch (logError) {
       console.error("Failed to log the primary error:", logError);
