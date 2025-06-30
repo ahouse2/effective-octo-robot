@@ -154,7 +154,7 @@ const AgentInteraction = () => {
   );
 
   const intelligencePanel = (
-    <div className="flex h-full flex-col space-y-4 p-4">
+    <div className="h-full flex flex-col space-y-4 p-4 overflow-y-auto">
       <CaseTheorySummary caseId={caseId} />
       <CaseInsightsCard caseId={caseId} />
     </div>
@@ -202,7 +202,7 @@ const AgentInteraction = () => {
     <Layout>
       <div className="h-full p-4">
         <ResizablePanelGroup direction="horizontal" className="h-full rounded-lg border">
-          <ResizablePanel defaultSize={25} minSize={20} className="overflow-y-auto">
+          <ResizablePanel defaultSize={25} minSize={20}>
             {intelligencePanel}
           </ResizablePanel>
           <ResizableHandle withHandle />
