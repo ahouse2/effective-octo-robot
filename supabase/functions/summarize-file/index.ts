@@ -18,14 +18,17 @@ async function fileToGenerativePart(blob: Blob, mimeType: string) {
 }
 
 function extractJson(text: string): any | null {
-  const jsonRegex = /```json\s*([\s\S]*?)\s*```/;
+  const jsonRegex = /```json\s*([\s\S]*?)\s*```|({[\s\S]*}|\[[\s\S]*\])/;
   const match = text.match(jsonRegex);
-  if (match && match[1]) {
-    try {
-      return JSON.parse(match[1]);
-    } catch (e) {
-      console.error("Failed to parse extracted JSON:", e);
-      return null;
+  if (match) {
+    const jsonString = match[1] || match[2];
+    if (jsonString) {
+        try {
+            return JSON.parse(jsonString);
+        } catch (e) {
+            console.error("Failed to parse extracted JSON string:", jsonString, e);
+            return null;
+        }
     }
   }
   return null;
@@ -87,11 +90,19 @@ serve(async (req) => {
     }
 
     const result = await model.generateContent({ contents: [{ role: "user", parts: contentParts }] });
-    const responseText = result.response.text();
+    const response = result.response;
+
+    if (response.promptFeedback?.blockReason) {
+        const blockReason = response.promptFeedback.blockReason;
+        const safetyRatings = response.promptFeedback.safetyRatings?.map(r => `${r.category}: ${r.probability}`).join(', ');
+        throw new Error(`Summarization for file ${filePath} was blocked for safety reasons. Reason: ${blockReason}. Details: [${safetyRatings}].`);
+    }
+
+    const responseText = response.text();
     const parsedJson = extractJson(responseText);
 
     if (!parsedJson || !parsedJson.description) {
-      throw new Error(`Failed to get a valid JSON summary from the AI. Response: ${responseText}`);
+      throw new Error(`Failed to get a valid JSON summary from the AI for file ${filePath}. Response: ${responseText}`);
     }
 
     const { error: updateError } = await supabaseClient
