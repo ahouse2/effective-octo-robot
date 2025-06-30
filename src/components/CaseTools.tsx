@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Upload, PlayCircle, Bug, TestTube2, RefreshCw, Clock, Share2 } from "lucide-react";
+import { Upload, PlayCircle, Bug, TestTube2, RefreshCw, Clock, Share2, BrainCircuit } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useSession } from "@/components/SessionContextProvider";
@@ -34,6 +34,7 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
   const [isResummarizing, setIsResummarizing] = useState(false);
   const [isGeneratingTimeline, setIsGeneratingTimeline] = useState(false);
   const [isExportingToGraph, setIsExportingToGraph] = useState(false);
+  const [isAnalyzingGraph, setIsAnalyzingGraph] = useState(false);
   const { user } = useSession();
 
   const handleFileChangeAndUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -196,6 +197,26 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
       toast.error(err.message || "Failed to export to Graph DB.", { id: loadingToastId });
     } finally {
       setIsExportingToGraph(false);
+    }
+  };
+
+  const handleAnalyzeGraph = async () => {
+    setIsAnalyzingGraph(true);
+    const loadingToastId = toast.loading("Sending graph data to AI for analysis...");
+    try {
+      const { error } = await supabase.functions.invoke('get-neo4j-graph-for-ai', {
+        body: { caseId },
+      });
+      if (error) {
+        const detailedError = error.context?.error || error.message;
+        throw new Error(detailedError);
+      }
+      toast.success("Graph analysis initiated. Check the chat for results.", { id: loadingToastId });
+    } catch (err: any) {
+      console.error("Graph analysis error:", err);
+      toast.error(err.message || "Failed to start graph analysis.", { id: loadingToastId });
+    } finally {
+      setIsAnalyzingGraph(false);
     }
   };
 
@@ -399,6 +420,28 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction onClick={handleExportToGraph}>
                   Confirm & Export
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button disabled={isAnalyzingGraph} className="w-full" variant="secondary">
+                <BrainCircuit className="h-4 w-4 mr-2" />
+                {isAnalyzingGraph ? "Analyzing..." : "Analyze Graph with AI"}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Confirm Graph Analysis with AI</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will fetch the current graph data from Neo4j and send it to the AI for analysis. The results will appear in the chat. This may incur costs.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleAnalyzeGraph}>
+                  Confirm & Analyze
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
