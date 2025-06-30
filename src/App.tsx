@@ -32,7 +32,7 @@ const App = () => (
               <Route path="/agent-interaction/:caseId" element={<AgentInteraction />} />
               <Route path="/case-details/:caseId" element={<CaseDetails />} />
               <Route path="/ai-settings" element={<AiProfileSettings />} />
-              {/* <Route path="/graph-analysis/:caseId" element={<GraphAnalysis />} /> */}
+              <Route path="/graph-analysis/:caseId" element={<GraphAnalysis />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>

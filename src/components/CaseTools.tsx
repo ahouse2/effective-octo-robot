@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Upload, PlayCircle, Bug, TestTube2, RefreshCw, Clock } from "lucide-react";
+import { Upload, PlayCircle, Bug, TestTube2, RefreshCw, Clock, Share2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useSession } from "@/components/SessionContextProvider";
@@ -17,6 +17,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Link } from "react-router-dom";
 
 interface CaseToolsProps {
   caseId: string;
@@ -32,6 +33,7 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
   const [isTestingGemini, setIsTestingGemini] = useState(false);
   const [isResummarizing, setIsResummarizing] = useState(false);
   const [isGeneratingTimeline, setIsGeneratingTimeline] = useState(false);
+  const [isExportingToGraph, setIsExportingToGraph] = useState(false);
   const { user } = useSession();
 
   const handleFileChangeAndUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -174,6 +176,26 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
       toast.error(err.message || "Failed to generate timeline.", { id: loadingToastId });
     } finally {
       setIsGeneratingTimeline(false);
+    }
+  };
+
+  const handleExportToGraph = async () => {
+    setIsExportingToGraph(true);
+    const loadingToastId = toast.loading("Exporting case data to Neo4j Graph DB...");
+    try {
+      const { error } = await supabase.functions.invoke('export-to-neo4j', {
+        body: { caseId },
+      });
+      if (error) {
+        const detailedError = error.context?.error || error.message;
+        throw new Error(detailedError);
+      }
+      toast.success("Case data successfully exported to Graph DB. You can now view the analysis.", { id: loadingToastId });
+    } catch (err: any) {
+      console.error("Graph export error:", err);
+      toast.error(err.message || "Failed to export to Graph DB.", { id: loadingToastId });
+    } finally {
+      setIsExportingToGraph(false);
     }
   };
 
@@ -331,11 +353,17 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+        </div>
+      </div>
+      <div>
+        <Label className="text-base font-medium">Data & Export Tools</Label>
+        <p className="text-sm text-muted-foreground mb-2">Generate new data representations or export them.</p>
+        <div className="space-y-2">
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button disabled={isGeneratingTimeline} className="w-full" variant="secondary">
                 <Clock className="h-4 w-4 mr-2" />
-                {isGeneratingTimeline ? "Generating Timeline..." : "Generate Case Timeline"}
+                {isGeneratingTimeline ? "Generating..." : "Generate Case Timeline"}
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
@@ -353,6 +381,34 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button disabled={isExportingToGraph} className="w-full" variant="secondary">
+                <Share2 className="h-4 w-4 mr-2" />
+                {isExportingToGraph ? "Exporting..." : "Export to Graph DB"}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Confirm Graph Database Export</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will export the current case data (files, insights, etc.) to your Neo4j AuraDB instance. This will overwrite any existing graph data for this case.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleExportToGraph}>
+                  Confirm & Export
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+          <Button asChild className="w-full" variant="outline">
+            <Link to={`/graph-analysis/${caseId}`}>
+              <Share2 className="h-4 w-4 mr-2" />
+              View Graph Analysis
+            </Link>
+          </Button>
         </div>
       </div>
       <div>
