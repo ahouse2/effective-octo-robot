@@ -1,15 +1,51 @@
 import React from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { FolderKanban, Settings, Gavel, User, LogOut } from "lucide-react";
+import { FolderKanban, Gavel, User, LogOut, Scale, Sun, Moon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ThemeToggle } from "./ThemeToggle";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useTheme } from "next-themes";
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {}
 
+const SidebarThemeToggle = () => {
+  const { setTheme } = useTheme();
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" className="w-full justify-start gap-3 px-3 py-2 text-muted-foreground hover:text-primary">
+            <div className="relative h-4 w-4">
+              <Sun className="absolute h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+              <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+            </div>
+            <span>Toggle Theme</span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        <DropdownMenuItem onClick={() => setTheme("light")}>
+          Light
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setTheme("dark")}>
+          Dark
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setTheme("system")}>
+          System
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 export function Sidebar({ className }: SidebarProps) {
+  const location = useLocation();
+
   const handleSignOut = async () => {
     const loadingToastId = toast.loading("Signing out...");
     try {
@@ -26,56 +62,66 @@ export function Sidebar({ className }: SidebarProps) {
     }
   };
 
+  const navLinks = [
+    { to: "/dashboard", icon: FolderKanban, text: "Dashboard" },
+    { to: "/my-cases", icon: Gavel, text: "My Cases" },
+  ];
+
+  const accountLinks = [
+    { to: "/ai-settings", icon: User, text: "AI & Profile" },
+  ];
+
   return (
-    <div className={cn("pb-12 h-full flex flex-col", className)}>
-      <div className="space-y-4 py-4 flex-1">
-        <div className="px-3 py-2">
-          <h2 className="mb-2 px-4 text-lg font-semibold tracking-tight">
-            Family Law AI
-          </h2>
-          <div className="space-y-1">
-            <Link to="/dashboard">
-              <Button variant="ghost" className="w-full justify-start">
-                <FolderKanban className="mr-2 h-4 w-4" />
-                Dashboard
-              </Button>
+    <div className={cn("flex h-full max-h-screen flex-col gap-2", className)}>
+      <div className="flex h-14 items-center border-b px-4 lg:h-[60px] lg:px-6">
+        <Link to="/" className="flex items-center gap-2 font-semibold text-foreground">
+          <Scale className="h-6 w-6 text-primary" />
+          <span className="">Family Law AI</span>
+        </Link>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        <nav className="grid items-start px-2 py-4 text-sm font-medium lg:px-4">
+          {navLinks.map(link => (
+            <Link
+              key={link.to}
+              to={link.to}
+              className={cn(
+                "flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary",
+                location.pathname.startsWith(link.to) && "bg-accent text-primary"
+              )}
+            >
+              <link.icon className="h-4 w-4" />
+              {link.text}
             </Link>
-            <Link to="/my-cases">
-              <Button variant="ghost" className="w-full justify-start">
-                <Gavel className="mr-2 h-4 w-4" />
-                My Cases
-              </Button>
-            </Link>
-          </div>
-        </div>
-        <div className="px-3 py-2">
-          <h2 className="mb-2 px-4 text-lg font-semibold tracking-tight">
+          ))}
+        </nav>
+        <div className="px-2 lg:px-4 mt-4">
+          <h2 className="mb-2 px-3 text-lg font-semibold tracking-tight">
             Account
           </h2>
           <div className="space-y-1">
-            <Link to="/ai-settings">
-              <Button variant="ghost" className="w-full justify-start">
-                <User className="mr-2 h-4 w-4" />
-                AI & Profile
-              </Button>
-            </Link>
-            <ThemeToggle />
-            <Button variant="ghost" className="w-full justify-start text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300" onClick={handleSignOut}>
-              <LogOut className="mr-2 h-4 w-4" />
-              Sign Out
-            </Button>
+            {accountLinks.map(link => (
+              <Link
+                key={link.to}
+                to={link.to}
+                className={cn(
+                  "flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary",
+                  location.pathname.startsWith(link.to) && "bg-accent text-primary"
+                )}
+              >
+                <link.icon className="h-4 w-4" />
+                {link.text}
+              </Link>
+            ))}
+            <SidebarThemeToggle />
           </div>
         </div>
       </div>
-      <div className="mt-auto p-4 text-center text-sm text-gray-500">
-        <a
-          href="https://www.dyad.sh/"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="hover:text-gray-700 dark:hover:text-gray-200"
-        >
-          Made with Dyad
-        </a>
+      <div className="mt-auto p-4 border-t">
+        <Button variant="ghost" className="w-full justify-start text-muted-foreground hover:text-destructive" onClick={handleSignOut}>
+          <LogOut className="mr-2 h-4 w-4" />
+          Sign Out
+        </Button>
       </div>
     </div>
   );

@@ -87,10 +87,10 @@ const MyCases = () => {
 
   return (
     <Layout>
-      <div className="container mx-auto py-8">
+      <div className="p-4 sm:p-6 lg:p-8">
         <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
           <div>
-            <h1 className="text-4xl font-bold">My Cases</h1>
+            <h1 className="text-3xl font-bold">My Cases</h1>
             <p className="text-muted-foreground">Manage, view, and analyze your ongoing cases.</p>
           </div>
           <div className="flex items-center space-x-2 w-full md:w-auto">
@@ -98,12 +98,8 @@ const MyCases = () => {
           </div>
         </div>
 
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle>Filter & Search</CardTitle>
-            <CardDescription>Quickly find the case you're looking for.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col md:flex-row gap-4">
+        <Card className="mb-8 high-end-card">
+          <CardContent className="p-4 flex flex-col md:flex-row gap-4">
             <Input
               placeholder="Search by name or type..."
               value={searchTerm}
@@ -152,11 +148,11 @@ const MyCases = () => {
             {filteredCases.map((caseItem) => (
               <Card
                 key={caseItem.id}
-                className="flex flex-col transition-all duration-300 ease-in-out hover:shadow-lg dark:hover:shadow-primary/10"
+                className="high-end-card flex flex-col"
               >
-                <CardHeader className="pb-4">
+                <CardHeader>
                   <div className="flex justify-between items-start gap-2">
-                    <CardTitle className="text-lg flex-grow min-w-0 break-words">{caseItem.name}</CardTitle>
+                    <CardTitle className="text-lg text-primary">{caseItem.name}</CardTitle>
                     <Badge variant={
                       caseItem.status === "Analysis Complete" ? "default" :
                       caseItem.status === "In Progress" ? "secondary" :
@@ -168,7 +164,7 @@ const MyCases = () => {
                   </div>
                   <CardDescription>{caseItem.type}</CardDescription>
                 </CardHeader>
-                <CardContent className="flex-grow space-y-2 py-0">
+                <CardContent className="flex-grow space-y-2">
                   {caseItem.status === 'In Progress' && caseItem.analysis_progress != null && (
                     <div className="pt-2">
                       <Progress value={caseItem.analysis_progress} className="w-full h-2" />

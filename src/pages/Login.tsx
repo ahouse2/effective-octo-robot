@@ -4,6 +4,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { Scale } from 'lucide-react';
+import { Card } from '@/components/ui/card';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -11,7 +13,7 @@ const Login = () => {
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (session) {
-        navigate('/'); // Redirect to home page if user is logged in
+        navigate('/');
         toast.success("Logged in successfully!");
       }
     });
@@ -20,26 +22,50 @@ const Login = () => {
   }, [navigate]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900">
-      <div className="w-full max-w-md p-8 space-y-6 bg-white dark:bg-gray-800 rounded-lg shadow-md">
-        <h2 className="text-2xl font-bold text-center text-gray-900 dark:text-white">Sign In / Sign Up</h2>
-        <Auth
-          supabaseClient={supabase}
-          providers={[]} // No third-party providers for now
-          appearance={{
-            theme: ThemeSupa,
-            variables: {
-              default: {
-                colors: {
-                  brand: 'hsl(var(--primary))',
-                  brandAccent: 'hsl(var(--primary-foreground))',
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <div className="w-full max-w-md space-y-8">
+        <div className="text-center">
+          <Scale className="mx-auto h-12 w-12 text-primary" />
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-foreground">
+            Family Law AI
+          </h2>
+          <p className="mt-2 text-center text-sm text-muted-foreground">
+            Sign in to access your case dashboard
+          </p>
+        </div>
+        <Card className="p-8 high-end-card">
+          <Auth
+            supabaseClient={supabase}
+            providers={[]}
+            appearance={{
+              theme: ThemeSupa,
+              variables: {
+                default: {
+                  colors: {
+                    brand: 'hsl(var(--primary))',
+                    brandAccent: 'hsl(var(--primary-foreground))',
+                    defaultButtonBackground: 'hsl(var(--background))',
+                    defaultButtonBackgroundHover: 'hsl(var(--muted))',
+                    defaultButtonBorder: 'hsl(var(--border))',
+                    defaultButtonText: 'hsl(var(--foreground))',
+                    inputBackground: 'hsl(var(--background))',
+                    inputBorder: 'hsl(var(--input))',
+                    inputBorderHover: 'hsl(var(--ring))',
+                    inputText: 'hsl(var(--foreground))',
+                    inputLabelText: 'hsl(var(--foreground))',
+                    inputPlaceholder: 'hsl(var(--muted-foreground))',
+                  },
+                  radii: {
+                    borderRadius: 'var(--radius)',
+                    buttonBorderRadius: 'var(--radius)',
+                  }
                 },
               },
-            },
-          }}
-          theme="light" // Use light theme, adjust if dark theme is preferred
-          redirectTo={window.location.origin} // Redirect to the current origin after auth
-        />
+            }}
+            theme="dark"
+            redirectTo={window.location.origin}
+          />
+        </Card>
       </div>
     </div>
   );

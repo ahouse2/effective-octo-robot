@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import Layout from "@/components/Layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { FileText, Gavel, Clock, PlusCircle } from "lucide-react";
@@ -43,7 +42,7 @@ const Dashboard = () => {
         setTotalCases(allCases.length);
         setCasesInProgress(allCases.filter(c => c.status === "In Progress").length);
         setAnalysesCompleted(allCases.filter(c => c.status === "Analysis Complete").length);
-        setRecentActivities(allCases.slice(0, 3)); // Show up to 3 most recent activities
+        setRecentActivities(allCases.slice(0, 5));
       }
       setLoading(false);
     };
@@ -52,92 +51,78 @@ const Dashboard = () => {
   }, []);
 
   const renderDashboardContent = () => {
-    if (totalCases === 0) {
+    if (totalCases === 0 && !loading) {
       return (
-        <Card className="max-w-3xl mx-auto text-center py-12 px-6 bg-gradient-to-br from-background to-muted/50">
-          <CardHeader>
-            <div className="mx-auto bg-primary/10 text-primary h-16 w-16 rounded-full flex items-center justify-center mb-4">
-              <Gavel className="h-8 w-8" />
-            </div>
-            <CardTitle className="text-3xl font-bold">Welcome to Family Law AI</CardTitle>
-            <CardDescription className="text-lg text-muted-foreground mt-2">
-              Your specialized tool for evidence analysis in California family law cases.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="mb-8">
-              It looks like you don't have any cases yet. Get started by creating your first case, uploading your evidence, and letting our AI agents handle the analysis.
-            </p>
+        <div className="text-center py-16 px-6">
+          <div className="mx-auto bg-primary/10 text-primary h-16 w-16 rounded-full flex items-center justify-center mb-4">
+            <Gavel className="h-8 w-8" />
+          </div>
+          <h1 className="text-3xl font-bold">Welcome to Your Legal Dashboard</h1>
+          <p className="text-lg text-muted-foreground mt-2 max-w-2xl mx-auto">
+            Streamline your case management. Start by creating your first case to unlock AI-powered analysis and insights.
+          </p>
+          <div className="mt-8">
             <Link to="/my-cases">
               <Button size="lg">
                 <PlusCircle className="mr-2 h-5 w-5" />
                 Create Your First Case
               </Button>
             </Link>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       );
     }
 
     return (
       <>
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 max-w-4xl mx-auto">
-          <Card>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <Card className="high-end-card">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Cases</CardTitle>
               <Gavel className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{totalCases}</div>
-              <p className="text-xs text-muted-foreground">
-                All cases managed
-              </p>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="high-end-card">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">In Progress</CardTitle>
               <Clock className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{casesInProgress}</div>
-              <p className="text-xs text-muted-foreground">
-                Analyses currently running
-              </p>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="high-end-card">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Completed Analyses</CardTitle>
+              <CardTitle className="text-sm font-medium">Completed</CardTitle>
               <FileText className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{analysesCompleted}</div>
-              <p className="text-xs text-muted-foreground">
-                Analyses successfully finished
-              </p>
             </CardContent>
           </Card>
         </div>
 
         {/* Recent Activity Section */}
-        <Card className="max-w-4xl mx-auto">
+        <Card className="high-end-card">
           <CardHeader>
             <CardTitle>Recent Activity</CardTitle>
-            <CardDescription>A summary of the most recently updated cases.</CardDescription>
+            <CardDescription>The most recently updated cases.</CardDescription>
           </CardHeader>
           <CardContent>
             {recentActivities.length > 0 ? (
-              <ul className="space-y-4">
+              <ul className="space-y-2">
                 {recentActivities.map((activity) => (
-                  <li key={activity.id} className="flex items-center justify-between">
+                  <li key={activity.id} className="flex items-center justify-between p-2 rounded-md hover:bg-muted">
                     <div>
-                      <p className="font-medium">{activity.status}: <span className="text-primary">{activity.name}</span></p>
-                      <p className="text-sm text-muted-foreground">{new Date(activity.last_updated).toLocaleDateString()}</p>
+                      <p className="font-medium text-primary">{activity.name}</p>
+                      <p className="text-sm text-muted-foreground">{activity.status} - {new Date(activity.last_updated).toLocaleDateString()}</p>
                     </div>
                     <Link to={`/agent-interaction/${activity.id}`}>
-                      <Button variant="outline" size="sm">View Analysis</Button>
+                      <Button variant="outline" size="sm">View</Button>
                     </Link>
                   </li>
                 ))}
@@ -145,15 +130,6 @@ const Dashboard = () => {
             ) : (
               <div className="text-center py-8 text-muted-foreground">No recent activity.</div>
             )}
-            <Separator className="my-6" />
-            <div className="flex justify-center space-x-4">
-              <Link to="/my-cases">
-                <Button>Create New Case</Button>
-              </Link>
-              <Link to="/my-cases">
-                <Button variant="outline">View All Cases</Button>
-              </Link>
-            </div>
           </CardContent>
         </Card>
       </>
@@ -162,8 +138,16 @@ const Dashboard = () => {
 
   return (
     <Layout>
-      <div className="container mx-auto py-8">
-        <h1 className="text-4xl font-bold mb-8 text-center">Dashboard</h1>
+      <div className="p-4 sm:p-6 lg:p-8">
+        <div className="flex items-center justify-between mb-8">
+          <h1 className="text-3xl font-bold">Dashboard</h1>
+          <Link to="/my-cases">
+            <Button>
+              <PlusCircle className="mr-2 h-4 w-4" />
+              New Case
+            </Button>
+          </Link>
+        </div>
 
         {loading ? (
           <div className="text-center py-8">Loading dashboard data...</div>
