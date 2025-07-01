@@ -119,44 +119,61 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({ caseId }) => {
 
   const fetchFiles = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('case_files_metadata')
-      .select('*')
-      .eq('case_id', caseId)
-      .order('file_category', { ascending: true, nullsFirst: false })
-      .order('suggested_name', { ascending: true });
+    let fetchedFiles: FileMetadata[] = [];
+    let hasMore = true;
+    let page = 0;
+    const pageSize = 1000;
 
-    if (error) {
-      toast.error("Failed to load evidence files.");
-      console.error(error);
-    } else {
-      const fetchedFiles = data || [];
-      setAllFiles(fetchedFiles);
+    while(hasMore) {
+      const from = page * pageSize;
+      const to = from + pageSize - 1;
+      const { data, error } = await supabase
+        .from('case_files_metadata')
+        .select('*')
+        .eq('case_id', caseId)
+        .order('file_category', { ascending: true, nullsFirst: false })
+        .order('suggested_name', { ascending: true })
+        .range(from, to);
 
-      const groupedByCategory = fetchedFiles.reduce((acc, file) => {
-        const category = file.file_category || "Uncategorized";
-        if (!acc[category]) acc[category] = [];
-        acc[category].push(file);
-        return acc;
-      }, {} as Record<string, FileMetadata[]>);
-      setGroupedFiles(groupedByCategory);
-
-      const root: any = {};
-      fetchedFiles.forEach(file => {
-        const pathParts = file.file_path.split('/').slice(2);
-        let currentLevel = root;
-        pathParts.forEach((part, index) => {
-          if (index === pathParts.length - 1) {
-            if (!currentLevel._files) currentLevel._files = [];
-            currentLevel._files.push(file);
-          } else {
-            if (!currentLevel[part]) currentLevel[part] = {};
-            currentLevel = currentLevel[part];
-          }
-        });
-      });
-      setFolderStructure(root);
+      if (error) {
+        toast.error("Failed to load evidence files.");
+        console.error(error);
+        hasMore = false;
+      } else {
+        fetchedFiles = [...fetchedFiles, ...data];
+        if (data.length < pageSize) {
+          hasMore = false;
+        } else {
+          page++;
+        }
+      }
     }
+
+    setAllFiles(fetchedFiles);
+
+    const groupedByCategory = fetchedFiles.reduce((acc, file) => {
+      const category = file.file_category || "Uncategorized";
+      if (!acc[category]) acc[category] = [];
+      acc[category].push(file);
+      return acc;
+    }, {} as Record<string, FileMetadata[]>);
+    setGroupedFiles(groupedByCategory);
+
+    const root: any = {};
+    fetchedFiles.forEach(file => {
+      const pathParts = file.file_path.split('/').slice(2);
+      let currentLevel = root;
+      pathParts.forEach((part, index) => {
+        if (index === pathParts.length - 1) {
+          if (!currentLevel._files) currentLevel._files = [];
+          currentLevel._files.push(file);
+        } else {
+          if (!currentLevel[part]) currentLevel[part] = {};
+          currentLevel = currentLevel[part];
+        }
+      });
+    });
+    setFolderStructure(root);
     setLoading(false);
   };
 
