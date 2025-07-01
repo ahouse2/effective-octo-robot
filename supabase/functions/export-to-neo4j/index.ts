@@ -31,10 +31,8 @@ serve(async (req) => {
     const driver = neo4j.driver(NEO4J_URI, neo4j.auth.basic(NEO4J_USERNAME, NEO4J_PASSWORD));
     const session = driver.session({ database: NEO4J_DATABASE });
 
-    // ... (rest of the function logic remains the same)
     console.log(`Starting Neo4j export for case: ${caseId}`);
 
-    // 1. Fetch all data for the case from Supabase
     const { data: caseData, error: caseError } = await supabaseClient.from('cases').select('*').eq('id', caseId).single();
     if (caseError) throw new Error(`Failed to fetch case: ${caseError.message}`);
 
@@ -44,9 +42,15 @@ serve(async (req) => {
     const { data: insightsData, error: insightsError } = await supabaseClient.from('case_insights').select('*').eq('case_id', caseId);
     if (insightsError) throw new Error(`Failed to fetch insights: ${insightsError.message}`);
 
-    // 2. Use a single transaction to perform a clean import
     await session.executeWrite(async (tx) => {
-      // Cleanup: Remove old data for this case to ensure a fresh import
+      await tx.run(
+        `
+        MATCH (c:Case {id: $caseId})
+        OPTIONAL MATCH (c)-[r]-()
+        DELETE r
+        `,
+        { caseId }
+      );
       await tx.run(
         `
         MATCH (c:Case {id: $caseId})
@@ -57,13 +61,11 @@ serve(async (req) => {
         { caseId }
       );
 
-      // Create/Update Case Node
       await tx.run(
         'MERGE (c:Case {id: $id}) SET c.name = $name, c.type = $type, c.status = $status',
         { id: caseData.id, name: caseData.name, type: caseData.type, status: caseData.status }
       );
 
-      // Batch create File nodes and relationships
       if (filesData && filesData.length > 0) {
         await tx.run(
           `
@@ -77,7 +79,6 @@ serve(async (req) => {
           { files: filesData, caseId }
         );
 
-        // Batch create Category nodes and relationships
         await tx.run(
           `
           UNWIND $files AS file
@@ -90,7 +91,6 @@ serve(async (req) => {
           { files: filesData }
         );
 
-        // Batch create Tag nodes and relationships
         await tx.run(
           `
           UNWIND $files AS file
@@ -105,7 +105,6 @@ serve(async (req) => {
         );
       }
 
-      // Batch create Insight nodes and relationships
       if (insightsData && insightsData.length > 0) {
         await tx.run(
           `

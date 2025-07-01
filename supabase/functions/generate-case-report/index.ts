@@ -21,7 +21,6 @@ serve(async (req) => {
       { auth: { persistSession: false } }
     );
 
-    // Fetch all data in parallel for efficiency
     const [
       { data: caseData, error: caseError },
       { data: theoryData, error: theoryError },
@@ -39,7 +38,6 @@ serve(async (req) => {
     if (caseError) throw new Error(`Failed to fetch case details: ${caseError.message}`);
     if (!caseData) throw new Error(`Case with ID ${caseId} not found.`);
 
-    // Start building the report string
     let report = `# Case Report: ${caseData.name}\n\n`;
     report += `**Case ID:** ${caseData.id}\n`;
     report += `**Case Type:** ${caseData.type}\n`;
@@ -50,7 +48,6 @@ serve(async (req) => {
     report += `### System Instructions for AI\n${caseData.system_instruction || 'Not specified.'}\n\n`;
     report += `### User-Specified Legal Arguments\n${caseData.user_specified_arguments || 'Not specified.'}\n\n`;
 
-    // Add Case Theory section
     report += `## AI-Generated Case Theory\n\n`;
     if (theoryData) {
       report += `**Status:** ${theoryData.status}\n`;
@@ -82,7 +79,6 @@ serve(async (req) => {
       report += `No case theory has been generated yet.\n\n`;
     }
 
-    // Add Key Insights section
     report += `## AI-Generated Key Insights\n\n`;
     if (insightsData && insightsData.length > 0) {
       insightsData.forEach((insight: any) => {
@@ -94,7 +90,6 @@ serve(async (req) => {
       report += `No key insights have been generated yet.\n\n`;
     }
 
-    // Add Timeline of Events section
     report += `## Timeline of Key Events\n\n`;
     if (timelineEventsData && timelineEventsData.length > 0) {
         timelineEventsData.forEach((event: any) => {
@@ -105,7 +100,6 @@ serve(async (req) => {
         report += `No timeline events have been generated yet.\n\n`;
     }
 
-    // Add Evidence Log section as a Markdown table
     report += `## Evidence Log\n\n`;
     if (filesData && filesData.length > 0) {
       report += `| Suggested Filename | Category | SHA-256 Hash | Summary |\n`;

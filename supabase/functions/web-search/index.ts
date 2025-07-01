@@ -20,8 +20,6 @@ serve(async (req) => {
       });
     }
 
-    // IMPORTANT: Ensure GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_ENGINE_ID are set as Supabase secrets.
-    // Navigate to Project Settings -> Edge Functions -> Manage Secrets in your Supabase Console.
     const GOOGLE_SEARCH_API_KEY = Deno.env.get('GOOGLE_SEARCH_API_KEY');
     const GOOGLE_SEARCH_ENGINE_ID = Deno.env.get('GOOGLE_SEARCH_ENGINE_ID');
 

@@ -6,10 +6,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Standardized helper to get user ID from either JWT (client-side) or custom header (server-side)
 async function getUserIdFromRequest(req: Request, supabaseClient: SupabaseClient): Promise<string | null> {
   try {
-    // 1. Try to get user from Authorization header (standard for client calls)
     const authHeader = req.headers.get('Authorization');
     if (authHeader) {
       const { data: { user }, error } = await supabaseClient.auth.getUser(authHeader.replace('Bearer ', ''));
@@ -21,7 +19,6 @@ async function getUserIdFromRequest(req: Request, supabaseClient: SupabaseClient
       }
     }
 
-    // 2. Fallback to custom header (for server-to-server calls)
     const userIdFromHeader = req.headers.get('x-supabase-user-id');
     if (userIdFromHeader) {
       return userIdFromHeader;
@@ -60,7 +57,6 @@ serve(async (req) => {
       });
     }
 
-    // 1. Insert user's prompt as an agent activity
     const { error: activityError } = await supabaseClient
       .from('agent_activities')
       .insert({
@@ -77,7 +73,6 @@ serve(async (req) => {
       throw new Error('Failed to record user prompt.');
     }
 
-    // 2. Parse for @-mentioned filename
     const mentionRegex = /@'([^']+)'/;
     const match = promptContent.match(mentionRegex);
 
@@ -90,7 +85,6 @@ serve(async (req) => {
       console.log(`User mentioned file: ${mentionedFilename}. Remaining prompt: "${finalPrompt}"`);
     }
 
-    // 3. Invoke the AI Orchestrator Edge Function
     console.log(`Invoking AI Orchestrator for user prompt on case: ${caseId}`);
     const { data: orchestratorResponse, error: orchestratorError } = await supabaseClient.functions.invoke(
       'ai-orchestrator',

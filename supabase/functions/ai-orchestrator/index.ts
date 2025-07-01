@@ -9,12 +9,19 @@ const corsHeaders = {
 };
 
 // --- UTILITY FUNCTIONS ---
-// ... (utility functions remain the same)
-function extractJson(text: string): string | null {
+function extractJson(text: string): any | null {
   const jsonRegex = /```json\s*([\s\S]*?)\s*```|({[\s\S]*}|\[[\s\S]*\])/;
   const match = text.match(jsonRegex);
   if (match) {
-    return match[1] || match[0];
+    const jsonString = match[1] || match[2];
+    if (jsonString) {
+        try {
+            return JSON.parse(jsonString);
+        } catch (e) {
+            console.error("Failed to parse extracted JSON string:", jsonString, e);
+            return null;
+        }
+    }
   }
   return null;
 }
@@ -52,7 +59,7 @@ async function insertAgentActivity(supabaseClient: SupabaseClient, caseId: strin
   if (error) console.error(`Failed to insert agent activity [${activityType}]`, error);
 }
 
-// --- NEW SEARCH HANDLER ---
+// --- SEARCH HANDLER ---
 async function handleSearchCommand(supabaseClient: SupabaseClient, genAI: GoogleGenerativeAI, caseId: string, query: string) {
   await insertAgentActivity(supabaseClient, caseId, 'Search Agent', 'System', 'Search Started', `Searching for: "${query}"`, 'processing');
 
@@ -91,7 +98,7 @@ async function handleSearchCommand(supabaseClient: SupabaseClient, genAI: Google
     ---
   `;
 
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
   const result = await model.generateContent(prompt);
   const responseText = result.response.text();
   const jsonResult = extractJson(responseText);
@@ -105,40 +112,239 @@ async function handleSearchCommand(supabaseClient: SupabaseClient, genAI: Google
   return jsonResult;
 }
 
+// --- OPENAI & GEMINI HANDLERS ---
+async function getOrCreateAssistant(openai: OpenAI, supabaseClient: SupabaseClient, userId: string, caseId: string): Promise<{ assistantId: string, threadId: string }> {
+    let { data: caseData, error: caseError } = await supabaseClient.from('cases').select('openai_assistant_id, openai_thread_id, name, case_goals, system_instruction').eq('id', caseId).single();
+    if (caseError || !caseData) throw new Error(`Case not found: ${caseId}`);
 
-// --- OPENAI & GEMINI HANDLERS (remain the same) ---
-// ...
+    let assistantId = caseData.openai_assistant_id;
+    if (!assistantId) {
+        const { data: profileData } = await supabaseClient.from('profiles').select('openai_assistant_id').eq('id', userId).single();
+        assistantId = profileData?.openai_assistant_id;
+    }
+
+    const instructions = `You are a specialized legal AI assistant for California family law. Your role is to analyze evidence, identify key facts, and help build a case theory. Base your analysis strictly on the provided files. Case Goals: ${caseData.case_goals}. System Instructions: ${caseData.system_instruction}`;
+
+    if (assistantId) {
+        await openai.beta.assistants.update(assistantId, { instructions, tools: [{ type: "file_search" }] });
+    } else {
+        const assistant = await openai.beta.assistants.create({
+            name: `Family Law AI for Case: ${caseData.name}`,
+            instructions,
+            tools: [{ type: "file_search" }],
+            model: "gpt-4o",
+        });
+        assistantId = assistant.id;
+    }
+
+    let threadId = caseData.openai_thread_id;
+    if (!threadId) {
+        const thread = await openai.beta.threads.create();
+        threadId = thread.id;
+    }
+
+    await supabaseClient.from('cases').update({ openai_assistant_id: assistantId, openai_thread_id: threadId }).eq('id', caseId);
+    return { assistantId, threadId };
+}
+
+async function handleOpenAICommand(supabaseClient: SupabaseClient, openai: OpenAI, caseId: string, userId: string, command: string, payload: any) {
+    await updateProgress(supabaseClient, caseId, 10, 'Initializing OpenAI Assistant...');
+    const { assistantId, threadId } = await getOrCreateAssistant(openai, supabaseClient, userId, caseId);
+    let prompt = "";
+
+    if (command === 're_run_analysis') {
+        prompt = `Please perform a comprehensive analysis of all the evidence files associated with this case. Your primary objectives are to identify key themes, generate a high-level summary, create key insights, and update the case theory. Structure your response as a JSON object within a markdown block.`;
+    } else if (command === 'user_prompt') {
+        prompt = payload.promptContent;
+    } else {
+        throw new Error(`Unsupported OpenAI command: ${command}`);
+    }
+
+    await updateProgress(supabaseClient, caseId, 25, 'Sending prompt to OpenAI...');
+    await openai.beta.threads.messages.create(threadId, { role: "user", content: prompt });
+    const run = await openai.beta.threads.runs.create(threadId, { assistant_id: assistantId });
+
+    await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'AI', 'Analysis Started', `Run created with ID: ${run.id}. Awaiting completion.`, 'processing');
+    await supabaseClient.from('cases').update({ status: 'In Progress' }).eq('id', caseId);
+    await updateProgress(supabaseClient, caseId, 50, 'OpenAI is processing the request...');
+
+    // Immediately invoke the status checker function to start polling
+    await supabaseClient.functions.invoke('check-openai-run-status', {
+        body: { caseId, threadId, runId: run.id },
+    });
+}
+
+async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: GoogleGenerativeAI, caseId: string, command: string, payload: any) {
+    let promptContent = payload.promptContent;
+    let files;
+    let dbSearchError;
+
+    if (command === 're_run_analysis') {
+        promptContent = `Perform a comprehensive analysis of all documents. Summarize the key facts, events, and overall case narrative based on the entire evidence locker.`;
+        await updateProgress(supabaseClient, caseId, 10, 'Gathering all evidence summaries...');
+        await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Process Started', 'Gathering all available evidence for a full analysis.', 'processing');
+        
+        const { data, error } = await supabaseClient
+            .from('case_files_metadata')
+            .select('suggested_name, description')
+            .eq('case_id', caseId)
+            .not('description', 'is', null);
+        files = data;
+        dbSearchError = error;
+
+    } else { // This handles a specific user prompt
+        await updateProgress(supabaseClient, caseId, 10, 'Searching for relevant documents in Supabase...');
+        await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Process Started', 'Performing text search on file summaries within Supabase.', 'processing');
+        
+        const stopWords = new Set(['a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'has', 'he', 'in', 'is', 'it', 'its', 'of', 'on', 'that', 'the', 'to', 'was', 'were', 'will', 'with', 'this', 'those', 'all', 'any', 'etc']);
+        const searchTerms = Array.from(new Set(
+            promptContent.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").split(/\s+/).filter(term => term.length > 3 && !stopWords.has(term))
+        ));
+
+        if (searchTerms.length === 0) {
+            await insertAgentActivity(supabaseClient, caseId, 'Gemini', 'System', 'No Search Terms', 'Could not extract meaningful search terms from the prompt.', 'completed');
+            return;
+        }
+
+        const { data, error } = await supabaseClient
+            .from('case_files_metadata')
+            .select('suggested_name, description')
+            .eq('case_id', caseId)
+            .or(searchTerms.map(term => `description.ilike.%${term}%`).join(','));
+        files = data;
+        dbSearchError = error;
+    }
+
+    if (dbSearchError) {
+        await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Database Search Failed', `Error searching file metadata: ${dbSearchError.message}`, 'error');
+        throw new Error(`Failed to search file metadata: ${dbSearchError.message}`);
+    }
+
+    if (!files || files.length === 0) {
+        await insertAgentActivity(supabaseClient, caseId, 'Gemini', 'System', 'No Context Found', 'Could not find relevant documents for this query. Ensure files have been summarized.', 'completed');
+        await updateProgress(supabaseClient, caseId, 100, 'Analysis complete: No relevant documents found.');
+        return;
+    }
+
+    await updateProgress(supabaseClient, caseId, 30, `Found ${files.length} files to analyze.`);
+    const contextSnippets = files.map(file => `From file "${file.suggested_name}":\n${file.description}`).join('\n\n---\n\n');
+    await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Search Complete', `Found ${files.length} potentially relevant files.`, 'completed');
+
+    await updateProgress(supabaseClient, caseId, 50, 'Synthesizing analysis with Gemini...');
+    const { data: caseDetails } = await supabaseClient.from('cases').select('case_goals, system_instruction, user_specified_arguments').eq('id', caseId).single();
+    
+    const analysisPrompt = `
+      You are a master legal analyst AI specializing in California family law. Your primary value is to identify non-obvious patterns, correlations, and discrepancies across the entire evidence set that a human analyst might miss. Connect disparate pieces of information to form a cohesive narrative.
+      
+      Based on the provided context from multiple evidence files, perform a comprehensive analysis. Your response MUST be a single JSON object containing two keys: "case_theory" and "case_insights".
+
+      1.  **case_theory**: An object with three keys: "fact_patterns", "legal_arguments", and "potential_outcomes". Each should be an array of strings.
+      2.  **case_insights**: An array of objects, where each object has "title", "description", and "insight_type" ('key_fact', 'risk_assessment', 'outcome_trend', or 'general').
+
+      The user has provided the following directives:
+      - **Primary Case Goals:** ${caseDetails?.case_goals || 'Not specified.'}
+      - **Specific Legal Arguments to Investigate:** ${caseDetails?.user_specified_arguments || 'None specified.'}
+      - **General System Instructions:** ${caseDetails?.system_instruction || 'None.'}
+
+      Pay special attention to evidence that supports or refutes the user-specified legal arguments.
+
+      Example JSON structure:
+      \`\`\`json
+      {
+        "case_theory": {
+          "fact_patterns": ["Consistent communication breakdown between parties.", "Evidence of hidden financial assets in file 'Bank Statement 2023.pdf'."],
+          "legal_arguments": ["Breach of fiduciary duty regarding community property.", "Argument for primary custody based on documented instability."],
+          "potential_outcomes": ["Unequal division of assets due to financial misconduct.", "Supervised visitation for one party."]
+        },
+        "case_insights": [
+          {
+            "title": "Undisclosed Financial Account",
+            "description": "The file 'Bank Statement 2023.pdf' shows a previously undisclosed bank account with a significant balance, which is a major key fact.",
+            "insight_type": "key_fact"
+          }
+        ]
+      }
+      \`\`\`
+
+      Here is the context from the evidence files:
+      ---
+      ${contextSnippets}
+      ---
+    `;
+
+    const synthesisPrompt = command === 're_run_analysis' ? analysisPrompt : `Based on the following context from case documents, answer the user's question. User's Question: "${promptContent}". Case Goals: ${caseDetails?.case_goals || 'Not specified.'}. System Instructions: ${caseDetails?.system_instruction || 'None.'}. Context from Documents: --- ${contextSnippets} --- Your Answer:`;
+    
+    await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Prompt Synthesis', `Sending prompt of length ${synthesisPrompt.length} to Gemini.`, 'processing');
+
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+    const result = await model.generateContent(synthesisPrompt);
+    
+    const response = result.response;
+    if (!response) throw new Error("The AI model did not return a valid response.");
+    if (response.promptFeedback?.blockReason) {
+        const blockReason = response.promptFeedback.blockReason;
+        const safetyRatings = response.promptFeedback.safetyRatings?.map(r => `${r.category}: ${r.probability}`).join(', ');
+        throw new Error(`The AI's response was blocked for safety reasons. Reason: ${blockReason}. Details: [${safetyRatings}].`);
+    }
+    
+    const responseText = response.text();
+    await updateProgress(supabaseClient, caseId, 80, 'Parsing AI response and updating database...');
+
+    if (command === 're_run_analysis') {
+        const jsonString = extractJson(responseText);
+        if (!jsonString) throw new Error("AI did not return a valid JSON object.");
+        
+        const analysisResult = JSON.parse(jsonString);
+
+        if (analysisResult.case_theory) {
+            await supabaseClient.from('case_theories').upsert({
+                case_id: caseId,
+                fact_patterns: analysisResult.case_theory.fact_patterns,
+                legal_arguments: analysisResult.case_theory.legal_arguments,
+                potential_outcomes: analysisResult.case_theory.potential_outcomes,
+                status: 'refined',
+                last_updated: new Date().toISOString()
+            }, { onConflict: 'case_id' });
+        }
+
+        if (analysisResult.case_insights && analysisResult.case_insights.length > 0) {
+            await supabaseClient.from('case_insights').delete().eq('case_id', caseId);
+            const insightsToInsert = analysisResult.case_insights.map((insight: any) => ({
+                case_id: caseId,
+                title: insight.title,
+                description: insight.description,
+                insight_type: insight.insight_type
+            }));
+            await supabaseClient.from('case_insights').insert(insightsToInsert);
+        }
+        await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'AI', 'Full Analysis Complete', `Successfully parsed and saved new case theory and ${analysisResult.case_insights?.length || 0} insights.`, 'completed');
+    } else {
+        await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'AI', 'RAG Response', responseText, 'completed');
+    }
+
+    await supabaseClient.from('cases').update({ status: 'Analysis Complete' }).eq('id', caseId);
+    await updateProgress(supabaseClient, caseId, 100, 'Analysis complete!');
+}
 
 // --- MAIN SERVE FUNCTION ---
 serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
-
-  let body;
-  try {
-    body = await req.json();
-  } catch (e) {
-    // For GET or other requests without a body, don't crash.
-    if (req.method !== 'POST') {
-        body = {};
-    } else {
-        return new Response(JSON.stringify({ error: 'Invalid JSON in request body' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    const body = await req.json();
     const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '', { auth: { persistSession: false } });
     const { caseId, command, payload } = body;
     const userId = await getUserIdFromRequest(req, supabaseClient);
     if (!caseId || !userId || !command) throw new Error('caseId, userId, and command are required');
 
-    // --- NEW SEARCH ROUTE ---
     if (command === 'search_evidence') {
         const genAI = new GoogleGenerativeAI(Deno.env.get('GOOGLE_GEMINI_API_KEY') ?? '');
         const searchResults = await handleSearchCommand(supabaseClient, genAI, caseId, payload.query);
         return new Response(JSON.stringify(searchResults), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
     }
 
-    // ... (rest of the command routing logic remains the same)
     if (command === 'diagnose_case_settings') {
         const { data, error } = await supabaseClient.from('cases').select('*').eq('id', caseId).single();
         if (error || !data) {
@@ -197,7 +403,7 @@ serve(async (req) => {
   } catch (error: any) {
     console.error('Edge Function error:', error.message, error.stack);
     const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
-    const caseIdFromRequest = body?.caseId;
+    const caseIdFromRequest = (await req.json().catch(() => ({})))?.caseId;
     if (caseIdFromRequest) {
         await supabaseClient.from('cases').update({ status: 'Error', analysis_status_message: error.message }).eq('id', caseIdFromRequest);
     }

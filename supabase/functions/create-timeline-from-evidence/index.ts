@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-import OpenAI from 'https://esm.sh/openai@4.52.7';
 import { GoogleGenerativeAI } from 'https://esm.sh/@google/generative-ai@0.15.0';
 
 const corsHeaders = {
@@ -8,11 +7,19 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-function extractJson(text: string): string | null {
+function extractJson(text: string): any | null {
   const jsonRegex = /```json\s*([\s\S]*?)\s*```|({[\s\S]*}|\[[\s\S]*\])/;
   const match = text.match(jsonRegex);
   if (match) {
-    return match[1] || match[0];
+    const jsonString = match[1] || match[2];
+    if (jsonString) {
+        try {
+            return JSON.parse(jsonString);
+        } catch (e) {
+            console.error("Failed to parse extracted JSON string:", jsonString, e);
+            return null;
+        }
+    }
   }
   return null;
 }
@@ -34,11 +41,10 @@ serve(async (req) => {
   }
 
   let caseId: string | null = null;
-  let focus: string | null = null;
   try {
     const body = await req.json();
     caseId = body.caseId;
-    focus = body.focus; // New optional parameter
+    const focus = body.focus; // New optional parameter
     if (!caseId) throw new Error("Case ID is required.");
 
     const supabaseClient = createClient(

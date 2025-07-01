@@ -45,15 +45,15 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  const { caseId, threadId, runId } = await req.json();
-  if (!caseId || !threadId || !runId) {
-    return new Response(JSON.stringify({ error: 'caseId, threadId, and runId are required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-  }
-
-  const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
-  const openai = new OpenAI({ apiKey: Deno.env.get('OPENAI_API_KEY') });
-
   try {
+    const { caseId, threadId, runId } = await req.json();
+    if (!caseId || !threadId || !runId) {
+      return new Response(JSON.stringify({ error: 'caseId, threadId, and runId are required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
+    const openai = new OpenAI({ apiKey: Deno.env.get('OPENAI_API_KEY') });
+
     const run = await openai.beta.threads.runs.retrieve(threadId, runId);
 
     if (run.status === 'completed') {
@@ -114,8 +114,12 @@ serve(async (req) => {
     }
   } catch (error: any) {
     console.error('Check Run Status Error:', error.message);
-    await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'Error Handler', 'Analysis Failed', error.message, 'error');
-    await supabaseClient.from('cases').update({ status: 'Error', analysis_status_message: error.message }).eq('id', caseId);
+    const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
+    const caseIdFromRequest = (await req.json().catch(() => ({})))?.caseId;
+    if (caseIdFromRequest) {
+        await insertAgentActivity(supabaseClient, caseIdFromRequest, 'OpenAI Assistant', 'Error Handler', 'Analysis Failed', error.message, 'error');
+        await supabaseClient.from('cases').update({ status: 'Error', analysis_status_message: error.message }).eq('id', caseIdFromRequest);
+    }
     return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });

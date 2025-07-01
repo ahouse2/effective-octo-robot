@@ -34,7 +34,6 @@ serve(async (req) => {
     let responseMessage = '';
 
     if (updateType === 'case_theory') {
-      // Update case_theories table
       const { error } = await supabaseClient
         .from('case_theories')
         .update({
@@ -52,7 +51,6 @@ serve(async (req) => {
       }
       responseMessage = 'Case theory updated successfully.';
     } else if (updateType === 'case_insight') {
-      // Insert new insight into case_insights table
       const { error } = await supabaseClient
         .from('case_insights')
         .insert({
@@ -69,7 +67,6 @@ serve(async (req) => {
       }
       responseMessage = 'Case insight added successfully.';
     } else if (updateType === 'agent_activity') {
-      // Insert new agent activity
       const { error } = await supabaseClient
         .from('agent_activities')
         .insert({

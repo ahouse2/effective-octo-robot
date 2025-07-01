@@ -50,7 +50,7 @@ serve(async (req) => {
     if (!geminiApiKey) throw new Error("GOOGLE_GEMINI_API_KEY is not set.");
 
     const genAI = new GoogleGenerativeAI(geminiApiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro-latest" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
 
     await supabaseClient.from('agent_activities').insert({
         case_id: caseId,
@@ -94,7 +94,6 @@ serve(async (req) => {
       prompt = `Analyze this document in the context of a family law case. The document content is below. Provide a detailed summary, a suggested filename, relevant tags, and a category. Your response MUST be a JSON object inside a markdown block, following this format: ${jsonFormat}\n\n---\n\n${textContent}`;
       contentParts.push(prompt);
     } else {
-        // For unsupported file types, we can still store the hash
         await supabaseClient.from('case_files_metadata').update({
             file_hash: fileHash,
             hash_algorithm: 'SHA-256',
@@ -164,7 +163,7 @@ serve(async (req) => {
 
   } catch (error: any) {
     console.error('Summarize File Error:', error.message, error.stack);
-    const caseId = req.headers.get('x-case-id'); // Assuming caseId is passed in headers or body
+    const caseId = (await req.json().catch(() => ({})))?.caseId;
     if (caseId) {
         await createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '').from('agent_activities').insert({
             case_id: caseId,
