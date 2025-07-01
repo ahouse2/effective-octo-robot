@@ -12,25 +12,26 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  const { caseId } = await req.json();
-  if (!caseId) {
-    return new Response(JSON.stringify({ error: 'Case ID is required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-  }
-
-  const NEO4J_URI = Deno.env.get('NEO4J_URI');
-  const NEO4J_USERNAME = Deno.env.get('NEO4J_USERNAME');
-  const NEO4J_PASSWORD = Deno.env.get('NEO4J_PASSWORD');
-  const NEO4J_DATABASE = Deno.env.get('NEO4J_DATABASE');
-
-  if (!NEO4J_URI || !NEO4J_USERNAME || !NEO4J_PASSWORD || !NEO4J_DATABASE) {
-    return new Response(JSON.stringify({ error: 'Neo4j credentials are not set in Supabase secrets.' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-  }
-
-  const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
-  const driver = neo4j.driver(NEO4J_URI, neo4j.auth.basic(NEO4J_USERNAME, NEO4J_PASSWORD));
-  const session = driver.session({ database: NEO4J_DATABASE });
-
   try {
+    const { caseId } = await req.json();
+    if (!caseId) {
+      return new Response(JSON.stringify({ error: 'Case ID is required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    const NEO4J_URI = Deno.env.get('NEO4J_URI');
+    const NEO4J_USERNAME = Deno.env.get('NEO4J_USERNAME');
+    const NEO4J_PASSWORD = Deno.env.get('NEO4J_PASSWORD');
+    const NEO4J_DATABASE = Deno.env.get('NEO4J_DATABASE');
+
+    if (!NEO4J_URI || !NEO4J_USERNAME || !NEO4J_PASSWORD || !NEO4J_DATABASE) {
+      return new Response(JSON.stringify({ error: 'Neo4j credentials are not set in Supabase secrets.' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
+    const driver = neo4j.driver(NEO4J_URI, neo4j.auth.basic(NEO4J_USERNAME, NEO4J_PASSWORD));
+    const session = driver.session({ database: NEO4J_DATABASE });
+
+    // ... (rest of the function logic remains the same)
     console.log(`Starting Neo4j export for case: ${caseId}`);
 
     // 1. Fetch all data for the case from Supabase
