@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import ForceGraph2D from 'react-force-graph-2d';
 import { Button } from "@/components/ui/button";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Camera } from "lucide-react";
 
 interface GraphNode {
   id: string;
@@ -29,7 +29,7 @@ const GraphAnalysis = () => {
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const fgRef = useRef();
+  const graphContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!caseId) {
@@ -79,23 +79,46 @@ const GraphAnalysis = () => {
     }
   };
 
+  const handleExportImage = () => {
+    if (graphContainerRef.current) {
+      const canvas = graphContainerRef.current.querySelector('canvas');
+      if (canvas) {
+        const dataUrl = canvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.href = dataUrl;
+        link.download = `graph_analysis_case_${caseId}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        toast.success("Graph image saved successfully!");
+      } else {
+        toast.error("Could not find graph canvas to export.");
+      }
+    }
+  };
+
   return (
     <Layout>
       <div className="container mx-auto py-8 h-full flex flex-col">
-        <div className="flex items-center mb-4">
-          <Button asChild variant="ghost" className="mr-4">
-            <Link to={`/agent-interaction/${caseId}`}>
-              <ArrowLeft className="h-5 w-5 mr-2" /> Back to Case
-            </Link>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center">
+            <Button asChild variant="ghost" className="mr-4">
+              <Link to={`/agent-interaction/${caseId}`}>
+                <ArrowLeft className="h-5 w-5 mr-2" /> Back to Case
+              </Link>
+            </Button>
+            <h1 className="text-4xl font-bold">Case Graph Analysis</h1>
+          </div>
+          <Button onClick={handleExportImage} disabled={loading || !!error}>
+            <Camera className="h-4 w-4 mr-2" />
+            Save as PNG
           </Button>
-          <h1 className="text-4xl font-bold">Case Graph Analysis</h1>
         </div>
-        <div className="flex-grow border rounded-lg overflow-hidden relative bg-gray-50 dark:bg-gray-900">
+        <div ref={graphContainerRef} className="flex-grow border rounded-lg overflow-hidden relative bg-gray-50 dark:bg-gray-900">
           {loading && <div className="absolute inset-0 flex items-center justify-center bg-background/50"><p>Loading graph...</p></div>}
           {error && <div className="absolute inset-0 flex items-center justify-center bg-background/50"><p className="text-destructive">{error}</p></div>}
           {!loading && !error && (
             <ForceGraph2D
-              ref={fgRef}
               graphData={graphData}
               nodeLabel="name"
               nodeAutoColorBy="label"
@@ -110,12 +133,12 @@ const GraphAnalysis = () => {
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.fillStyle = getNodeColor(node as GraphNode);
-                ctx.fillText(label, node.x, node.y + 8);
+                ctx.fillText(label, node.x as number, (node.y as number) + 8);
               }}
               nodePointerAreaPaint={(node, color, ctx) => {
                 ctx.fillStyle = color;
                 ctx.beginPath();
-                ctx.arc(node.x, node.y, 5, 0, 2 * Math.PI, false);
+                ctx.arc(node.x as number, node.y as number, 5, 0, 2 * Math.PI, false);
                 ctx.fill();
               }}
             />
