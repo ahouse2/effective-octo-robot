@@ -4,7 +4,6 @@ import { Separator } from "@/components/ui/separator";
 import { Lightbulb, TrendingUp, Scale, Info, Download } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
 import { downloadTextFile } from "@/lib/download";
 
 interface CaseInsight {
@@ -130,9 +129,13 @@ export const CaseInsightsCard: React.FC<CaseInsightsCardProps> = ({ caseId }) =>
           <CardDescription>High-level summaries and important findings from the analysis.</CardDescription>
         </div>
         <div className="flex-shrink-0">
-          <Button variant="outline" size="sm" onClick={handleExportInsights} disabled={insights.length === 0}>
+          <button
+            onClick={handleExportInsights}
+            disabled={insights.length === 0}
+            className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-3"
+          >
             <Download className="h-4 w-4 mr-2" /> Export
-          </Button>
+          </button>
         </div>
       </CardHeader>
       <CardContent>
