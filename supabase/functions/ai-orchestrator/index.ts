@@ -108,6 +108,11 @@ async function handleOpenAICommand(supabaseClient: SupabaseClient, openai: OpenA
     await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'AI', 'Analysis Started', `Run created with ID: ${run.id}. Awaiting completion.`, 'processing');
     await supabaseClient.from('cases').update({ status: 'In Progress' }).eq('id', caseId);
     await updateProgress(supabaseClient, caseId, 50, 'OpenAI is processing the request...');
+
+    // Immediately invoke the status checker function to start polling
+    await supabaseClient.functions.invoke('check-openai-run-status', {
+        body: { caseId, threadId, runId: run.id },
+    });
 }
 
 // --- GEMINI RAG HANDLER (NEW SIMPLIFIED VERSION) ---
