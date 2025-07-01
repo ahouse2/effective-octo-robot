@@ -51,9 +51,7 @@ serve(async (req) => {
         MATCH (c:Case {id: $caseId})
         OPTIONAL MATCH (c)-[:HAS_EVIDENCE]->(f:File)
         OPTIONAL MATCH (c)-[:HAS_INSIGHT]->(i:Insight)
-        WITH c, collect(DISTINCT f) as files, collect(DISTINCT i) as insights
-        FOREACH (file IN files WHERE file IS NOT NULL | DETACH DELETE file)
-        FOREACH (insight IN insights WHERE insight IS NOT NULL | DETACH DELETE insight)
+        DETACH DELETE f, i
         `,
         { caseId }
       );

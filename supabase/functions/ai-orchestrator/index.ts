@@ -239,13 +239,14 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
         const analysisResult = JSON.parse(jsonString);
 
         if (analysisResult.case_theory) {
-            await supabaseClient.from('case_theories').update({
+            await supabaseClient.from('case_theories').upsert({
+                case_id: caseId,
                 fact_patterns: analysisResult.case_theory.fact_patterns,
                 legal_arguments: analysisResult.case_theory.legal_arguments,
                 potential_outcomes: analysisResult.case_theory.potential_outcomes,
                 status: 'refined',
                 last_updated: new Date().toISOString()
-            }).eq('case_id', caseId);
+            }, { onConflict: 'case_id' });
         }
 
         if (analysisResult.case_insights && analysisResult.case_insights.length > 0) {

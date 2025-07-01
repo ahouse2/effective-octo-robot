@@ -70,13 +70,14 @@ serve(async (req) => {
         }
 
         if (jsonResult.case_theory) {
-            await supabaseClient.from('case_theories').update({
+            await supabaseClient.from('case_theories').upsert({
+                case_id: caseId,
                 fact_patterns: jsonResult.case_theory.fact_patterns,
                 legal_arguments: jsonResult.case_theory.legal_arguments,
                 potential_outcomes: jsonResult.case_theory.potential_outcomes,
                 status: 'refined',
                 last_updated: new Date().toISOString()
-            }).eq('case_id', caseId);
+            }, { onConflict: 'case_id' });
         }
 
         if (jsonResult.case_insights && jsonResult.case_insights.length > 0) {
@@ -100,8 +101,6 @@ serve(async (req) => {
       // Still working, invoke self again after a delay
       await updateProgress(supabaseClient, caseId, 60, `Analysis is ${run.status}. Checking again shortly...`);
       
-      // Deno.cron is not available in Supabase Edge Functions, so we use an async delay and self-invocation
-      // This is a simplified approach. For production, a more robust queueing system or scheduled functions would be better.
       setTimeout(() => {
         supabaseClient.functions.invoke('check-openai-run-status', {
           body: { caseId, threadId, runId },
