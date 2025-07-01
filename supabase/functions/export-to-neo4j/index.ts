@@ -31,7 +31,9 @@ serve(async (req) => {
   const session = driver.session({ database: NEO4J_DATABASE });
 
   try {
-    // Fetch all data for the case
+    console.log(`Starting Neo4j export for case: ${caseId}`);
+
+    // 1. Fetch all data for the case from Supabase
     const { data: caseData, error: caseError } = await supabaseClient.from('cases').select('*').eq('id', caseId).single();
     if (caseError) throw new Error(`Failed to fetch case: ${caseError.message}`);
 
@@ -41,72 +43,91 @@ serve(async (req) => {
     const { data: insightsData, error: insightsError } = await supabaseClient.from('case_insights').select('*').eq('case_id', caseId);
     if (insightsError) throw new Error(`Failed to fetch insights: ${insightsError.message}`);
 
-    // Use a transaction to create the graph
+    // 2. Use a single transaction to perform a clean import
     await session.executeWrite(async (tx) => {
-      // Create Case Node
+      // Cleanup: Remove old data for this case to ensure a fresh import
+      await tx.run(
+        `
+        MATCH (c:Case {id: $caseId})
+        OPTIONAL MATCH (c)-[:HAS_EVIDENCE]->(f:File)
+        OPTIONAL MATCH (c)-[:HAS_INSIGHT]->(i:Insight)
+        DETACH DELETE f, i
+        `,
+        { caseId }
+      );
+
+      // Create/Update Case Node
       await tx.run(
         'MERGE (c:Case {id: $id}) SET c.name = $name, c.type = $type, c.status = $status',
         { id: caseData.id, name: caseData.name, type: caseData.type, status: caseData.status }
       );
 
-      // Create File, Category, and Tag Nodes and Relationships
-      for (const file of filesData || []) {
+      // Batch create File nodes and relationships
+      if (filesData && filesData.length > 0) {
         await tx.run(
           `
-          MERGE (f:File {id: $id}) SET f.name = $name, f.suggestedName = $suggestedName
-          WITH f
+          UNWIND $files AS file
+          MERGE (f:File {id: file.id})
+          SET f.name = file.file_name, f.suggestedName = file.suggested_name
+          WITH f, file
           MATCH (c:Case {id: $caseId})
           MERGE (c)-[:HAS_EVIDENCE]->(f)
           `,
-          { id: file.id, name: file.file_name, suggestedName: file.suggested_name, caseId: caseId }
+          { files: filesData, caseId }
         );
 
-        if (file.file_category) {
-          await tx.run(
-            `
-            MERGE (cat:Category {name: $categoryName})
-            WITH cat
-            MATCH (f:File {id: $fileId})
-            MERGE (f)-[:IS_CATEGORIZED_AS]->(cat)
-            `,
-            { categoryName: file.file_category, fileId: file.id }
-          );
-        }
-
-        for (const tag of file.tags || []) {
-          await tx.run(
-            `
-            MERGE (t:Tag {name: $tagName})
-            WITH t
-            MATCH (f:File {id: $fileId})
-            MERGE (f)-[:HAS_TAG]->(t)
-            `,
-            { tagName: tag, fileId: file.id }
-          );
-        }
-      }
-
-      // Create Insight Nodes and Relationships
-      for (const insight of insightsData || []) {
+        // Batch create Category nodes and relationships
         await tx.run(
           `
-          MERGE (i:Insight {id: $id}) SET i.title = $title, i.description = $description, i.type = $type
-          WITH i
+          UNWIND $files AS file
+          WHERE file.file_category IS NOT NULL
+          MERGE (cat:Category {name: file.file_category})
+          WITH cat, file
+          MATCH (f:File {id: file.id})
+          MERGE (f)-[:IS_CATEGORIZED_AS]->(cat)
+          `,
+          { files: filesData }
+        );
+
+        // Batch create Tag nodes and relationships
+        await tx.run(
+          `
+          UNWIND $files AS file
+          WHERE file.tags IS NOT NULL
+          UNWIND file.tags AS tagName
+          MERGE (t:Tag {name: tagName})
+          WITH t, file
+          MATCH (f:File {id: file.id})
+          MERGE (f)-[:HAS_TAG]->(t)
+          `,
+          { files: filesData }
+        );
+      }
+
+      // Batch create Insight nodes and relationships
+      if (insightsData && insightsData.length > 0) {
+        await tx.run(
+          `
+          UNWIND $insights AS insight
+          MERGE (i:Insight {id: insight.id})
+          SET i.title = insight.title, i.description = insight.description, i.type = insight.insight_type
+          WITH i, insight
           MATCH (c:Case {id: $caseId})
           MERGE (c)-[:HAS_INSIGHT]->(i)
           `,
-          { id: insight.id, title: insight.title, description: insight.description, type: insight.insight_type, caseId: caseId }
+          { insights: insightsData, caseId }
         );
       }
     });
 
+    console.log(`Successfully completed Neo4j export for case: ${caseId}`);
     return new Response(JSON.stringify({ message: 'Case data successfully exported to Neo4j.' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });
   } catch (error) {
-    console.error('Neo4j export error:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    console.error('Neo4j export error:', error.message, error.stack);
+    return new Response(JSON.stringify({ error: 'Failed to export to Neo4j.', details: error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
