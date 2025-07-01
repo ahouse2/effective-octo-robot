@@ -130,13 +130,13 @@ export const CaseTheorySummary: React.FC<CaseTheorySummaryProps> = ({ caseId }) 
 
   return (
     <Card>
-      <CardHeader>
-        <div className="flex justify-between items-start">
-          <div>
-            <CardTitle>Current Case Theory</CardTitle>
-            <CardDescription>The evolving legal theory compiled by the agents.</CardDescription>
-          </div>
-          <Button variant="outline" size="sm" onClick={handleExportTheory} disabled={!caseTheory} className="flex-shrink-0 ml-4">
+      <CardHeader className="flex flex-row items-start justify-between space-x-4">
+        <div className="flex-grow">
+          <CardTitle>Current Case Theory</CardTitle>
+          <CardDescription>The evolving legal theory compiled by the agents.</CardDescription>
+        </div>
+        <div className="flex-shrink-0">
+          <Button variant="outline" size="sm" onClick={handleExportTheory} disabled={!caseTheory}>
             <Download className="h-4 w-4 mr-2" /> Export
           </Button>
         </div>

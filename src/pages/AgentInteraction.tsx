@@ -200,17 +200,17 @@ const AgentInteraction = () => {
   return (
     <Layout>
       <div className="h-full p-4">
-        <div className="flex h-full rounded-lg border">
+        <div className="grid grid-cols-4 h-full rounded-lg border">
           {/* Left Panel */}
-          <div className="w-[25%] min-w-[300px] border-r">
+          <div className="col-span-1 border-r">
             {intelligencePanel}
           </div>
           {/* Middle Panel */}
-          <div className="w-[50%] min-w-[400px] border-r">
+          <div className="col-span-2 border-r">
             {chatPanel}
           </div>
           {/* Right Panel */}
-          <div className="flex-1">
+          <div className="col-span-1">
             {rightPanel}
           </div>
         </div>

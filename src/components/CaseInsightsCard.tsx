@@ -124,13 +124,13 @@ export const CaseInsightsCard: React.FC<CaseInsightsCardProps> = ({ caseId }) =>
 
   return (
     <Card>
-      <CardHeader>
-        <div className="flex justify-between items-start">
-          <div>
-            <CardTitle>Key Case Insights</CardTitle>
-            <CardDescription>High-level summaries and important findings from the analysis.</CardDescription>
-          </div>
-          <Button variant="outline" size="sm" onClick={handleExportInsights} disabled={insights.length === 0} className="flex-shrink-0 ml-4">
+      <CardHeader className="flex flex-row items-start justify-between space-x-4">
+        <div className="flex-grow">
+          <CardTitle>Key Case Insights</CardTitle>
+          <CardDescription>High-level summaries and important findings from the analysis.</CardDescription>
+        </div>
+        <div className="flex-shrink-0">
+          <Button variant="outline" size="sm" onClick={handleExportInsights} disabled={insights.length === 0}>
             <Download className="h-4 w-4 mr-2" /> Export
           </Button>
         </div>
