@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { GoogleGenerativeAI } from 'https://esm.sh/@google/generative-ai@0.15.0';
+import OpenAI from 'https://esm.sh/openai@4.52.7';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -91,7 +92,6 @@ serve(async (req) => {
       For each event, provide a date (if available), a concise title, and a brief description.
       The date should be in YYYY-MM-DD format if possible. If no specific date is found, use the file's context to estimate or state "Date Unknown".
       Your response MUST be a JSON object, with a single key "timeline_events" which is an array of objects. Each object should have "event_date", "title", and "description" keys.
-      Do not wrap the JSON in a markdown block.
       
       Example Response:
       {
@@ -140,7 +140,7 @@ serve(async (req) => {
       throw new Error(`AI did not return a valid JSON object. Response: ${responseContent}`);
     }
 
-    const timelineData = JSON.parse(extractedJsonString);
+    const timelineData = extractedJsonString;
     const events = timelineData.timeline_events;
 
     if (!events || !Array.isArray(events)) throw new Error("AI response did not contain a valid 'timeline_events' array.");
@@ -170,7 +170,7 @@ serve(async (req) => {
     try {
       const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
       if (caseId) {
-        await insertAgentActivity(supabaseClient, `Error during timeline generation: ${error.message}`, 'error');
+        await insertAgentActivity(supabaseClient, caseId, `Error during timeline generation: ${error.message}`, 'error');
       }
     } catch (logError) {
       console.error("Failed to log the primary error:", logError);

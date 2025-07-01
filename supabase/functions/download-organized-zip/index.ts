@@ -13,7 +13,7 @@ serve(async (req) => {
   }
 
   try {
-    const { caseId, category } = await req.json(); // Add category
+    const { caseId, category } = await req.json();
     if (!caseId) throw new Error("Case ID is required.");
 
     const supabaseClient = createClient(
@@ -24,7 +24,7 @@ serve(async (req) => {
 
     let query = supabaseClient
       .from('case_files_metadata')
-      .select('file_path, file_category, suggested_name, file_name') // Add file_name for fallback
+      .select('file_path, file_category, suggested_name, file_name')
       .eq('case_id', caseId)
       .not('suggested_name', 'is', null);
 
@@ -49,7 +49,7 @@ serve(async (req) => {
       
       if (downloadError) {
         console.error(`Failed to download ${file.file_path}:`, downloadError);
-        return; // Skip failed downloads
+        return;
       }
 
       const buffer = await blob.arrayBuffer();

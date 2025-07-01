@@ -46,7 +46,7 @@ serve(async (req) => {
       await tx.run(
         `
         MATCH (c:Case {id: $caseId})
-        OPTIONAL MATCH (c)-[r]-()
+        OPTIONAL MATCH (c)-[r]-(n)
         DELETE r
         `,
         { caseId }
