@@ -17,6 +17,7 @@ import { FileMentionInput } from "@/components/FileMentionInput";
 import { CaseTools } from "@/components/CaseTools";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { EditCaseDirectivesDialog } from "@/components/EditCaseDirectivesDialog";
+import { Progress } from "@/components/ui/progress";
 
 interface CaseDetails {
   name: string;
@@ -25,6 +26,8 @@ interface CaseDetails {
   case_goals: string | null;
   system_instruction: string | null;
   ai_model: "openai" | "gemini";
+  analysis_progress: number | null;
+  analysis_status_message: string | null;
 }
 
 const AgentInteraction = () => {
@@ -46,7 +49,7 @@ const AgentInteraction = () => {
     setLoadingCaseDetails(true);
     const { data, error } = await supabase
       .from('cases')
-      .select('name, type, status, case_goals, system_instruction, ai_model')
+      .select('name, type, status, case_goals, system_instruction, ai_model, analysis_progress, analysis_status_message')
       .eq('id', caseId)
       .single();
 
@@ -61,6 +64,26 @@ const AgentInteraction = () => {
 
   useEffect(() => {
     fetchCaseDetails();
+
+    const channel = supabase
+      .channel(`case_details_for_${caseId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'cases',
+          filter: `id=eq.${caseId}`,
+        },
+        (payload) => {
+          setCaseDetails(payload.new as CaseDetails);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [caseId, navigate]);
 
   const handleSendPrompt = async () => {
@@ -115,10 +138,16 @@ const AgentInteraction = () => {
   const chatPanel = (
     <div className="flex h-full flex-col">
       <CardHeader>
-        <div className="flex justify-between items-center">
-          <div>
+        <div className="flex justify-between items-start">
+          <div className="flex-1">
             <CardTitle>Agent Chat: {caseDetails?.name}</CardTitle>
             <CardDescription>Interact directly with the AI agents.</CardDescription>
+            {caseDetails?.status === 'In Progress' && caseDetails.analysis_progress != null && (
+              <div className="mt-2 w-full max-w-sm">
+                <Progress value={caseDetails.analysis_progress} className="h-2" />
+                <p className="text-xs text-muted-foreground mt-1">{caseDetails.analysis_status_message}</p>
+              </div>
+            )}
           </div>
           {caseDetails && (
             <EditCaseDirectivesDialog
