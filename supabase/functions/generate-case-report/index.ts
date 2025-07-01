@@ -108,11 +108,10 @@ serve(async (req) => {
     // Add Evidence Log section as a Markdown table
     report += `## Evidence Log\n\n`;
     if (filesData && filesData.length > 0) {
-      report += `| Suggested Filename | Original Filename | Category | Summary | Tags |\n`;
-      report += `|--------------------|-------------------|----------|---------|------|\n`;
+      report += `| Suggested Filename | Category | SHA-256 Hash | Summary |\n`;
+      report += `|--------------------|----------|--------------|---------|\n`;
       filesData.forEach((file: any) => {
-        const tags = file.tags ? file.tags.join(', ') : 'None';
-        report += `| ${file.suggested_name || 'N/A'} | ${file.file_name} | ${file.file_category || 'Uncategorized'} | ${file.description || 'No summary.'} | ${tags} |\n`;
+        report += `| ${file.suggested_name || 'N/A'} | ${file.file_category || 'Uncategorized'} | ${file.file_hash || 'Not calculated'} | ${file.description || 'No summary.'} |\n`;
       });
     } else {
       report += `No evidence files have been uploaded for this case.\n`;

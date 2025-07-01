@@ -14,7 +14,8 @@ import 'react-pdf/dist/Page/TextLayer.css';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, AlertTriangle } from "lucide-react";
+import { Loader2, AlertTriangle, Copy } from "lucide-react";
+import { Button } from "./ui/button";
 
 // PDF.js worker configuration
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
@@ -26,6 +27,8 @@ interface FileMetadata {
   description: string | null;
   tags: string[] | null;
   suggested_name: string | null;
+  file_hash: string | null;
+  hash_algorithm: string | null;
 }
 
 interface DocumentViewerProps {
@@ -81,6 +84,11 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ file, isOpen, on
 
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
     setNumPages(numPages);
+  };
+
+  const handleCopyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success("Copied to clipboard!");
   };
 
   const renderContent = () => {
@@ -161,7 +169,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ file, isOpen, on
             <ResizableHandle withHandle />
             <ResizablePanel defaultSize={35}>
               <ScrollArea className="h-full p-4">
-                <h3 className="text-lg font-semibold mb-2">AI Analysis</h3>
+                <h3 className="text-lg font-semibold mb-2">AI Analysis & Metadata</h3>
                 <div className="space-y-4">
                   <div>
                     <h4 className="font-medium mb-1">Summary</h4>
@@ -180,6 +188,26 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ file, isOpen, on
                         <p className="text-sm text-muted-foreground">No tags identified.</p>
                       )}
                     </div>
+                  </div>
+                  <div>
+                    <h4 className="font-medium mb-1">Chain of Custody</h4>
+                    {file.file_hash ? (
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">
+                          {file.hash_algorithm || 'HASH'}:
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs font-mono bg-muted p-1 rounded break-all">
+                            {file.file_hash}
+                          </p>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleCopyToClipboard(file.file_hash!)}>
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Hash not calculated.</p>
+                    )}
                   </div>
                 </div>
               </ScrollArea>
