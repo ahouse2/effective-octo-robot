@@ -130,7 +130,7 @@ export const CaseTheorySummary: React.FC<CaseTheorySummaryProps> = ({ caseId }) 
     <Card>
       <CardHeader>
         <div className="flex justify-between items-start gap-4">
-          <div>
+          <div className="flex-1">
             <CardTitle>Current Case Theory</CardTitle>
             <CardDescription>The evolving legal theory compiled by the agents.</CardDescription>
           </div>

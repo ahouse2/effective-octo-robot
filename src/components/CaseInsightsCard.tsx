@@ -124,7 +124,7 @@ export const CaseInsightsCard: React.FC<CaseInsightsCardProps> = ({ caseId }) =>
     <Card>
       <CardHeader>
         <div className="flex justify-between items-start gap-4">
-          <div>
+          <div className="flex-1">
             <CardTitle>Key Case Insights</CardTitle>
             <CardDescription>High-level summaries and important findings from the analysis.</CardDescription>
           </div>

@@ -199,9 +199,9 @@ const AgentInteraction = () => {
 
   return (
     <Layout>
-      <div className="grid grid-cols-12 h-full">
+      <div className="grid grid-cols-12 h-full w-full">
         {/* Left Panel */}
-        <div className="col-span-3 h-full">
+        <div className="col-span-3 h-full border-r">
           {intelligencePanel}
         </div>
 
