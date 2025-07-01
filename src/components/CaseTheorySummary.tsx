@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Download } from "lucide-react";
 import { downloadTextFile } from "@/lib/download";
+import { Button } from "@/components/ui/button";
 
 interface CaseTheory {
   id: string;
@@ -134,14 +135,15 @@ export const CaseTheorySummary: React.FC<CaseTheorySummaryProps> = ({ caseId }) 
             <CardTitle>Current Case Theory</CardTitle>
             <CardDescription>The evolving legal theory compiled by the agents.</CardDescription>
           </div>
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             onClick={handleExportTheory}
             disabled={!caseTheory}
-            className="flex-shrink-0 inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-3"
           >
             <Download className="h-4 w-4 mr-2" />
             <span>Export</span>
-          </button>
+          </Button>
         </div>
       </CardHeader>
       <CardContent>

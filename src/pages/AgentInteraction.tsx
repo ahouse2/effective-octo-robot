@@ -113,7 +113,7 @@ const AgentInteraction = () => {
   }
 
   const chatPanel = (
-    <div className="flex h-full flex-col border-l border-r">
+    <div className="flex h-full flex-col">
       <CardHeader>
         <div className="flex justify-between items-center">
           <div>
@@ -152,20 +152,21 @@ const AgentInteraction = () => {
     </div>
   );
 
-  const intelligencePanel = (
-    <div className="h-full overflow-y-auto space-y-4 p-4">
-      <CaseTheorySummary caseId={caseId} />
-      <CaseInsightsCard caseId={caseId} />
-    </div>
-  );
-
   const rightPanel = (
-    <Tabs defaultValue="evidence" className="h-full flex flex-col">
-      <TabsList className="grid w-full grid-cols-3">
+    <Tabs defaultValue="theory" className="h-full flex flex-col">
+      <TabsList className="grid w-full grid-cols-5">
+        <TabsTrigger value="theory">Theory</TabsTrigger>
+        <TabsTrigger value="insights">Insights</TabsTrigger>
         <TabsTrigger value="evidence">Evidence</TabsTrigger>
         <TabsTrigger value="tools">Tools</TabsTrigger>
         <TabsTrigger value="log">Log</TabsTrigger>
       </TabsList>
+      <TabsContent value="theory" className="flex-1 overflow-auto p-4">
+        <CaseTheorySummary caseId={caseId} />
+      </TabsContent>
+      <TabsContent value="insights" className="flex-1 overflow-auto p-4">
+        <CaseInsightsCard caseId={caseId} />
+      </TabsContent>
       <TabsContent value="evidence" className="flex-1 overflow-auto">
         <EvidenceManager caseId={caseId} />
       </TabsContent>
@@ -182,16 +183,20 @@ const AgentInteraction = () => {
     return (
       <Layout>
         <Tabs defaultValue="chat" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="chat">Chat</TabsTrigger>
-            <TabsTrigger value="hub">Hub</TabsTrigger>
+            <TabsTrigger value="theory">Theory</TabsTrigger>
+            <TabsTrigger value="insights">Insights</TabsTrigger>
             <TabsTrigger value="evidence">Evidence</TabsTrigger>
             <TabsTrigger value="tools">Tools</TabsTrigger>
+            <TabsTrigger value="log">Log</TabsTrigger>
           </TabsList>
           <TabsContent value="chat" className="h-[80vh]">{chatPanel}</TabsContent>
-          <TabsContent value="hub">{intelligencePanel}</TabsContent>
+          <TabsContent value="theory" className="p-4"><CaseTheorySummary caseId={caseId} /></TabsContent>
+          <TabsContent value="insights" className="p-4"><CaseInsightsCard caseId={caseId} /></TabsContent>
           <TabsContent value="evidence"><EvidenceManager caseId={caseId} /></TabsContent>
           <TabsContent value="tools"><CaseTools caseId={caseId} /></TabsContent>
+          <TabsContent value="log" className="p-2"><AgentActivityLog caseId={caseId} /></TabsContent>
         </Tabs>
       </Layout>
     );
@@ -200,18 +205,13 @@ const AgentInteraction = () => {
   return (
     <Layout>
       <div className="grid grid-cols-12 h-full w-full">
-        {/* Left Panel */}
-        <div className="col-span-3 h-full border-r">
-          {intelligencePanel}
-        </div>
-
         {/* Middle Panel */}
-        <div className="col-span-6 h-full">
+        <div className="col-span-7 h-full">
           {chatPanel}
         </div>
 
         {/* Right Panel */}
-        <div className="col-span-3 h-full">
+        <div className="col-span-5 h-full border-l">
           {rightPanel}
         </div>
       </div>
