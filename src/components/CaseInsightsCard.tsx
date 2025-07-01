@@ -58,7 +58,6 @@ export const CaseInsightsCard: React.FC<CaseInsightsCardProps> = ({ caseId }) =>
         'postgres_changes',
         { event: '*', schema: 'public', table: 'case_insights', filter: `case_id=eq.${caseId}` },
         (payload) => {
-          console.log('Case insight change received!', payload);
           if (payload.eventType === 'INSERT') {
             setInsights((prev) => [payload.new as CaseInsight, ...prev].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
           } else if (payload.eventType === 'UPDATE') {
@@ -123,18 +122,19 @@ export const CaseInsightsCard: React.FC<CaseInsightsCardProps> = ({ caseId }) =>
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-start justify-between space-x-4">
-        <div className="flex-grow">
-          <CardTitle>Key Case Insights</CardTitle>
-          <CardDescription>High-level summaries and important findings from the analysis.</CardDescription>
-        </div>
-        <div className="flex-shrink-0">
+      <CardHeader>
+        <div className="flex justify-between items-start gap-4">
+          <div>
+            <CardTitle>Key Case Insights</CardTitle>
+            <CardDescription>High-level summaries and important findings from the analysis.</CardDescription>
+          </div>
           <button
             onClick={handleExportInsights}
             disabled={insights.length === 0}
-            className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-3"
+            className="flex-shrink-0 inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-3"
           >
-            <Download className="h-4 w-4 mr-2" /> Export
+            <Download className="h-4 w-4 mr-2" />
+            <span>Export</span>
           </button>
         </div>
       </CardHeader>

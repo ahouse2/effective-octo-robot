@@ -62,7 +62,6 @@ export const CaseTheorySummary: React.FC<CaseTheorySummaryProps> = ({ caseId }) 
         'postgres_changes',
         { event: '*', schema: 'public', table: 'case_theories', filter: `case_id=eq.${caseId}` },
         (payload) => {
-          console.log('Case theory change received!', payload);
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             setCaseTheory(payload.new as CaseTheory);
           } else if (payload.eventType === 'DELETE') {
@@ -129,18 +128,19 @@ export const CaseTheorySummary: React.FC<CaseTheorySummaryProps> = ({ caseId }) 
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-start justify-between space-x-4">
-        <div className="flex-grow">
-          <CardTitle>Current Case Theory</CardTitle>
-          <CardDescription>The evolving legal theory compiled by the agents.</CardDescription>
-        </div>
-        <div className="flex-shrink-0">
+      <CardHeader>
+        <div className="flex justify-between items-start gap-4">
+          <div>
+            <CardTitle>Current Case Theory</CardTitle>
+            <CardDescription>The evolving legal theory compiled by the agents.</CardDescription>
+          </div>
           <button
             onClick={handleExportTheory}
             disabled={!caseTheory}
-            className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-3"
+            className="flex-shrink-0 inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-3"
           >
-            <Download className="h-4 w-4 mr-2" /> Export
+            <Download className="h-4 w-4 mr-2" />
+            <span>Export</span>
           </button>
         </div>
       </CardHeader>

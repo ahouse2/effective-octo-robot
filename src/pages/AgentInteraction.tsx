@@ -113,7 +113,7 @@ const AgentInteraction = () => {
   }
 
   const chatPanel = (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col border-l border-r">
       <CardHeader>
         <div className="flex justify-between items-center">
           <div>
@@ -153,7 +153,7 @@ const AgentInteraction = () => {
   );
 
   const intelligencePanel = (
-    <div className="h-full overflow-y-auto p-4 space-y-4">
+    <div className="h-full overflow-y-auto space-y-4 p-4">
       <CaseTheorySummary caseId={caseId} />
       <CaseInsightsCard caseId={caseId} />
     </div>
@@ -199,20 +199,20 @@ const AgentInteraction = () => {
 
   return (
     <Layout>
-      <div className="h-full p-4">
-        <div className="grid grid-cols-4 h-full rounded-lg border">
-          {/* Left Panel */}
-          <div className="col-span-1 border-r">
-            {intelligencePanel}
-          </div>
-          {/* Middle Panel */}
-          <div className="col-span-2 border-r">
-            {chatPanel}
-          </div>
-          {/* Right Panel */}
-          <div className="col-span-1">
-            {rightPanel}
-          </div>
+      <div className="grid grid-cols-12 h-full">
+        {/* Left Panel */}
+        <div className="col-span-3 h-full">
+          {intelligencePanel}
+        </div>
+
+        {/* Middle Panel */}
+        <div className="col-span-6 h-full">
+          {chatPanel}
+        </div>
+
+        {/* Right Panel */}
+        <div className="col-span-3 h-full">
+          {rightPanel}
         </div>
       </div>
     </Layout>
