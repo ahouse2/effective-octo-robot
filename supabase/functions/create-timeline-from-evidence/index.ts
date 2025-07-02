@@ -45,7 +45,7 @@ serve(async (req) => {
   try {
     const body = await req.json();
     caseId = body.caseId;
-    const focus = body.focus; // New optional parameter
+    const focus = body.focus;
     if (!caseId) throw new Error("Case ID is required.");
 
     const supabaseClient = createClient(
@@ -135,15 +135,12 @@ serve(async (req) => {
 
     if (!responseContent) throw new Error("AI returned an empty response.");
 
-    const extractedJsonString = extractJson(responseContent);
-    if (!extractedJsonString) {
-      throw new Error(`AI did not return a valid JSON object. Response: ${responseContent}`);
+    const timelineData = extractJson(responseContent);
+    if (!timelineData || !Array.isArray(timelineData.timeline_events)) {
+      throw new Error(`AI did not return a valid JSON object with a 'timeline_events' array. Response: ${responseContent}`);
     }
-
-    const timelineData = extractedJsonString;
+    
     const events = timelineData.timeline_events;
-
-    if (!events || !Array.isArray(events)) throw new Error("AI response did not contain a valid 'timeline_events' array.");
 
     const eventsToInsert = events.map((event: any) => ({
       case_id: caseId,
@@ -167,13 +164,13 @@ serve(async (req) => {
 
   } catch (error: any) {
     console.error('Timeline Generation Error:', error.message, error.stack);
-    try {
-      const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
-      if (caseId) {
+    if (caseId) {
+      try {
+        const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
         await insertAgentActivity(supabaseClient, caseId, `Error during timeline generation: ${error.message}`, 'error');
+      } catch (logError) {
+        console.error("Failed to log the primary error:", logError);
       }
-    } catch (logError) {
-      console.error("Failed to log the primary error:", logError);
     }
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
