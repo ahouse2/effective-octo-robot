@@ -45,8 +45,12 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  let caseIdFromRequest: string | null = null;
   try {
-    const { caseId, threadId, runId } = await req.json();
+    const body = await req.json();
+    const { caseId, threadId, runId } = body;
+    caseIdFromRequest = caseId;
+
     if (!caseId || !threadId || !runId) {
       return new Response(JSON.stringify({ error: 'caseId, threadId, and runId are required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
@@ -98,24 +102,21 @@ serve(async (req) => {
         return new Response(JSON.stringify({ message: 'Analysis complete and data saved.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
     } else if (run.status === 'in_progress' || run.status === 'queued') {
-      // Still working, invoke self again after a delay
       await updateProgress(supabaseClient, caseId, 60, `Analysis is ${run.status}. Checking again shortly...`);
       
       setTimeout(() => {
         supabaseClient.functions.invoke('check-openai-run-status', {
           body: { caseId, threadId, runId },
         }).catch(console.error);
-      }, 10000); // 10-second delay
+      }, 10000);
 
       return new Response(JSON.stringify({ message: 'Analysis in progress, scheduled next check.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     } else {
-      // Handle failed, cancelled, etc.
       throw new Error(`Run failed with status: ${run.status}. Last error: ${JSON.stringify(run.last_error)}`);
     }
   } catch (error: any) {
     console.error('Check Run Status Error:', error.message);
     const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
-    const caseIdFromRequest = (await req.json().catch(() => ({})))?.caseId;
     if (caseIdFromRequest) {
         await insertAgentActivity(supabaseClient, caseIdFromRequest, 'OpenAI Assistant', 'Error Handler', 'Analysis Failed', error.message, 'error');
         await supabaseClient.from('cases').update({ status: 'Error', analysis_status_message: error.message }).eq('id', caseIdFromRequest);
