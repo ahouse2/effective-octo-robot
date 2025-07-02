@@ -61,9 +61,11 @@ serve(async (req) => {
   }
 
   let caseId: string | null = null;
+  let fileId: string | null = null;
   try {
     const body = await req.json();
-    const { fileId, filePath } = body;
+    fileId = body.fileId;
+    const { filePath } = body;
     caseId = body.caseId;
 
     if (!fileId || !filePath || !caseId) {
@@ -92,16 +94,16 @@ serve(async (req) => {
     if (fileMetadata.metadata.size > MAX_FILE_SIZE_BYTES) {
       // @ts-ignore
       const sizeInMB = (fileMetadata.metadata.size / (1024 * 1024)).toFixed(2);
-      const errorMessage = `File "${fileName}" (${sizeInMB} MB) is too large to be processed. The maximum file size is ${MAX_FILE_SIZE_MB} MB.`;
+      const skipMessage = `File "${fileName}" (${sizeInMB} MB) is over the ${MAX_FILE_SIZE_MB}MB limit and was skipped. Please review manually.`;
       
-      await insertActivity(supabaseClient, caseId, errorMessage, 'error');
+      await insertActivity(supabaseClient, caseId, skipMessage, 'completed');
       await supabaseClient.from('case_files_metadata').update({
-          description: `Processing failed: File exceeds the ${MAX_FILE_SIZE_MB}MB size limit.`,
+          description: `File skipped: Exceeds the ${MAX_FILE_SIZE_MB}MB size limit.`,
           last_modified_at: new Date().toISOString(),
       }).eq('id', fileId);
 
-      return new Response(JSON.stringify({ error: errorMessage }), {
-        status: 413, // Payload Too Large
+      return new Response(JSON.stringify({ message: skipMessage }), {
+        status: 200, // Return OK status to indicate graceful handling
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -232,9 +234,13 @@ serve(async (req) => {
 
   } catch (error: any) {
     console.error('Summarize File Error:', error.message, error.stack);
-    if (caseId) {
+    if (caseId && fileId) {
         const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
         await insertActivity(supabaseClient, caseId, `Error processing file: ${error.message}`, 'error');
+        await supabaseClient.from('case_files_metadata').update({
+            description: `Processing failed: ${error.message}`,
+            last_modified_at: new Date().toISOString(),
+        }).eq('id', fileId);
     }
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
