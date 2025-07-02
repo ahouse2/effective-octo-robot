@@ -7,6 +7,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const MAX_GRAPH_TEXT_LENGTH = 50000; // A safe character limit for the graph text
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -59,6 +61,19 @@ serve(async (req) => {
     } finally {
       await session.close();
       await driver.close();
+    }
+
+    if (graphTextRepresentation.length > MAX_GRAPH_TEXT_LENGTH) {
+        await supabaseClient.from('agent_activities').insert({
+            case_id: caseId,
+            agent_name: 'Graph Agent',
+            agent_role: 'System',
+            activity_type: 'Graph Analysis Warning',
+            content: `The knowledge graph is too large to analyze in a single pass. Analysis will be performed on a summarized version of the graph. For full detail, explore the graph visually.`,
+            status: 'completed',
+        });
+        // In a real scenario, we might chunk this text as well, but for now, we'll truncate and warn.
+        graphTextRepresentation = graphTextRepresentation.substring(0, MAX_GRAPH_TEXT_LENGTH);
     }
 
     const promptForAI = `

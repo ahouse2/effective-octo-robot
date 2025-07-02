@@ -8,6 +8,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const MAX_CONTEXT_LENGTH = 50000; // A safe character limit for the context window
+
 // --- UTILITY FUNCTIONS ---
 function extractJson(text: string): any | null {
   const jsonRegex = /```json\s*([\s\S]*?)\s*```|({[\s\S]*}|\[[\s\S]*\])/;
@@ -150,8 +152,33 @@ async function getOrCreateAssistant(openai: OpenAI, supabaseClient: SupabaseClie
 async function handleOpenAICommand(supabaseClient: SupabaseClient, openai: OpenAI, caseId: string, userId: string, command: string, payload: any) {
     await updateProgress(supabaseClient, caseId, 10, 'Initializing OpenAI Assistant...');
     const { assistantId, threadId } = await getOrCreateAssistant(openai, supabaseClient, userId, caseId);
-    let prompt = "";
+    
+    let attachments: { file_id: string, tools: { type: 'file_search' }[] }[] = [];
 
+    if (command === 're_run_analysis') {
+        await updateProgress(supabaseClient, caseId, 15, 'Fetching and uploading evidence to OpenAI...');
+        const { data: files, error: filesError } = await supabaseClient.from('case_files_metadata').select('file_path, openai_file_id').eq('case_id', caseId);
+        if (filesError) throw new Error(`Failed to fetch files for analysis: ${filesError.message}`);
+
+        const uploadedFileIds = [];
+        for (const file of files) {
+            if (file.openai_file_id) {
+                uploadedFileIds.push(file.openai_file_id);
+                continue;
+            }
+            const { data: blob, error: downloadError } = await supabaseClient.storage.from('evidence-files').download(file.file_path);
+            if (downloadError) {
+                console.error(`Skipping file ${file.file_path} due to download error: ${downloadError.message}`);
+                continue;
+            }
+            const uploadedFile = await openai.files.create({ file: blob, purpose: 'assistants' });
+            await supabaseClient.from('case_files_metadata').update({ openai_file_id: uploadedFile.id }).eq('file_path', file.file_path);
+            uploadedFileIds.push(uploadedFile.id);
+        }
+        attachments = uploadedFileIds.map(fileId => ({ file_id: fileId, tools: [{ type: 'file_search' }] }));
+    }
+
+    let prompt = "";
     if (command === 're_run_analysis') {
         prompt = `Please perform a comprehensive analysis of all the evidence files associated with this case. Your primary objectives are to identify key themes, generate a high-level summary, create key insights, and update the case theory. Structure your response as a JSON object within a markdown block.`;
     } else if (command === 'user_prompt') {
@@ -161,14 +188,18 @@ async function handleOpenAICommand(supabaseClient: SupabaseClient, openai: OpenA
     }
 
     await updateProgress(supabaseClient, caseId, 25, 'Sending prompt to OpenAI...');
-    await openai.beta.threads.messages.create(threadId, { role: "user", content: prompt });
+    await openai.beta.threads.messages.create(threadId, { 
+        role: "user", 
+        content: prompt,
+        attachments: attachments.length > 0 ? attachments : undefined,
+    });
+
     const run = await openai.beta.threads.runs.create(threadId, { assistant_id: assistantId });
 
     await insertAgentActivity(supabaseClient, caseId, 'OpenAI Assistant', 'AI', 'Analysis Started', `Run created with ID: ${run.id}. Awaiting completion.`, 'processing');
     await supabaseClient.from('cases').update({ status: 'In Progress' }).eq('id', caseId);
     await updateProgress(supabaseClient, caseId, 50, 'OpenAI is processing the request...');
 
-    // Immediately invoke the status checker function to start polling
     await supabaseClient.functions.invoke('check-openai-run-status', {
         body: { caseId, threadId, runId: run.id },
     });
@@ -192,7 +223,7 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
         files = data;
         dbSearchError = error;
 
-    } else { // This handles a specific user prompt
+    } else {
         await updateProgress(supabaseClient, caseId, 10, 'Searching for relevant documents in Supabase...');
         await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Process Started', 'Performing text search on file summaries within Supabase.', 'processing');
         
@@ -226,8 +257,18 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     }
 
     await updateProgress(supabaseClient, caseId, 30, `Found ${files.length} files to analyze.`);
-    const contextSnippets = files.map(file => `From file "${file.suggested_name}":\n${file.description}`).join('\n\n---\n\n');
-    await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Search Complete', `Found ${files.length} potentially relevant files.`, 'completed');
+    let contextSnippets = files.map(file => `From file "${file.suggested_name}":\n${file.description}`).join('\n\n---\n\n');
+    
+    if (contextSnippets.length > MAX_CONTEXT_LENGTH) {
+        await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Context Too Large', `Context of ${contextSnippets.length} chars exceeds limit. Pre-summarizing...`, 'processing');
+        const preSummarizationPrompt = `The following text is a collection of summaries from various legal documents. It is too long to process. Please summarize this entire collection into a more concise overview, retaining all key facts, names, dates, and legal concepts. Combined Summaries:\n\n${contextSnippets}`;
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+        const result = await model.generateContent(preSummarizationPrompt);
+        contextSnippets = result.response.text();
+        await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Pre-summarization Complete', `Context reduced to ${contextSnippets.length} chars.`, 'completed');
+    }
+
+    await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Search Complete', `Using context of ${contextSnippets.length} chars.`, 'completed');
 
     await updateProgress(supabaseClient, caseId, 50, 'Synthesizing analysis with Gemini...');
     const { data: caseDetails } = await supabaseClient.from('cases').select('case_goals, system_instruction, user_specified_arguments').eq('id', caseId).single();
