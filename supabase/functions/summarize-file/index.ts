@@ -1,11 +1,13 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { GoogleGenerativeAI } from 'https://esm.sh/@google/generative-ai@0.15.0';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+const CHUNK_SIZE = 15000; // Characters per chunk, well within API limits
 
 async function fileToGenerativePart(blob: Blob, mimeType: string) {
   const arrayBuffer = await blob.arrayBuffer();
@@ -34,13 +36,28 @@ function extractJson(text: string): any | null {
   return null;
 }
 
+async function insertActivity(supabase: SupabaseClient, caseId: string, activity: string, status: 'processing' | 'completed' | 'error' = 'completed') {
+    await supabase.from('agent_activities').insert({
+        case_id: caseId,
+        agent_name: 'Summarizer Agent',
+        agent_role: 'File Processor',
+        activity_type: 'Summarization',
+        content: activity,
+        status: status,
+    });
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
+  let caseId: string | null = null;
   try {
-    const { fileId, filePath, caseId } = await req.json();
+    const body = await req.json();
+    const { fileId, filePath } = body;
+    caseId = body.caseId;
+
     if (!fileId || !filePath || !caseId) {
       throw new Error("fileId, filePath, and caseId are required.");
     }
@@ -52,14 +69,7 @@ serve(async (req) => {
     const genAI = new GoogleGenerativeAI(geminiApiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
 
-    await supabaseClient.from('agent_activities').insert({
-        case_id: caseId,
-        agent_name: 'Summarizer Agent',
-        agent_role: 'File Processor',
-        activity_type: 'File Summarization Started',
-        content: `Starting summarization for file: ${filePath}`,
-        status: 'processing',
-    });
+    await insertActivity(supabaseClient, caseId, `Starting summarization for file: ${filePath}`, 'processing');
 
     const { data: fileBlob, error: downloadError } = await supabaseClient.storage
       .from('evidence-files')
@@ -69,12 +79,10 @@ serve(async (req) => {
 
     const fileBuffer = await fileBlob.arrayBuffer();
     const hashBuffer = await crypto.subtle.digest('SHA-256', fileBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const fileHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    const fileHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
 
     const mimeType = fileBlob.type;
-    let prompt;
-    let contentParts: any[] = [];
+    let finalSummary: any;
 
     const jsonFormat = `
       {
@@ -87,74 +95,70 @@ serve(async (req) => {
 
     if (mimeType.startsWith('image/')) {
       const imagePart = await fileToGenerativePart(fileBlob, mimeType);
-      prompt = `Analyze this image in the context of a family law case. Provide a detailed summary, a suggested filename, relevant tags, and a category. Your response MUST be a JSON object inside a markdown block, following this format: ${jsonFormat}`;
-      contentParts.push(prompt, imagePart);
+      const prompt = `Analyze this image in the context of a family law case. Provide a detailed summary, a suggested filename, relevant tags, and a category. Your response MUST be a JSON object inside a markdown block, following this format: ${jsonFormat}`;
+      const result = await model.generateContent({ contents: [{ role: "user", parts: [prompt, imagePart] }] });
+      finalSummary = extractJson(result.response.text());
     } else if (mimeType === 'application/pdf' || mimeType.startsWith('text/')) {
       const textContent = await fileBlob.text();
-      prompt = `Analyze this document in the context of a family law case. The document content is below. Provide a detailed summary, a suggested filename, relevant tags, and a category. Your response MUST be a JSON object inside a markdown block, following this format: ${jsonFormat}\n\n---\n\n${textContent}`;
-      contentParts.push(prompt);
-    } else {
-        await supabaseClient.from('case_files_metadata').update({
-            file_hash: fileHash,
-            hash_algorithm: 'SHA-256',
-            description: `File type (${mimeType}) not supported for summarization.`,
-            last_modified_at: new Date().toISOString(),
-        }).eq('id', fileId);
+      
+      if (textContent.length < CHUNK_SIZE) {
+        // File is small enough, process directly
+        await insertActivity(supabaseClient, caseId, `File is small. Summarizing directly.`);
+        const prompt = `Analyze this document in the context of a family law case. The document content is below. Provide a detailed summary, a suggested filename, relevant tags, and a category. Your response MUST be a JSON object inside a markdown block, following this format: ${jsonFormat}\n\n---\n\n${textContent}`;
+        const result = await model.generateContent(prompt);
+        finalSummary = extractJson(result.response.text());
+      } else {
+        // File is large, use chunking (Map-Reduce)
+        await insertActivity(supabaseClient, caseId, `File is large. Starting chunked summarization.`);
+        const chunks: string[] = [];
+        for (let i = 0; i < textContent.length; i += CHUNK_SIZE) {
+          chunks.push(textContent.substring(i, i + CHUNK_SIZE));
+        }
+
+        await insertActivity(supabaseClient, caseId, `Split file into ${chunks.length} chunks.`);
+
+        const chunkSummaries: string[] = [];
+        for (let i = 0; i < chunks.length; i++) {
+          await insertActivity(supabaseClient, caseId, `Summarizing chunk ${i + 1} of ${chunks.length}...`, 'processing');
+          const chunkPrompt = `This is one chunk of a larger document. Please summarize this specific chunk concisely, focusing on key names, dates, and actions relevant to a family law case:\n\n---\n\n${chunks[i]}`;
+          const chunkResult = await model.generateContent(chunkPrompt);
+          chunkSummaries.push(chunkResult.response.text());
+        }
+
+        await insertActivity(supabaseClient, caseId, `All chunks summarized. Creating final combined summary...`, 'processing');
+        const combinedSummaries = chunkSummaries.join('\n\n---\n\n');
+        const finalPrompt = `You have been provided with several summaries from sequential chunks of a single large document. Your task is to synthesize these into a single, coherent analysis. Based on all the provided information, generate a final JSON object with a suggested filename, a comprehensive description, relevant tags, and a category for the entire document. Your response MUST be a JSON object inside a markdown block, following this format: ${jsonFormat}\n\nHere are the chunk summaries:\n\n${combinedSummaries}`;
         
-        await supabaseClient.from('agent_activities').insert({
-            case_id: caseId,
-            agent_name: 'Summarizer Agent',
-            agent_role: 'File Processor',
-            activity_type: 'File Hashing Complete',
-            content: `File type not supported for summarization, but hash was calculated for: ${filePath}.`,
-            status: 'completed',
-        });
-
-        return new Response(JSON.stringify({ message: "File hashed but not summarized due to unsupported type." }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            status: 200,
-        });
+        const finalResult = await model.generateContent(finalPrompt);
+        finalSummary = extractJson(finalResult.response.text());
+      }
+    } else {
+      // Unsupported file type
+      await supabaseClient.from('case_files_metadata').update({
+          file_hash: fileHash,
+          hash_algorithm: 'SHA-256',
+          description: `File type (${mimeType}) not supported for summarization.`,
+          last_modified_at: new Date().toISOString(),
+      }).eq('id', fileId);
+      await insertActivity(supabaseClient, caseId, `File type (${mimeType}) not supported for summarization, but hash was calculated.`);
+      return new Response(JSON.stringify({ message: "File hashed but not summarized due to unsupported type." }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const result = await model.generateContent({ contents: [{ role: "user", parts: contentParts }] });
-    const response = result.response;
-
-    if (response.promptFeedback?.blockReason) {
-        const blockReason = response.promptFeedback.blockReason;
-        const safetyRatings = response.promptFeedback.safetyRatings?.map(r => `${r.category}: ${r.probability}`).join(', ');
-        throw new Error(`Summarization for file ${filePath} was blocked for safety reasons. Reason: ${blockReason}. Details: [${safetyRatings}].`);
+    if (!finalSummary || !finalSummary.description) {
+      throw new Error(`Failed to get a valid JSON summary from the AI for file ${filePath}.`);
     }
 
-    const responseText = response.text();
-    const parsedJson = extractJson(responseText);
-
-    if (!parsedJson || !parsedJson.description) {
-      throw new Error(`Failed to get a valid JSON summary from the AI for file ${filePath}. Response: ${responseText}`);
-    }
-
-    const { error: updateError } = await supabaseClient
-      .from('case_files_metadata')
-      .update({
-        description: parsedJson.description,
-        suggested_name: parsedJson.suggested_name,
-        tags: parsedJson.tags,
-        file_category: parsedJson.category || 'Uncategorized',
+    await supabaseClient.from('case_files_metadata').update({
+        description: finalSummary.description,
+        suggested_name: finalSummary.suggested_name,
+        tags: finalSummary.tags,
+        file_category: finalSummary.category || 'Uncategorized',
         file_hash: fileHash,
         hash_algorithm: 'SHA-256',
         last_modified_at: new Date().toISOString(),
-      })
-      .eq('id', fileId);
+    }).eq('id', fileId);
 
-    if (updateError) throw new Error(`Failed to update file metadata: ${updateError.message}`);
-
-    await supabaseClient.from('agent_activities').insert({
-        case_id: caseId,
-        agent_name: 'Summarizer Agent',
-        agent_role: 'File Processor',
-        activity_type: 'File Summarization Complete',
-        content: `Successfully summarized and hashed file: ${filePath}. New name: ${parsedJson.suggested_name}`,
-        status: 'completed',
-    });
+    await insertActivity(supabaseClient, caseId, `Successfully summarized and hashed file: ${filePath}. New name: ${finalSummary.suggested_name}`);
 
     return new Response(JSON.stringify({ message: "File summarized and hashed successfully." }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -163,16 +167,9 @@ serve(async (req) => {
 
   } catch (error: any) {
     console.error('Summarize File Error:', error.message, error.stack);
-    const caseId = (await req.json().catch(() => ({})))?.caseId;
     if (caseId) {
-        await createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '').from('agent_activities').insert({
-            case_id: caseId,
-            agent_name: 'Summarizer Agent',
-            agent_role: 'Error Handler',
-            activity_type: 'Summarization Failed',
-            content: `Error processing file: ${error.message}`,
-            status: 'error',
-        });
+        const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
+        await insertActivity(supabaseClient, caseId, `Error processing file: ${error.message}`, 'error');
     }
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
