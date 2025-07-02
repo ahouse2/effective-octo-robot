@@ -130,10 +130,27 @@ serve(async (req) => {
                 return model.generateContent(chunkPrompt);
             });
 
-            const results = await Promise.all(batchPromises);
-            results.forEach(result => {
-                chunkSummaries.push(result.response.text());
+            const settledResults = await Promise.allSettled(batchPromises);
+
+            settledResults.forEach((result, index) => {
+                if (result.status === 'fulfilled') {
+                    const geminiResponse = result.value.response;
+                    if (geminiResponse.promptFeedback?.blockReason) {
+                        const reason = geminiResponse.promptFeedback.blockReason;
+                        console.warn(`Chunk ${i + index} was blocked by safety filters. Reason: ${reason}`);
+                        insertActivity(supabaseClient, caseId, `Warning: A chunk of the document was blocked by safety filters (Reason: ${reason}). It will be skipped.`, 'completed');
+                    } else {
+                        chunkSummaries.push(geminiResponse.text());
+                    }
+                } else {
+                    console.error(`Failed to summarize chunk ${i + index}:`, result.reason);
+                    insertActivity(supabaseClient, caseId, `Error: Failed to summarize a chunk of the document. It will be skipped. Reason: ${result.reason}`, 'error');
+                }
             });
+        }
+
+        if (chunkSummaries.length === 0) {
+            throw new Error("All chunks failed to summarize. Cannot create a final summary.");
         }
 
         await insertActivity(supabaseClient, caseId, `All chunks summarized. Creating final combined summary...`, 'processing');
