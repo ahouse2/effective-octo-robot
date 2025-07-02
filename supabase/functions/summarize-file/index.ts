@@ -11,9 +11,15 @@ const CHUNK_SIZE = 15000; // Characters per chunk, well within API limits
 
 async function fileToGenerativePart(blob: Blob, mimeType: string) {
   const arrayBuffer = await blob.arrayBuffer();
+  const uint8Array = new Uint8Array(arrayBuffer);
+  let binaryString = '';
+  // Process in a loop to avoid "maximum call stack size exceeded" with large files
+  for (let i = 0; i < uint8Array.length; i++) {
+    binaryString += String.fromCharCode(uint8Array[i]);
+  }
   return {
     inlineData: {
-      data: btoa(String.fromCharCode(...new Uint8Array(arrayBuffer))),
+      data: btoa(binaryString),
       mimeType,
     },
   };
