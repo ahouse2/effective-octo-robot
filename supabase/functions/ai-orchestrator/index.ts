@@ -216,7 +216,6 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     }
 
     if (dbSearchError) {
-        await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Database Search Failed', `Error searching file metadata: ${dbSearchError.message}`, 'error');
         throw new Error(`Failed to search file metadata: ${dbSearchError.message}`);
     }
 
@@ -291,25 +290,25 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     await updateProgress(supabaseClient, caseId, 80, 'Parsing AI response and updating database...');
 
     if (command === 're_run_analysis') {
-        const jsonString = extractJson(responseText);
-        if (!jsonString) throw new Error("AI did not return a valid JSON object.");
-        
-        const analysisResult = JSON.parse(jsonString);
+        const jsonResult = extractJson(responseText);
+        if (!jsonResult) {
+          throw new Error(`AI did not return a valid JSON object. Raw response: ${responseText}`);
+        }
 
-        if (analysisResult.case_theory) {
+        if (jsonResult.case_theory) {
             await supabaseClient.from('case_theories').upsert({
                 case_id: caseId,
-                fact_patterns: analysisResult.case_theory.fact_patterns,
-                legal_arguments: analysisResult.case_theory.legal_arguments,
-                potential_outcomes: analysisResult.case_theory.potential_outcomes,
+                fact_patterns: jsonResult.case_theory.fact_patterns,
+                legal_arguments: jsonResult.case_theory.legal_arguments,
+                potential_outcomes: jsonResult.case_theory.potential_outcomes,
                 status: 'refined',
                 last_updated: new Date().toISOString()
             }, { onConflict: 'case_id' });
         }
 
-        if (analysisResult.case_insights && analysisResult.case_insights.length > 0) {
+        if (jsonResult.case_insights && jsonResult.case_insights.length > 0) {
             await supabaseClient.from('case_insights').delete().eq('case_id', caseId);
-            const insightsToInsert = analysisResult.case_insights.map((insight: any) => ({
+            const insightsToInsert = jsonResult.case_insights.map((insight: any) => ({
                 case_id: caseId,
                 title: insight.title,
                 description: insight.description,
@@ -317,7 +316,7 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
             }));
             await supabaseClient.from('case_insights').insert(insightsToInsert);
         }
-        await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'AI', 'Full Analysis Complete', `Successfully parsed and saved new case theory and ${analysisResult.case_insights?.length || 0} insights.`, 'completed');
+        await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'AI', 'Full Analysis Complete', `Successfully parsed and saved new case theory and ${jsonResult.case_insights?.length || 0} insights.`, 'completed');
     } else {
         await insertAgentActivity(supabaseClient, caseId, 'Google Gemini', 'AI', 'RAG Response', responseText, 'completed');
     }
@@ -332,10 +331,17 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  let body;
   try {
-    const body = await req.json();
-    const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '', { auth: { persistSession: false } });
-    const { caseId, command, payload } = body;
+    body = await req.json();
+  } catch (e) {
+    return new Response(JSON.stringify({ error: 'Invalid JSON in request body' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  }
+
+  const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '', { auth: { persistSession: false } });
+  const { caseId, command, payload } = body;
+
+  try {
     const userId = await getUserIdFromRequest(req, supabaseClient);
     if (!caseId || !userId || !command) throw new Error('caseId, userId, and command are required');
 
@@ -395,18 +401,14 @@ serve(async (req) => {
         const openai = new OpenAI({ apiKey: Deno.env.get('OPENAI_API_KEY') });
         await handleOpenAICommand(supabaseClient, openai, caseId, userId, command, payload);
     } else {
-      await insertAgentActivity(supabaseClient, caseId, 'Orchestrator', 'System', 'Routing Error', `Unsupported or null AI model configured: [${ai_model}]. Halting execution.`, 'error');
       throw new Error(`Unsupported AI model: ${ai_model}`);
     }
 
     return new Response(JSON.stringify({ message: 'Command processed successfully.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
   } catch (error: any) {
     console.error('Edge Function error:', error.message, error.stack);
-    const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
-    const caseIdFromRequest = (await req.json().catch(() => ({})))?.caseId;
-    if (caseIdFromRequest) {
-        await supabaseClient.from('cases').update({ status: 'Error', analysis_status_message: error.message }).eq('id', caseIdFromRequest);
-    }
+    await insertAgentActivity(supabaseClient, caseId, 'Orchestrator', 'System', 'Critical Error', error.message, 'error');
+    await supabaseClient.from('cases').update({ status: 'Error', analysis_status_message: 'A critical error occurred.' }).eq('id', caseId);
     return new Response(JSON.stringify({ error: error.message }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 });
   }
 });
