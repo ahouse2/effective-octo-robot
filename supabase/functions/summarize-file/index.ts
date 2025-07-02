@@ -9,6 +9,8 @@ const corsHeaders = {
 
 const CHUNK_SIZE = 15000; // Characters per chunk
 const BATCH_SIZE = 5; // Number of chunks to process in parallel
+const MAX_FILE_SIZE_MB = 50;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
 async function fileToGenerativePart(blob: Blob, mimeType: string) {
   const arrayBuffer = await blob.arrayBuffer();
@@ -69,6 +71,42 @@ serve(async (req) => {
     }
 
     const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
+    
+    // --- FILE SIZE CHECK ---
+    const pathParts = filePath.split('/');
+    const fileName = pathParts.pop() || filePath;
+    const directoryPath = pathParts.join('/');
+
+    const { data: fileList, error: listError } = await supabaseClient.storage
+      .from('evidence-files')
+      .list(directoryPath, {
+        search: fileName,
+        limit: 1,
+      });
+
+    if (listError) throw new Error(`Could not verify file size: ${listError.message}`);
+    if (!fileList || fileList.length === 0) throw new Error(`File not found at path: ${filePath}`);
+
+    const fileMetadata = fileList[0];
+    // @ts-ignore
+    if (fileMetadata.metadata.size > MAX_FILE_SIZE_BYTES) {
+      // @ts-ignore
+      const sizeInMB = (fileMetadata.metadata.size / (1024 * 1024)).toFixed(2);
+      const errorMessage = `File "${fileName}" (${sizeInMB} MB) is too large to be processed. The maximum file size is ${MAX_FILE_SIZE_MB} MB.`;
+      
+      await insertActivity(supabaseClient, caseId, errorMessage, 'error');
+      await supabaseClient.from('case_files_metadata').update({
+          description: `Processing failed: File exceeds the ${MAX_FILE_SIZE_MB}MB size limit.`,
+          last_modified_at: new Date().toISOString(),
+      }).eq('id', fileId);
+
+      return new Response(JSON.stringify({ error: errorMessage }), {
+        status: 413, // Payload Too Large
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    // --- END FILE SIZE CHECK ---
+
     const geminiApiKey = Deno.env.get('GOOGLE_GEMINI_API_KEY');
     if (!geminiApiKey) throw new Error("GOOGLE_GEMINI_API_KEY is not set.");
 
