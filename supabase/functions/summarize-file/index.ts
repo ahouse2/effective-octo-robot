@@ -7,13 +7,13 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const CHUNK_SIZE = 15000; // Characters per chunk, well within API limits
+const CHUNK_SIZE = 15000; // Characters per chunk
+const BATCH_SIZE = 5; // Number of chunks to process in parallel
 
 async function fileToGenerativePart(blob: Blob, mimeType: string) {
   const arrayBuffer = await blob.arrayBuffer();
   const uint8Array = new Uint8Array(arrayBuffer);
   let binaryString = '';
-  // Process in a loop to avoid "maximum call stack size exceeded" with large files
   for (let i = 0; i < uint8Array.length; i++) {
     binaryString += String.fromCharCode(uint8Array[i]);
   }
@@ -108,27 +108,32 @@ serve(async (req) => {
       const textContent = await fileBlob.text();
       
       if (textContent.length < CHUNK_SIZE) {
-        // File is small enough, process directly
         await insertActivity(supabaseClient, caseId, `File is small. Summarizing directly.`);
         const prompt = `Analyze this document in the context of a family law case. The document content is below. Provide a detailed summary, a suggested filename, relevant tags, and a category. Your response MUST be a JSON object inside a markdown block, following this format: ${jsonFormat}\n\n---\n\n${textContent}`;
         const result = await model.generateContent(prompt);
         finalSummary = extractJson(result.response.text());
       } else {
-        // File is large, use chunking (Map-Reduce)
         await insertActivity(supabaseClient, caseId, `File is large. Starting chunked summarization.`);
         const chunks: string[] = [];
         for (let i = 0; i < textContent.length; i += CHUNK_SIZE) {
           chunks.push(textContent.substring(i, i + CHUNK_SIZE));
         }
-
         await insertActivity(supabaseClient, caseId, `Split file into ${chunks.length} chunks.`);
 
         const chunkSummaries: string[] = [];
-        for (let i = 0; i < chunks.length; i++) {
-          await insertActivity(supabaseClient, caseId, `Summarizing chunk ${i + 1} of ${chunks.length}...`, 'processing');
-          const chunkPrompt = `This is one chunk of a larger document. Please summarize this specific chunk concisely, focusing on key names, dates, and actions relevant to a family law case:\n\n---\n\n${chunks[i]}`;
-          const chunkResult = await model.generateContent(chunkPrompt);
-          chunkSummaries.push(chunkResult.response.text());
+        for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+            const batchChunks = chunks.slice(i, i + BATCH_SIZE);
+            await insertActivity(supabaseClient, caseId, `Summarizing chunks ${i + 1} to ${i + batchChunks.length} (out of ${chunks.length})...`, 'processing');
+
+            const batchPromises = batchChunks.map(chunk => {
+                const chunkPrompt = `This is one chunk of a larger document. Please summarize this specific chunk concisely, focusing on key names, dates, and actions relevant to a family law case:\n\n---\n\n${chunk}`;
+                return model.generateContent(chunkPrompt);
+            });
+
+            const results = await Promise.all(batchPromises);
+            results.forEach(result => {
+                chunkSummaries.push(result.response.text());
+            });
         }
 
         await insertActivity(supabaseClient, caseId, `All chunks summarized. Creating final combined summary...`, 'processing');
@@ -139,7 +144,6 @@ serve(async (req) => {
         finalSummary = extractJson(finalResult.response.text());
       }
     } else {
-      // Unsupported file type
       await supabaseClient.from('case_files_metadata').update({
           file_hash: fileHash,
           hash_algorithm: 'SHA-256',
