@@ -55,6 +55,35 @@ async function insertActivity(supabase: SupabaseClient, caseId: string, activity
     });
 }
 
+// New retry helper function for Gemini API calls
+async function callGeminiWithRetry<T>(
+  geminiCall: () => Promise<T>,
+  caseId: string,
+  supabaseClient: SupabaseClient,
+  activityDescription: string,
+  maxRetries = 3,
+  initialDelayMs = 5000 // 5 seconds
+): Promise<T> {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await geminiCall();
+    } catch (error: any) {
+      // Check for 429 Too Many Requests or quota errors
+      if (error.status === 429 || (error.message && error.message.includes("quota"))) {
+        const currentDelay = initialDelayMs * Math.pow(2, i);
+        console.warn(`[Gemini Retry] Rate limit hit for ${activityDescription}. Retrying in ${currentDelay / 1000}s... (Attempt ${i + 1}/${maxRetries})`);
+        await insertActivity(supabaseClient, caseId, `[Gemini] Rate limit hit for ${activityDescription}. Retrying in ${currentDelay / 1000}s...`, 'processing');
+        await new Promise(resolve => setTimeout(resolve, currentDelay));
+      } else {
+        // Re-throw other errors immediately
+        throw error;
+      }
+    }
+  }
+  throw new Error(`[Gemini Retry] Failed to complete ${activityDescription} after ${maxRetries} retries due to persistent rate limits or other issues.`);
+}
+
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -113,7 +142,7 @@ serve(async (req) => {
     if (!geminiApiKey) throw new Error("GOOGLE_GEMINI_API_KEY is not set.");
 
     const genAI = new GoogleGenerativeAI(geminiApiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite-preview-06-17" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite-preview-06-17" }); // Ensure correct model name
 
     await insertActivity(supabaseClient, caseId, `Starting summarization for file: ${filePath}`, 'processing');
 
@@ -142,7 +171,13 @@ serve(async (req) => {
     if (mimeType.startsWith('image/')) {
       const imagePart = await fileToGenerativePart(fileBlob, mimeType);
       const prompt = `Analyze this image in the context of a family law case. Provide a detailed summary, a suggested filename, relevant tags, and a category. Your response MUST be a JSON object inside a markdown block, following this format: ${jsonFormat}`;
-      const result = await model.generateContent({ contents: [{ role: "user", parts: [prompt, imagePart] }] });
+      
+      const result = await callGeminiWithRetry(
+        () => model.generateContent({ contents: [{ role: "user", parts: [prompt, imagePart] }] }),
+        caseId,
+        supabaseClient,
+        `image summarization for ${fileName}`
+      );
       finalSummary = extractJson(result.response.text());
     } else if (mimeType === 'application/pdf' || mimeType.startsWith('text/')) {
       const textContent = await fileBlob.text();
@@ -150,7 +185,13 @@ serve(async (req) => {
       if (textContent.length < CHUNK_SIZE) {
         await insertActivity(supabaseClient, caseId, `File is small. Summarizing directly.`);
         const prompt = `Analyze this document in the context of a family law case. The document content is below. Provide a detailed summary, a suggested filename, relevant tags, and a category. Your response MUST be a JSON object inside a markdown block, following this format: ${jsonFormat}\n\n---\n\n${textContent}`;
-        const result = await model.generateContent(prompt);
+        
+        const result = await callGeminiWithRetry(
+          () => model.generateContent(prompt),
+          caseId,
+          supabaseClient,
+          `small file summarization for ${fileName}`
+        );
         finalSummary = extractJson(result.response.text());
       } else {
         await insertActivity(supabaseClient, caseId, `File is large. Starting chunked summarization.`);
@@ -165,9 +206,14 @@ serve(async (req) => {
             const batchChunks = chunks.slice(i, i + BATCH_SIZE);
             await insertActivity(supabaseClient, caseId, `Summarizing chunks ${i + 1} to ${i + batchChunks.length} (out of ${chunks.length})...`, 'processing');
 
-            const batchPromises = batchChunks.map(chunk => {
+            const batchPromises = batchChunks.map((chunk, indexInBatch) => {
                 const chunkPrompt = `This is one chunk of a larger document. Please summarize this specific chunk concisely, focusing on key names, dates, and actions relevant to a family law case:\n\n---\n\n${chunk}`;
-                return model.generateContent(chunkPrompt);
+                return callGeminiWithRetry(
+                  () => model.generateContent(chunkPrompt),
+                  caseId,
+                  supabaseClient,
+                  `chunk ${i + indexInBatch + 1} summarization for ${fileName}`
+                );
             });
 
             const settledResults = await Promise.allSettled(batchPromises);
@@ -197,7 +243,12 @@ serve(async (req) => {
         const combinedSummaries = chunkSummaries.join('\n\n---\n\n');
         const finalPrompt = `You have been provided with several summaries from sequential chunks of a single large document. Your task is to synthesize these into a single, coherent analysis. Based on all the provided information, generate a final JSON object with a suggested filename, a comprehensive description, relevant tags, and a category for the entire document. Your response MUST be a JSON object inside a markdown block, following this format: ${jsonFormat}\n\nHere are the chunk summaries:\n\n${combinedSummaries}`;
         
-        const finalResult = await model.generateContent(finalPrompt);
+        const finalResult = await callGeminiWithRetry(
+          () => model.generateContent(finalPrompt),
+          caseId,
+          supabaseClient,
+          `final summarization for ${fileName}`
+        );
         finalSummary = extractJson(finalResult.response.text());
       }
     } else {
