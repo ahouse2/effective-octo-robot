@@ -113,7 +113,7 @@ serve(async (req) => {
     if (!geminiApiKey) throw new Error("GOOGLE_GEMINI_API_KEY is not set.");
 
     const genAI = new GoogleGenerativeAI(geminiApiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite-preview-06-17" });
 
     await insertActivity(supabaseClient, caseId, `Starting summarization for file: ${filePath}`, 'processing');
 

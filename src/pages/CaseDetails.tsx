@@ -321,7 +321,7 @@ const CaseDetails = () => {
                           </FormControl>
                           <SelectContent>
                             <SelectItem value="openai">OpenAI (GPT-4o)</SelectItem>
-                            <SelectItem value="gemini">Google Gemini (Requires RAG setup for full document analysis)</SelectItem>
+                            <SelectItem value="gemini">Google Gemini (gemini-2.5-flash-lite-preview-06-17)</SelectItem>
                           </SelectContent>
                         </Select>
                         <FormDescription>

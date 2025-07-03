@@ -80,7 +80,7 @@ serve(async (req) => {
 
     const evidenceContext = files.map(file => 
       `File: "${file.suggested_name || file.file_name}" (ID: ${file.id})\nSummary: ${file.description || 'No summary available.'}`
-    ).join('\n\n');
+    ).join('\n\n---\n\n');
 
     const focusInstruction = focus
       ? `Your analysis MUST focus exclusively on events related to the following topic: "${focus}". Ignore any events not directly relevant to this topic.`
@@ -126,7 +126,7 @@ serve(async (req) => {
       const geminiApiKey = Deno.env.get('GOOGLE_GEMINI_API_KEY');
       if (!geminiApiKey) throw new Error("GOOGLE_GEMINI_API_KEY is not set.");
       const genAI = new GoogleGenerativeAI(geminiApiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite-preview-06-17" });
       const result = await model.generateContent(prompt);
       responseContent = result.response.text();
     } else {

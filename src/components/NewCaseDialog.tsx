@@ -216,7 +216,7 @@ export const NewCaseDialog: React.FC<NewCaseDialogProps> = ({ onCaseCreated }) =
                       <FormControl><SelectTrigger><SelectValue placeholder="Select an AI model" /></SelectTrigger></FormControl>
                       <SelectContent>
                         <SelectItem value="openai">OpenAI (GPT-4o)</SelectItem>
-                        <SelectItem value="gemini">Google Gemini (Requires RAG setup)</SelectItem>
+                        <SelectItem value="gemini">Google Gemini (gemini-2.5-flash-lite-preview-06-17)</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormDescription>This model will power your case analysis.</FormDescription>
