@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import neo4j from 'https://esm.sh/neo4j-driver@5.22.0';
+import neo4j from 'https://esm.sh/neo4j-driver@5.20.0';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
