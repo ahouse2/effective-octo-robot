@@ -5,6 +5,7 @@ import OpenAI from 'https://esm.sh/openai@4.52.7';
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
 function extractJson(text: string): any | null {

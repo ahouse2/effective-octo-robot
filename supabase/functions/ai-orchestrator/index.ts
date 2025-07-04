@@ -6,6 +6,7 @@ import { GoogleGenerativeAI } from 'https://esm.sh/@google/generative-ai@0.15.0'
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
 const MAX_CONTEXT_LENGTH = 50000; // A safe character limit for the context window

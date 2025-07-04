@@ -6,6 +6,7 @@ import OpenAI from 'https://esm.sh/openai@4.52.7';
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
 function extractJson(text: string): any | null {
@@ -25,7 +26,7 @@ function extractJson(text: string): any | null {
   return null;
 }
 
-async function insertAgentActivity(supabaseClient: SupabaseClient, caseId: string, content: string, status: 'processing' | 'completed' | 'error') {
+async function insertAgentActivity(supabaseClient: SupabaseClient, caseId: string, content: string, status: 'processing' | 'completed' | 'error' = 'completed') {
   await supabaseClient.from('agent_activities').insert({
     case_id: caseId,
     agent_name: 'Timeline Agent',
@@ -35,6 +36,35 @@ async function insertAgentActivity(supabaseClient: SupabaseClient, caseId: strin
     status: status,
   });
 }
+
+// New retry helper function for Gemini API calls
+async function callGeminiWithRetry<T>(
+  geminiCall: () => Promise<T>,
+  caseId: string,
+  supabaseClient: SupabaseClient,
+  activityDescription: string,
+  maxRetries = 3,
+  initialDelayMs = 5000 // 5 seconds
+): Promise<T> {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await geminiCall();
+    } catch (error: any) {
+      // Check for 429 Too Many Requests or quota errors
+      if (error.status === 429 || (error.message && error.message.includes("quota"))) {
+        const currentDelay = initialDelayMs * Math.pow(2, i);
+        console.warn(`[Gemini Retry] Rate limit hit for ${activityDescription}. Retrying in ${currentDelay / 1000}s... (Attempt ${i + 1}/${maxRetries})`);
+        await insertActivity(supabaseClient, caseId, `[Gemini] Rate limit hit for ${activityDescription}. Retrying in ${currentDelay / 1000}s...`, 'processing');
+        await new Promise(resolve => setTimeout(resolve, currentDelay));
+      } else {
+        // Re-throw other errors immediately
+        throw error;
+      }
+    }
+  }
+  throw new Error(`[Gemini Retry] Failed to complete ${activityDescription} after ${maxRetries} retries due to persistent rate limits or other issues.`);
+}
+
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -74,7 +104,7 @@ serve(async (req) => {
 
     if (filesError) throw filesError;
     if (!files || files.length === 0) {
-      await insertAgentActivity(supabaseClient, caseId, 'No files found to analyze for timeline.', 'completed');
+      await insertActivity(supabaseClient, caseId, 'No files found to analyze for timeline.', 'completed');
       return new Response(JSON.stringify({ message: "No files to analyze." }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
@@ -127,7 +157,12 @@ serve(async (req) => {
       if (!geminiApiKey) throw new Error("GOOGLE_GEMINI_API_KEY is not set.");
       const genAI = new GoogleGenerativeAI(geminiApiKey);
       const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite-preview-06-17" });
-      const result = await model.generateContent(prompt);
+      const result = await callGeminiWithRetry(
+        () => model.generateContent(prompt),
+        caseId,
+        supabaseClient,
+        `timeline generation for case ${caseId}`
+      );
       responseContent = result.response.text();
     } else {
       throw new Error(`Unsupported AI model: ${aiModel}`);
