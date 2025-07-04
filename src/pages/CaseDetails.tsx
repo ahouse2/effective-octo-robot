@@ -144,7 +144,7 @@ const CaseDetails = () => {
     try {
         const { data, error } = await supabase.functions.invoke('generate-case-report', {
             body: { caseId },
-            responseType: 'blob'
+            // responseType: 'blob' // Removed: invoke handles response type based on Content-Type header
         });
 
         if (error) throw error;

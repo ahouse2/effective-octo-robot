@@ -35,6 +35,8 @@ interface FileMetadata {
   uploaded_at: string;
   file_category: string | null;
   suggested_name: string | null;
+  file_hash: string | null;
+  hash_algorithm: string | null;
 }
 
 interface SearchResult extends FileMetadata {
@@ -205,10 +207,17 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({ caseId }) => {
       if (error) throw error;
       if (data.error) throw new Error(data.error);
 
-      const enrichedResults = data.results.map((result: any) => {
+      const enrichedResults: SearchResult[] = (data.results || []).map((result: { id: string; snippets: string[] }) => {
         const fileInfo = allFiles.find(f => f.id === result.id);
-        return fileInfo ? { ...fileInfo, snippets: result.snippets } : null;
-      }).filter(Boolean);
+        // Ensure all FileMetadata properties are present, even if null
+        if (fileInfo) {
+          return {
+            ...fileInfo,
+            snippets: result.snippets,
+          };
+        }
+        return null;
+      }).filter(Boolean) as SearchResult[]; // Explicitly cast after filtering nulls
 
       setSearchResults(enrichedResults);
     } catch (err: any) {
@@ -233,7 +242,7 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({ caseId }) => {
     try {
       const { data, error } = await supabase.functions.invoke('download-organized-zip', {
         body: JSON.stringify({ caseId, category }),
-        responseType: 'blob'
+        // responseType: 'blob' // Removed: invoke handles response type based on Content-Type header
       });
 
       if (error) throw error;
