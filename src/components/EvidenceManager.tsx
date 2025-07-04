@@ -209,15 +209,14 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({ caseId }) => {
 
       const enrichedResults: SearchResult[] = (data.results || []).map((result: { id: string; snippets: string[] }) => {
         const fileInfo = allFiles.find(f => f.id === result.id);
-        // Ensure all FileMetadata properties are present, even if null
         if (fileInfo) {
-          return {
-            ...fileInfo,
-            snippets: result.snippets,
-          };
+            return {
+                ...fileInfo,
+                snippets: result.snippets,
+            } as SearchResult;
         }
         return null;
-      }).filter(Boolean) as SearchResult[]; // Explicitly cast after filtering nulls
+      }).filter(Boolean) as SearchResult[];
 
       setSearchResults(enrichedResults);
     } catch (err: any) {
@@ -242,7 +241,6 @@ export const EvidenceManager: React.FC<EvidenceManagerProps> = ({ caseId }) => {
     try {
       const { data, error } = await supabase.functions.invoke('download-organized-zip', {
         body: JSON.stringify({ caseId, category }),
-        // responseType: 'blob' // Removed: invoke handles response type based on Content-Type header
       });
 
       if (error) throw error;

@@ -56,7 +56,6 @@ const Login = () => {
                     inputPlaceholder: 'hsl(var(--muted-foreground))',
                   },
                   radii: {
-                    // borderRadius: 'var(--radius)', // Removed: Not a valid property for ThemeSupa radii
                     buttonBorderRadius: 'var(--radius)',
                   }
                 },
