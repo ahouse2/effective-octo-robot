@@ -142,7 +142,7 @@ serve(async (req) => {
     if (!geminiApiKey) throw new Error("GOOGLE_GEMINI_API_KEY is not set.");
 
     const genAI = new GoogleGenerativeAI(geminiApiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite-preview-06-17" }); // Ensure correct model name
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite-preview-06-17" });
 
     await insertActivity(supabaseClient, caseId, `Starting summarization for file: ${filePath}`, 'processing');
 
@@ -236,7 +236,17 @@ serve(async (req) => {
         }
 
         if (chunkSummaries.length === 0) {
-            throw new Error("All chunks failed to summarize. Cannot create a final summary.");
+            // Handle case where all chunks failed to summarize
+            const errorMessage = `All chunks failed to summarize for file "${fileName}". Please review the file manually.`;
+            await insertActivity(supabaseClient, caseId, errorMessage, 'error');
+            await supabaseClient.from('case_files_metadata').update({
+                description: `Summarization failed: All chunks failed to process.`,
+                last_modified_at: new Date().toISOString(),
+            }).eq('id', fileId);
+            return new Response(JSON.stringify({ message: errorMessage }), {
+                status: 200, // Return OK status to indicate graceful handling
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
         }
 
         await insertActivity(supabaseClient, caseId, `All chunks summarized. Creating final combined summary...`, 'processing');
