@@ -8,7 +8,7 @@ const corsHeaders = {
 };
 
 const CHUNK_SIZE = 15000; // Characters per chunk
-const BATCH_SIZE = 5; // Number of chunks to process in parallel
+const BATCH_SIZE = 2; // Number of chunks to process in parallel, reduced from 5
 const MAX_FILE_SIZE_MB = 50;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
@@ -233,6 +233,11 @@ serve(async (req) => {
                     insertActivity(supabaseClient, caseId, `Error: Failed to summarize a chunk of the document. It will be skipped. Reason: ${result.reason}`, 'error');
                 }
             });
+
+            // Add a delay here to avoid hitting rate limits on the next batch
+            if (i + BATCH_SIZE < chunks.length) {
+                await new Promise(resolve => setTimeout(resolve, 1500)); // 1.5-second delay
+            }
         }
 
         if (chunkSummaries.length === 0) {
