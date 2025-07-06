@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-import neo4j from 'https://esm.sh/neo4j-driver@5.20.0';
+import neo4j from 'https://esm.sh/neo4j-driver@4.4.0'; // Changed driver version
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
