@@ -7,6 +7,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Cache-Control': 'no-store',
+  'X-Content-Type-Options': 'nosniff',
 };
 
 serve(async (req) => {
@@ -20,6 +21,7 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Case ID is required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
+    // Move Neo4j credential checks here, after OPTIONS is handled
     const NEO4J_URI = Deno.env.get('NEO4J_URI');
     const NEO4J_USERNAME = Deno.env.get('NEO4J_USERNAME');
     const NEO4J_PASSWORD = Deno.env.get('NEO4J_PASSWORD');
