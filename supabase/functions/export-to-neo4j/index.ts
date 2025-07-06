@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-import neo4j from 'https://esm.sh/neo4j-driver@4.4.0'; // Changed driver version
+import neo4j from 'https://esm.sh/neo4j-driver@4.0.0'; // Changed driver version to 4.0.0
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -23,16 +23,16 @@ serve(async (req) => {
 
     // Move Neo4j credential checks here, after OPTIONS is handled
     const NEO4J_URI = Deno.env.get('NEO4J_URI');
-    const NEO44J_USERNAME = Deno.env.get('NEO4J_USERNAME');
+    const NEO4J_USERNAME = Deno.env.get('NEO4J_USERNAME');
     const NEO4J_PASSWORD = Deno.env.get('NEO4J_PASSWORD');
     const NEO4J_DATABASE = Deno.env.get('NEO4J_DATABASE');
 
-    if (!NEO4J_URI || !NEO44J_USERNAME || !NEO4J_PASSWORD || !NEO4J_DATABASE) {
+    if (!NEO4J_URI || !NEO4J_USERNAME || !NEO4J_PASSWORD || !NEO4J_DATABASE) {
       return new Response(JSON.stringify({ error: 'Neo4j credentials are not set in Supabase secrets.' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
-    const driver = neo4j.driver(NEO4J_URI, neo4j.auth.basic(NEO44J_USERNAME, NEO4J_PASSWORD));
+    const driver = neo4j.driver(NEO4J_URI, neo4j.auth.basic(NEO4J_USERNAME, NEO4J_PASSWORD));
     const session = driver.session({ database: NEO4J_DATABASE });
 
     try {
