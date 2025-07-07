@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-import { Neo4j } from "../lib/deno_neo4j/mod.ts"; // Corrected import path
+import { Neo4j } from "@/deno_neo4j/mod.ts"; // Updated import path to use import map alias
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -34,7 +34,7 @@ serve(async (req) => {
     
     // Initialize deno-neo4j client
     const neo4j = new Neo4j(NEO4J_URI, {
-      username: NEO4J_USERNAME,
+      username: NEO44J_USERNAME,
       password: NEO4J_PASSWORD,
       database: NEO4J_DATABASE,
       encrypted: true, // AuraDB is always encrypted
