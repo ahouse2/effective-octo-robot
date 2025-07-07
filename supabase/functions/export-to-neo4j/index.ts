@@ -23,7 +23,7 @@ serve(async (req) => {
 
     // Move Neo4j credential checks here, after OPTIONS is handled
     const NEO4J_URI = Deno.env.get('NEO4J_URI');
-    const NEO4J_USERNAME = Deno.env.get('NEO4J_USERNAME'); // Corrected typo here
+    const NEO4J_USERNAME = Deno.env.get('NEO4J_USERNAME');
     const NEO4J_PASSWORD = Deno.env.get('NEO4J_PASSWORD');
     const NEO4J_DATABASE = Deno.env.get('NEO4J_DATABASE');
 
@@ -48,7 +48,7 @@ serve(async (req) => {
         const { data: insightsData, error: insightsError } = await supabaseClient.from('case_insights').select('*').eq('case_id', caseId);
         if (insightsError) throw new Error(`Failed to fetch insights: ${insightsError.message}`);
 
-        await session.writeTransaction(async (tx) => { // Changed to writeTransaction
+        await session.writeTransaction(async (tx) => {
           await tx.run(
             `MATCH (c:Case {id: $caseId}) OPTIONAL MATCH (c)-[r]-() DELETE r`,
             { caseId }
@@ -72,16 +72,20 @@ serve(async (req) => {
                MERGE (c)-[:HAS_EVIDENCE]->(f)`,
               { files: filesData, caseId }
             );
+            // Corrected Cypher syntax for filtering unwound list
             await tx.run(
-              `UNWIND $files AS file WHERE file.file_category IS NOT NULL
+              `UNWIND $files AS file
+               WITH file WHERE file.file_category IS NOT NULL
                MERGE (cat:Category {name: file.file_category, caseId: $caseId})
                WITH cat, file
                MATCH (f:File {id: file.id})
                MERGE (f)-[:IS_CATEGORIZED_AS]->(cat)`,
               { files: filesData, caseId }
             );
+            // Corrected Cypher syntax for filtering unwound list
             await tx.run(
-              `UNWIND $files AS file WHERE file.tags IS NOT NULL
+              `UNWIND $files AS file
+               WITH file WHERE file.tags IS NOT NULL
                UNWIND file.tags AS tagName
                MERGE (t:Tag {name: tagName, caseId: $caseId})
                WITH t, file
