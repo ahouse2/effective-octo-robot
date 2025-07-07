@@ -52,7 +52,7 @@ serve(async (req) => {
         if (filesError) throw new Error(`Failed to fetch files: ${filesError.message}`);
 
         const { data: insightsData, error: insightsError } = await supabaseClient.from('case_insights').select('*').eq('case_id', caseId);
-        if (insightsError) throw new Error(`Failed to fetch insights: ${insightsData.message}`);
+        if (insightsError) throw new Error(`Failed to fetch insights: ${insightsError.message}`); // Corrected: insightsData.message -> insightsError.message
 
         // Clear existing data for the case
         await neo4j.query(
