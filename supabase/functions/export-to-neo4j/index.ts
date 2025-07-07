@@ -8,31 +8,35 @@ const corsHeaders = {
   'Cache-Control': 'no-store'
 };
 
-async function neo4jQuery(wsUrl: string, query: string, params: Record<string, any>, auth: {username: string, password: string}) {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(wsUrl);
-    
-    ws.onopen = () => {
-      ws.send(JSON.stringify({
-        type: "run",
-        query,
-        params,
-        ...auth
-      }));
-    };
+// Function to send Cypher queries via Neo4j HTTP Transactional Endpoint
+async function neo4jHttpQuery(query: string, params: Record<string, any>, auth: {username: string, password: string}, httpUrl: string) {
+  const authString = btoa(`${auth.username}:${auth.password}`); // Base64 encode credentials
 
-    ws.onmessage = (e) => {
-      const data = JSON.parse(e.data);
-      if (data.type === "error") {
-        reject(new Error(data.message));
-      } else {
-        resolve(data);
-      }
-      ws.close();
-    };
-
-    ws.onerror = (e) => reject(new Error("WebSocket error"));
+  const response = await fetch(httpUrl, {
+    method: "POST",
+    headers: {
+      "Authorization": `Basic ${authString}`,
+      "Content-Type": "application/json",
+      ...corsHeaders // Include CORS headers for the fetch request itself
+    },
+    body: JSON.stringify({
+      statements: [{
+        statement: query,
+        parameters: params
+      }]
+    })
   });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Neo4j HTTP error: ${response.status} ${response.statusText} - ${errorText}`);
+  }
+
+  const data = await response.json();
+  if (data.errors && data.errors.length > 0) {
+    throw new Error(`Neo4j query error: ${data.errors.map((e: any) => e.message).join(', ')}`);
+  }
+  return data;
 }
 
 serve(async (req) => {
@@ -44,12 +48,12 @@ serve(async (req) => {
     const { caseId } = await req.json();
     if (!caseId) throw new Error("Case ID is required");
 
-    const NEO4J_WS_URL = Deno.env.get('NEO4J_WS_URL');
+    const NEO4J_HTTP_URL = Deno.env.get('NEO4J_HTTP_URL');
     const NEO4J_USER = Deno.env.get('NEO4J_USERNAME');
     const NEO4J_PASS = Deno.env.get('NEO4J_PASSWORD');
     
-    if (!NEO4J_WS_URL || !NEO4J_USER || !NEO4J_PASS) {
-      throw new Error('Neo4j credentials not configured');
+    if (!NEO4J_HTTP_URL || !NEO4J_USER || !NEO4J_PASS) {
+      throw new Error('Neo4j HTTP URL or credentials are not configured in Supabase secrets.');
     }
 
     const supabaseClient = createClient(
@@ -67,8 +71,7 @@ serve(async (req) => {
     if (caseError) throw caseError;
 
     // 2. Create Case node
-    await neo4jQuery(
-      NEO4J_WS_URL,
+    await neo4jHttpQuery(
       `MERGE (c:Case {id: $id}) 
        SET c.name = $name, 
            c.type = $type, 
@@ -79,18 +82,18 @@ serve(async (req) => {
         type: caseData.type,
         status: caseData.status
       },
-      {username: NEO4J_USER, password: NEO4J_PASS}
+      {username: NEO4J_USER, password: NEO4J_PASS},
+      NEO4J_HTTP_URL
     );
 
-    // 3. Process files (simplified example)
+    // 3. Process files
     const { data: files } = await supabaseClient
       .from('case_files_metadata')
       .select('*')
       .eq('case_id', caseId);
 
     for (const file of files || []) {
-      await neo4jQuery(
-        NEO4J_WS_URL,
+      await neo4jHttpQuery(
         `MATCH (c:Case {id: $caseId})
          MERGE (f:File {id: $fileId})
          SET f.name = $fileName
@@ -100,7 +103,8 @@ serve(async (req) => {
           fileId: file.id,
           fileName: file.suggested_name || file.file_name
         },
-        {username: NEO4J_USER, password: NEO4J_PASS}
+        {username: NEO4J_USER, password: NEO4J_PASS},
+        NEO4J_HTTP_URL
       );
     }
 
@@ -109,7 +113,8 @@ serve(async (req) => {
       status: 200
     });
 
-  } catch (error) {
+  } catch (error: any) {
+    console.error('Neo4j HTTP Export Error:', error.message);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
