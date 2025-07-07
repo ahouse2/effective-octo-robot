@@ -190,7 +190,25 @@ serve(async (req) => {
       }
       finalSummary = extractJson(result.response.text());
 
-    } else if (mimeType === 'application/pdf' || mimeType.startsWith('text/') || mimeType === 'message/rfc822') { // Added message/rfc822
+    } else if (mimeType === 'application/pdf') { // Handle PDFs by sending the blob directly
+      const pdfPart = await fileToGenerativePart(fileBlob, mimeType);
+      const prompt = `Analyze this PDF document in the context of a family law case. Extract all text content, including from scanned images (perform OCR if necessary). Then, provide a detailed summary, a suggested filename, relevant tags, and a category. Your response MUST be a JSON object inside a markdown block, following this format: ${jsonFormat}`;
+      
+      const result = await callGeminiWithRetry(
+        () => model.generateContent({ contents: [{ role: "user", parts: [{ text: prompt }, pdfPart] }] }),
+        caseId,
+        supabaseClient,
+        `PDF summarization for ${fileName}`
+      );
+
+      if (result.response.promptFeedback?.blockReason) {
+          const reason = result.response.promptFeedback.blockReason;
+          const safetyRatings = result.response.promptFeedback.safetyRatings?.map(r => `${r.category}: ${r.probability}`).join(', ');
+          throw new Error(`PDF summarization blocked by safety filters. Reason: ${reason}. Details: [${safetyRatings}].`);
+      }
+      finalSummary = extractJson(result.response.text());
+
+    } else if (mimeType.startsWith('text/') || mimeType === 'message/rfc822') { // Keep existing text/email handling
       const textContent = await fileBlob.text();
       
       if (textContent.length < CHUNK_SIZE) {
