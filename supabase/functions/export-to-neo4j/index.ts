@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-import { Neo4j } from "@/deno_neo4j/mod.ts"; // Updated import path to use import map alias
+import { Neo4j } from "./deno_neo4j/mod.ts"; // Updated import path to direct relative path
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -52,7 +52,7 @@ serve(async (req) => {
         if (filesError) throw new Error(`Failed to fetch files: ${filesError.message}`);
 
         const { data: insightsData, error: insightsError } = await supabaseClient.from('case_insights').select('*').eq('case_id', caseId);
-        if (insightsError) throw new Error(`Failed to fetch insights: ${insightsError.message}`);
+        if (insightsError) throw new Error(`Failed to fetch insights: ${insightsData.message}`);
 
         // Clear existing data for the case
         await neo4j.query(
