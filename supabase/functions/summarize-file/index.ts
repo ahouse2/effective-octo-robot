@@ -92,10 +92,13 @@ serve(async (req) => {
 
   let caseId: string | null = null;
   let fileId: string | null = null;
+  let filePath: string | null = null;
+  let fileName: string | null = null;
+
   try {
     const body = await req.json();
     fileId = body.fileId;
-    const { filePath } = body;
+    filePath = body.filePath;
     caseId = body.caseId;
 
     if (!fileId || !filePath || !caseId) {
@@ -104,11 +107,11 @@ serve(async (req) => {
 
     const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
     
-    // --- FILE SIZE CHECK ---
     const pathParts = filePath.split('/');
-    const fileName = pathParts.pop() || filePath;
+    fileName = pathParts.pop() || filePath;
     const directoryPath = pathParts.join('/');
 
+    // --- FILE SIZE CHECK ---
     const { data: fileList, error: listError } = await supabaseClient.storage
       .from('evidence-files')
       .list(directoryPath, {
@@ -128,7 +131,7 @@ serve(async (req) => {
       
       await insertActivity(supabaseClient, caseId, skipMessage, 'completed');
       await supabaseClient.from('case_files_metadata').update({
-          description: `File skipped: Exceeds the ${MAX_FILE_SIZE_MB}MB size limit.`,
+          description: `File skipped: Exceeds ${MAX_FILE_SIZE_MB}MB size limit (${sizeInMB}MB).`,
           last_modified_at: new Date().toISOString(),
       }).eq('id', fileId);
 
@@ -145,7 +148,7 @@ serve(async (req) => {
     const genAI = new GoogleGenerativeAI(geminiApiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite-preview-06-17" });
 
-    await insertActivity(supabaseClient, caseId, `Starting summarization for file: ${filePath}`, 'processing');
+    await insertActivity(supabaseClient, caseId, `Starting summarization for file: ${fileName}`, 'processing');
 
     const { data: fileBlob, error: downloadError } = await supabaseClient.storage
       .from('evidence-files')
@@ -179,7 +182,14 @@ serve(async (req) => {
         supabaseClient,
         `image summarization for ${fileName}`
       );
+      
+      if (result.response.promptFeedback?.blockReason) {
+          const reason = result.response.promptFeedback.blockReason;
+          const safetyRatings = result.response.promptFeedback.safetyRatings?.map(r => `${r.category}: ${r.probability}`).join(', ');
+          throw new Error(`Image summarization blocked by safety filters. Reason: ${reason}. Details: [${safetyRatings}].`);
+      }
       finalSummary = extractJson(result.response.text());
+
     } else if (mimeType === 'application/pdf' || mimeType.startsWith('text/')) {
       const textContent = await fileBlob.text();
       
@@ -193,7 +203,14 @@ serve(async (req) => {
           supabaseClient,
           `small file summarization for ${fileName}`
         );
+
+        if (result.response.promptFeedback?.blockReason) {
+            const reason = result.response.promptFeedback.blockReason;
+            const safetyRatings = result.response.promptFeedback.safetyRatings?.map(r => `${r.category}: ${r.probability}`).join(', ');
+            throw new Error(`Document summarization blocked by safety filters. Reason: ${reason}. Details: [${safetyRatings}].`);
+        }
         finalSummary = extractJson(result.response.text());
+
       } else {
         await insertActivity(supabaseClient, caseId, `File is large. Starting chunked summarization.`);
         const chunks: string[] = [];
@@ -224,14 +241,14 @@ serve(async (req) => {
                     const geminiResponse = result.value.response;
                     if (geminiResponse.promptFeedback?.blockReason) {
                         const reason = geminiResponse.promptFeedback.blockReason;
-                        console.warn(`Chunk ${i + index} was blocked by safety filters. Reason: ${reason}`);
-                        insertActivity(supabaseClient, caseId, `Warning: A chunk of the document was blocked by safety filters (Reason: ${reason}). It will be skipped.`, 'completed');
+                        console.warn(`Chunk ${i + index} of file "${fileName}" was blocked by safety filters. Reason: ${reason}`);
+                        insertActivity(supabaseClient, caseId, `Warning: Chunk ${i + index + 1} of "${fileName}" was blocked by safety filters (Reason: ${reason}). It will be skipped.`, 'completed');
                     } else {
                         chunkSummaries.push(geminiResponse.text());
                     }
                 } else {
-                    console.error(`Failed to summarize chunk ${i + index}:`, result.reason);
-                    insertActivity(supabaseClient, caseId, `Error: Failed to summarize a chunk of the document. It will be skipped. Reason: ${result.reason}`, 'error');
+                    console.error(`Failed to summarize chunk ${i + index} of file "${fileName}":`, result.reason);
+                    insertActivity(supabaseClient, caseId, `Error: Failed to summarize chunk ${i + index + 1} of "${fileName}". It will be skipped. Reason: ${result.reason}`, 'error');
                 }
             });
 
@@ -265,6 +282,12 @@ serve(async (req) => {
           supabaseClient,
           `final summarization for ${fileName}`
         );
+
+        if (finalResult.response.promptFeedback?.blockReason) {
+            const reason = finalResult.response.promptFeedback.blockReason;
+            const safetyRatings = finalResult.response.promptFeedback.safetyRatings?.map(r => `${r.category}: ${r.probability}`).join(', ');
+            throw new Error(`Final summarization blocked by safety filters. Reason: ${reason}. Details: [${safetyRatings}].`);
+        }
         finalSummary = extractJson(finalResult.response.text());
       }
     } else {
@@ -279,7 +302,7 @@ serve(async (req) => {
     }
 
     if (!finalSummary || !finalSummary.description) {
-      throw new Error(`Failed to get a valid JSON summary from the AI for file ${filePath}.`);
+      throw new Error(`AI did not return a valid JSON summary for file "${fileName}". Raw response might be malformed or empty.`);
     }
 
     await supabaseClient.from('case_files_metadata').update({
@@ -292,7 +315,7 @@ serve(async (req) => {
         last_modified_at: new Date().toISOString(),
     }).eq('id', fileId);
 
-    await insertActivity(supabaseClient, caseId, `Successfully summarized and hashed file: ${filePath}. New name: ${finalSummary.suggested_name}`);
+    await insertActivity(supabaseClient, caseId, `Successfully summarized and hashed file: ${fileName}. New name: ${finalSummary.suggested_name}`);
 
     return new Response(JSON.stringify({ message: "File summarized and hashed successfully." }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -300,12 +323,13 @@ serve(async (req) => {
     });
 
   } catch (error: any) {
-    console.error('Summarize File Error:', error.message, error.stack);
+    console.error(`Summarize File Error for ${fileName || filePath || fileId}:`, error.message, error.stack);
     if (caseId && fileId) {
         const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
-        await insertActivity(supabaseClient, caseId, `Error processing file: ${error.message}`, 'error');
+        const errorMessage = `Processing failed for "${fileName || filePath || fileId}": ${error.message}`;
+        await insertActivity(supabaseClient, caseId, errorMessage, 'error');
         await supabaseClient.from('case_files_metadata').update({
-            description: `Processing failed: ${error.message}`,
+            description: errorMessage,
             last_modified_at: new Date().toISOString(),
         }).eq('id', fileId);
     }
