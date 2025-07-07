@@ -18,7 +18,8 @@ import { Loader2, AlertTriangle, Copy } from "lucide-react";
 import { Button } from "./ui/button";
 
 // PDF.js worker configuration
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
+// Using a specific stable version of pdfjs-dist to ensure compatibility and reliable loading.
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@3.11.17/build/pdf.worker.min.js`;
 
 interface FileMetadata {
   id: string;
