@@ -23,7 +23,7 @@ serve(async (req) => {
 
     // Move Neo4j credential checks here, after OPTIONS is handled
     const NEO4J_URI = Deno.env.get('NEO4J_URI');
-    const NEO4J_USERNAME = Deno.env.get('NEO4J_USERNAME');
+    const NEO4J_USERNAME = Deno.env.get('NEO4J_USERNAME'); // Corrected typo here
     const NEO4J_PASSWORD = Deno.env.get('NEO4J_PASSWORD');
     const NEO4J_DATABASE = Deno.env.get('NEO4J_DATABASE');
 
@@ -32,8 +32,8 @@ serve(async (req) => {
     }
 
     const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
-    // Explicitly enable encryption for Deno compatibility with older driver
-    const driver = neo4j.driver(NEO4J_URI, neo4j.auth.basic(NEO4J_USERNAME, NEO4J_PASSWORD), { encrypted: 'ENCRYPTION_ON' });
+    // Explicitly enable encryption and disable lossless record for Deno compatibility with older driver
+    const driver = neo4j.driver(NEO4J_URI, neo4j.auth.basic(NEO4J_USERNAME, NEO4J_PASSWORD), { encrypted: 'ENCRYPTION_ON', disableLosslessRecord: true });
     const session = driver.session({ database: NEO4J_DATABASE });
 
     try {

@@ -32,8 +32,8 @@ serve(async (req) => {
     }
 
     const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
-    // Explicitly enable encryption for Deno compatibility with older driver
-    const driver = neo4j.driver(NEO4J_URI, neo4j.auth.basic(NEO4J_USERNAME, NEO4J_PASSWORD), { encrypted: 'ENCRYPTION_ON' });
+    // Explicitly enable encryption and disable lossless record for Deno compatibility with older driver
+    const driver = neo4j.driver(NEO4J_URI, neo4j.auth.basic(NEO4J_USERNAME, NEO4J_PASSWORD), { encrypted: 'ENCRYPTION_ON', disableLosslessRecord: true });
     const session = driver.session({ database: NEO4J_DATABASE });
 
     let graphTextRepresentation = "";
