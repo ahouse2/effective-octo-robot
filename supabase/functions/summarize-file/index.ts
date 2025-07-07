@@ -192,7 +192,7 @@ serve(async (req) => {
 
     } else if (mimeType === 'application/pdf') { // Handle PDFs by sending the blob directly
       const pdfPart = await fileToGenerativePart(fileBlob, mimeType);
-      const prompt = `Analyze this PDF document in the context of a family law case. Extract all text content, including from scanned images (perform OCR if necessary). Then, provide a detailed summary, a suggested filename, relevant tags, and a category. Your response MUST be a JSON object inside a markdown block, following this format: ${jsonFormat}`;
+      const prompt = `Analyze this PDF document in the context of a family law case. Attempt to extract all text content, including from scanned images (perform OCR if necessary). If text content is minimal or unreadable, describe the visual content of the document. Then, provide a detailed summary, a suggested filename, relevant tags, and a category. Your response MUST be a JSON object inside a markdown block, following this format: ${jsonFormat}`;
       
       const result = await callGeminiWithRetry(
         () => model.generateContent({ contents: [{ role: "user", parts: [{ text: prompt }, pdfPart] }] }),
