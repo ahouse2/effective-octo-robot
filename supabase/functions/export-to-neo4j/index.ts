@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-import { Neo4j } from "https://deno.land/x/deno_neo4j@1.0.0/mod.ts"; // Using deno-neo4j
+import { Neo4j } from "../lib/deno_neo4j/mod.ts"; // Updated import path to local vendored module
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
