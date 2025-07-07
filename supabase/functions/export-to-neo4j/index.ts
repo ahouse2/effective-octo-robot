@@ -32,8 +32,8 @@ serve(async (req) => {
     }
 
     const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
-    // Explicitly enable encryption and disable lossless record for Deno compatibility with older driver
-    const driver = neo4j.driver(NEO4J_URI, neo4j.auth.basic(NEO4J_USERNAME, NEO4J_PASSWORD), { encrypted: 'ENCRYPTION_ON', disableLosslessRecord: true });
+    // Disable encryption for Deno compatibility with older driver in mixed content environment
+    const driver = neo4j.driver(NEO4J_URI, neo4j.auth.basic(NEO4J_USERNAME, NEO4J_PASSWORD), { encrypted: 'ENCRYPTION_OFF', disableLosslessRecord: true });
     const session = driver.session({ database: NEO4J_DATABASE });
 
     try {
@@ -72,7 +72,6 @@ serve(async (req) => {
                MERGE (c)-[:HAS_EVIDENCE]->(f)`,
               { files: filesData, caseId }
             );
-            // Corrected Cypher syntax for filtering unwound list
             await tx.run(
               `UNWIND $files AS file
                WITH file WHERE file.file_category IS NOT NULL
@@ -82,7 +81,6 @@ serve(async (req) => {
                MERGE (f)-[:IS_CATEGORIZED_AS]->(cat)`,
               { files: filesData, caseId }
             );
-            // Corrected Cypher syntax for filtering unwound list
             await tx.run(
               `UNWIND $files AS file
                WITH file WHERE file.tags IS NOT NULL
