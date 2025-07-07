@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-import neo4j from 'https://unpkg.com/neo4j-driver@5.28.1/dist/neo4j.esm.min.js'; // Changed to unpkg.com
+import { Neo4j } from "https://deno.land/x/deno_neo4j@1.0.0/mod.ts"; // Using deno-neo4j
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -31,12 +31,19 @@ serve(async (req) => {
     }
 
     const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
-    const driver = neo4j.driver(NEO4J_URI, neo4j.auth.basic(NEO4J_USERNAME, NEO4J_PASSWORD), { encrypted: 'ENCRYPTION_ON', trust: 'TRUST_SYSTEM_CA_SIGNED_CERTIFICATES', disableLosslessRecord: true });
-    const session = driver.session({ database: NEO4J_DATABASE });
+    
+    // Initialize deno-neo4j client
+    const neo4j = new Neo4j(NEO4J_URI, {
+      username: NEO4J_USERNAME,
+      password: NEO4J_PASSWORD,
+      database: NEO4J_DATABASE,
+      encrypted: true, // AuraDB is always encrypted
+    });
 
-    let graphTextRepresentation = "";
+    await neo4j.connect(); // Connect to the database
+
     try {
-      const result = await session.run(
+      const result = await neo4j.query(
         'MATCH (c:Case {id: $caseId})-[r]-(n) RETURN c, r, n',
         { caseId }
       );
@@ -84,6 +91,9 @@ serve(async (req) => {
         links: Array.from(linksMap.values()),
       };
 
+      // This part is for the AI analysis, not for the client-side graph display
+      // It should probably be in get-neo4j-graph-for-ai, not here.
+      // For now, I'll keep it as is, but it's a potential refactor.
       const relationships = new Set<string>();
       result.records.forEach(record => {
         const node1 = record.get('c');
@@ -106,8 +116,7 @@ serve(async (req) => {
       });
 
     } finally {
-      await session.close();
-      await driver.close();
+      await neo4j.close(); // Close the connection
     }
 
   } catch (error: any) {
