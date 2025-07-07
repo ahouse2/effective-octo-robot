@@ -81,35 +81,41 @@ serve(async (req) => {
             });
           }
         }
-      }
-    }); 
-    
-    const graphData = {
-      nodes: Array.from(nodesMap.values()),
-      links: Array.from(linksMap.values()),
-    };
+      }); 
+      
+      const graphData = {
+        nodes: Array.from(nodesMap.values()),
+        links: Array.from(linksMap.values()),
+      };
 
     console.log(`Successfully fetched graph data for case: ${caseId}. Nodes: ${graphData.nodes.length}, Links: ${graphData.links.length}`);
 
-    return new Response(JSON.stringify(graphData), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 200,
-    });
+      return new Response(JSON.stringify(graphData), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200,
+      });
 
+    } catch (error: any) {
+      console.error('Neo4j query error:', error.message);
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    } finally {
+      if (session) {
+        await session.close();
+        console.log('Neo4j session closed.');
+      }
+      if (driver) {
+        await driver.close();
+        console.log('Neo4j driver closed.');
+      }
+    }
   } catch (error: any) {
-    console.error('Neo4j query error:', error.message);
+    console.error('Edge Function error:', error.message);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
-  } finally {
-    if (session) {
-      await session.close();
-      console.log('Neo4j session closed.');
-    }
-    if (driver) {
-      await driver.close();
-      console.log('Neo4j driver closed.');
-    }
   }
 });
