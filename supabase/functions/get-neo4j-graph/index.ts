@@ -30,7 +30,7 @@ serve(async (req) => {
     const NEO4J_DATABASE = Deno.env.get('NEO4J_DATABASE');
 
     if (!NEO4J_URI || !NEO4J_USERNAME || !NEO4J_PASSWORD || !NEO4J_DATABASE) {
-      throw new Error('Neo4j credentials are not set in Supabase secrets.');
+      return new Response(JSON.stringify({ error: 'Neo4j credentials are not set in Supabase secrets.' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
@@ -81,41 +81,36 @@ serve(async (req) => {
             });
           }
         }
-      }); 
+      }
+    }); 
+    // Removed the extra '});' here that was causing the syntax error.
       
-      const graphData = {
-        nodes: Array.from(nodesMap.values()),
-        links: Array.from(linksMap.values()),
-      };
+    const graphData = {
+      nodes: Array.from(nodesMap.values()),
+      links: Array.from(linksMap.values()),
+    };
 
     console.log(`Successfully fetched graph data for case: ${caseId}. Nodes: ${graphData.nodes.length}, Links: ${graphData.links.length}`);
 
-      return new Response(JSON.stringify(graphData), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      });
+    return new Response(JSON.stringify(graphData), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200,
+    });
 
-    } catch (error: any) {
-      console.error('Neo4j query error:', error.message);
-      return new Response(JSON.stringify({ error: error.message }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    } finally {
-      if (session) {
-        await session.close();
-        console.log('Neo4j session closed.');
-      }
-      if (driver) {
-        await driver.close();
-        console.log('Neo4j driver closed.');
-      }
-    }
   } catch (error: any) {
-    console.error('Edge Function error:', error.message);
+    console.error('Neo4j query error:', error.message);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
+  } finally {
+    if (session) {
+      await session.close();
+      console.log('Neo4j session closed.');
+    }
+    if (driver) {
+      await driver.close();
+      console.log('Neo4j driver closed.');
+    }
   }
 });
