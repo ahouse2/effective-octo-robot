@@ -48,7 +48,7 @@ serve(async (req) => {
         const { data: insightsData, error: insightsError } = await supabaseClient.from('case_insights').select('*').eq('case_id', caseId);
         if (insightsError) throw new Error(`Failed to fetch insights: ${insightsError.message}`);
 
-        await session.executeWrite(async (tx) => {
+        await session.writeTransaction(async (tx) => { // Changed to writeTransaction
           await tx.run(
             `MATCH (c:Case {id: $caseId}) OPTIONAL MATCH (c)-[r]-() DELETE r`,
             { caseId }
