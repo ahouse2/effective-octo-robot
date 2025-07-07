@@ -83,8 +83,7 @@ serve(async (req) => {
               });
             }
           }
-        }
-      });
+        });
       
       const graphData = {
         nodes: Array.from(nodesMap.values()),
@@ -105,7 +104,9 @@ serve(async (req) => {
 
         relationships.add(`(${n1Label}: ${n1Name})-[:${relType}]->(${n2Label}: ${n2Name})`);
       });
-      graphTextRepresentation = Array.from(relationships).join('\n');
+      // graphTextRepresentation is not used in this function, but was present in the original.
+      // Keeping it commented out for now if it was intended for future use.
+      // const graphTextRepresentation = Array.from(relationships).join('\n');
 
       return new Response(JSON.stringify(graphData), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
