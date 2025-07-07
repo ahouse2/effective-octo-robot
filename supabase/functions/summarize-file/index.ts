@@ -190,7 +190,7 @@ serve(async (req) => {
       }
       finalSummary = extractJson(result.response.text());
 
-    } else if (mimeType === 'application/pdf' || mimeType.startsWith('text/')) {
+    } else if (mimeType === 'application/pdf' || mimeType.startsWith('text/') || mimeType === 'message/rfc822') { // Added message/rfc822
       const textContent = await fileBlob.text();
       
       if (textContent.length < CHUNK_SIZE) {
