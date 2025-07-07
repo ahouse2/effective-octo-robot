@@ -165,7 +165,7 @@ serve(async (req) => {
 
     const jsonFormat = `
       {
-        "suggested_name": "A concise, descriptive filename like '2023-03-15_Email_from_John_to_Jane.txt'",
+        "suggested_name": "A concise, descriptive filename like '2023-03-15_Email_from_John_to_Jane.txt'. When suggesting a filename, prioritize clarity and accuracy, ideally reflecting the original file's purpose or content. Avoid terms like 'corrupted' or 'fragment' unless the content explicitly indicates such a state.",
         "description": "A detailed, neutral summary of the document's content and its potential relevance to a family law case.",
         "tags": ["financial", "communication", "custody_dispute"],
         "category": "A single, best-fit category like 'Financial Records', 'Communications', 'Legal Documents', 'Photographic Evidence', or 'Personal Notes'."
