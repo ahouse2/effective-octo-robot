@@ -29,7 +29,7 @@ async function fileToGenerativePart(blob: Blob, mimeType: string) {
 }
 
 function extractJson(text: string): any | null {
-  const jsonRegex = /```json\s*([\s\S]*?)\s*```|({[\s\S]*}|\[[\s\S]*\])/;
+  const jsonRegex = /```json\s*([\s\S]*?)\s*```|({[\s\S]*}|\[[\sS]*\])/;
   const match = text.match(jsonRegex);
   if (match) {
     const jsonString = match[1] || match[2];
@@ -177,7 +177,7 @@ serve(async (req) => {
       const prompt = `Analyze this image in the context of a family law case. Provide a detailed summary, a suggested filename, relevant tags, and a category. Your response MUST be a JSON object inside a markdown block, following this format: ${jsonFormat}`;
       
       const result = await callGeminiWithRetry(
-        () => model.generateContent({ contents: [{ role: "user", parts: [prompt, imagePart] }] }),
+        () => model.generateContent({ contents: [{ role: "user", parts: [{ text: prompt }, imagePart] }] }),
         caseId,
         supabaseClient,
         `image summarization for ${fileName}`
