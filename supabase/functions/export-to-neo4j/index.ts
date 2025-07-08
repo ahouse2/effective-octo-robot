@@ -13,7 +13,7 @@ let neo4jAccessToken: string | null = null;
 let neo4jTokenExpiry: number = 0; // Unix timestamp in milliseconds
 
 // Function to obtain or refresh the Neo4j AuraDB OAuth token
-async function getNeo4jAccessToken(username: string, password: string): Promise<string> {
+async function getNeo4jAccessToken(clientId: string, clientSecret: string): Promise<string> {
   const now = Date.now();
   // Check if the current token is still valid (e.g., expires in more than 5 minutes)
   if (neo4jAccessToken && neo4jTokenExpiry > now + (5 * 60 * 1000)) {
@@ -22,7 +22,7 @@ async function getNeo4jAccessToken(username: string, password: string): Promise<
   }
 
   console.log("[Neo4j Auth] Obtaining new access token...");
-  const authString = btoa(`${username}:${password}`); // Base64 encode client ID and secret
+  const authString = btoa(`${clientId}:${clientSecret}`); // Base64 encode client ID and secret
 
   const response = await fetch('https://api.neo4j.io/oauth/token', {
     method: "POST",
@@ -50,8 +50,8 @@ async function getNeo4jAccessToken(username: string, password: string): Promise<
 }
 
 // Function to send Cypher queries via Neo4j HTTP Transactional Endpoint
-async function neo4jHttpQuery(query: string, params: Record<string, any>, auth: {username: string, password: string}, httpUrl: string) {
-  const accessToken = await getNeo4jAccessToken(auth.username, auth.password);
+async function neo4jHttpQuery(query: string, params: Record<string, any>, clientId: string, clientSecret: string, httpUrl: string) {
+  const accessToken = await getNeo4jAccessToken(clientId, clientSecret);
 
   const requestBody = JSON.stringify({
     statements: [{
@@ -97,11 +97,11 @@ serve(async (req) => {
     if (!caseId) throw new Error("Case ID is required");
 
     const NEO4J_CONNECTION_URI = Deno.env.get('NEO4J_CONNECTION_URI');
-    const NEO4J_USER = Deno.env.get('NEO4J_USERNAME'); // This will now be the API Client ID
-    const NEO4J_PASS = Deno.env.get('NEO4J_PASSWORD'); // This will now be the Client Secret
+    const NEO4J_CLIENT_ID = Deno.env.get('NEO4J_USERNAME'); // This will now be the API Client ID
+    const NEO4J_CLIENT_SECRET = Deno.env.get('NEO4J_PASSWORD'); // This will now be the Client Secret
     
-    if (!NEO4J_CONNECTION_URI || !NEO4J_USER || !NEO4J_PASS) {
-      throw new Error('Neo4j connection URI or credentials are not configured in Supabase secrets.');
+    if (!NEO4J_CONNECTION_URI || !NEO4J_CLIENT_ID || !NEO4J_CLIENT_SECRET) {
+      throw new Error('Neo4j connection URI or credentials (Client ID/Secret) are not configured in Supabase secrets.');
     }
 
     let NEO4J_HTTP_TRANSACTION_ENDPOINT: string;
@@ -148,7 +148,7 @@ serve(async (req) => {
         type: caseData.type,
         status: caseData.status
       },
-      {username: NEO4J_USER, password: NEO4J_PASS}, // Pass client ID/secret for token acquisition
+      NEO4J_CLIENT_ID, NEO4J_CLIENT_SECRET, // Pass client ID/secret for token acquisition
       NEO4J_HTTP_TRANSACTION_ENDPOINT
     );
 
@@ -169,7 +169,7 @@ serve(async (req) => {
           fileId: file.id,
           fileName: file.suggested_name || file.file_name
         },
-        {username: NEO4J_USER, password: NEO4J_PASS}, // Pass client ID/secret for token acquisition
+        NEO4J_CLIENT_ID, NEO4J_CLIENT_SECRET, // Pass client ID/secret for token acquisition
         NEO4J_HTTP_TRANSACTION_ENDPOINT
       );
     }
