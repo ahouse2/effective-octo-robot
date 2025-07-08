@@ -123,9 +123,20 @@ serve(async (req) => {
     if (!fileList || fileList.length === 0) throw new Error(`File not found at path: ${filePath}`);
 
     const fileMetadata = fileList[0];
-    // @ts-ignore
+    if (!fileMetadata || !fileMetadata.metadata || typeof fileMetadata.metadata.size === 'undefined') {
+      const errorMessage = `Could not retrieve size metadata for file "${fileName}". It might be corrupted or partially uploaded.`;
+      await insertActivity(supabaseClient, caseId, errorMessage, 'error');
+      await supabaseClient.from('case_files_metadata').update({
+          description: errorMessage,
+          last_modified_at: new Date().toISOString(),
+      }).eq('id', fileId);
+      return new Response(JSON.stringify({ message: errorMessage }), {
+        status: 200, // Return OK status to indicate graceful handling
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     if (fileMetadata.metadata.size > MAX_FILE_SIZE_BYTES) {
-      // @ts-ignore
       const sizeInMB = (fileMetadata.metadata.size / (1024 * 1024)).toFixed(2);
       const skipMessage = `File "${fileName}" (${sizeInMB} MB) is over the ${MAX_FILE_SIZE_MB}MB limit and was skipped. Please review manually.`;
       
