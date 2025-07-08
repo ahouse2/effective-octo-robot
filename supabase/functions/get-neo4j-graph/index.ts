@@ -54,8 +54,8 @@ serve(async (req) => {
     }
 
     const NEO4J_CONNECTION_URI = Deno.env.get('NEO4J_CONNECTION_URI');
-    const NEO4J_USER = Deno.env.get('NEO4J_USERNAME');
-    const NEO4J_PASS = Deno.env.get('NEO4J_PASSWORD');
+    const NEO4J_USER = Deno.env.get('NEO4J_USERNAME'); // This will now be the API Client ID
+    const NEO4J_PASS = Deno.env.get('NEO4J_PASSWORD'); // This will now be the Client Secret
 
     if (!NEO4J_CONNECTION_URI || !NEO4J_USER || !NEO4J_PASS) {
       return new Response(JSON.stringify({ error: 'Neo4j connection URI or credentials are not set in Supabase secrets.' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
