@@ -111,6 +111,9 @@ serve(async (req) => {
     fileName = pathParts.pop() || filePath;
     const directoryPath = pathParts.join('/');
 
+    let isSizeMetadataMissing = false;
+    let actualFileSize: number | null = null;
+
     // --- FILE SIZE CHECK ---
     const { data: fileList, error: listError } = await supabaseClient.storage
       .from('evidence-files')
@@ -119,37 +122,29 @@ serve(async (req) => {
         limit: 1,
       });
 
-    if (listError) throw new Error(`Could not verify file size: ${listError.message}`);
-    if (!fileList || fileList.length === 0) throw new Error(`File not found at path: ${filePath}`);
+    if (listError) {
+      isSizeMetadataMissing = true;
+      await insertActivity(supabaseClient, caseId, `Warning: Could not verify file size due to list error for "${fileName}": ${listError.message}. Attempting summarization anyway.`, 'completed');
+    } else if (!fileList || fileList.length === 0 || !fileList[0].metadata || typeof fileList[0].metadata.size === 'undefined' || fileList[0].metadata.size === null) {
+      isSizeMetadataMissing = true;
+      await insertActivity(supabaseClient, caseId, `Warning: Could not retrieve complete size metadata for file "${fileName}". Attempting summarization anyway.`, 'completed');
+    } else {
+      actualFileSize = fileList[0].metadata.size;
+      if (actualFileSize > MAX_FILE_SIZE_BYTES) {
+        const sizeInMB = (actualFileSize / (1024 * 1024)).toFixed(2);
+        const skipMessage = `File "${fileName}" (${sizeInMB} MB) is over the ${MAX_FILE_SIZE_MB}MB limit and was skipped. Please review manually.`;
+        
+        await insertActivity(supabaseClient, caseId, skipMessage, 'completed');
+        await supabaseClient.from('case_files_metadata').update({
+            description: `File skipped: Exceeds ${MAX_FILE_SIZE_MB}MB size limit (${sizeInMB}MB).`,
+            last_modified_at: new Date().toISOString(),
+        }).eq('id', fileId);
 
-    const fileMetadata = fileList[0];
-    if (!fileMetadata || !fileMetadata.metadata || typeof fileMetadata.metadata.size === 'undefined') {
-      const errorMessage = `Could not retrieve size metadata for file "${fileName}". It might be corrupted or partially uploaded.`;
-      await insertActivity(supabaseClient, caseId, errorMessage, 'error');
-      await supabaseClient.from('case_files_metadata').update({
-          description: errorMessage,
-          last_modified_at: new Date().toISOString(),
-      }).eq('id', fileId);
-      return new Response(JSON.stringify({ message: errorMessage }), {
-        status: 200, // Return OK status to indicate graceful handling
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    if (fileMetadata.metadata.size > MAX_FILE_SIZE_BYTES) {
-      const sizeInMB = (fileMetadata.metadata.size / (1024 * 1024)).toFixed(2);
-      const skipMessage = `File "${fileName}" (${sizeInMB} MB) is over the ${MAX_FILE_SIZE_MB}MB limit and was skipped. Please review manually.`;
-      
-      await insertActivity(supabaseClient, caseId, skipMessage, 'completed');
-      await supabaseClient.from('case_files_metadata').update({
-          description: `File skipped: Exceeds ${MAX_FILE_SIZE_MB}MB size limit (${sizeInMB}MB).`,
-          last_modified_at: new Date().toISOString(),
-      }).eq('id', fileId);
-
-      return new Response(JSON.stringify({ message: skipMessage }), {
-        status: 200, // Return OK status to indicate graceful handling
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+        return new Response(JSON.stringify({ message: skipMessage }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
     // --- END FILE SIZE CHECK ---
 
@@ -283,7 +278,7 @@ serve(async (req) => {
 
             // Add a delay here to avoid hitting rate limits on the next batch
             if (i + BATCH_SIZE < chunks.length) {
-                await new Promise(resolve => setTimeout(resolve, 3000)); // Increased from 1.5s to 3s
+                await new Promise(resolve => setTimeout(resolve, 3000));
             }
         }
 
@@ -296,7 +291,7 @@ serve(async (req) => {
                 last_modified_at: new Date().toISOString(),
             }).eq('id', fileId);
             return new Response(JSON.stringify({ message: errorMessage }), {
-                status: 200, // Return OK status to indicate graceful handling
+                status: 200,
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             });
         }
@@ -335,8 +330,10 @@ serve(async (req) => {
       throw new Error(`AI did not return a valid JSON summary for file "${fileName}". Raw response might be malformed or empty.`);
     }
 
+    const finalDescription = (finalSummary.description || "") + (isSizeMetadataMissing ? " (Note: File size metadata was incomplete.)" : "");
+
     await supabaseClient.from('case_files_metadata').update({
-        description: finalSummary.description,
+        description: finalDescription,
         suggested_name: finalSummary.suggested_name,
         tags: finalSummary.tags,
         file_category: finalSummary.category || 'Uncategorized',
