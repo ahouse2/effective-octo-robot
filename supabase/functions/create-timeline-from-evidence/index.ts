@@ -10,6 +10,8 @@ const corsHeaders = {
   'Cache-Control': 'no-store',
 };
 
+const MAX_CONTEXT_LENGTH = 50000; // Max characters for the combined evidence context
+
 function extractJson(text: string): any | null {
   const jsonRegex = /```json\s*([\s\S]*?)\s*```|({[\s\S]*}|\[[\s\S]*\])/;
   const match = text.match(jsonRegex);
@@ -55,7 +57,7 @@ async function callGeminiWithRetry<T>(
       if (error.status === 429 || (error.message && error.message.includes("quota"))) {
         const currentDelay = initialDelayMs * Math.pow(2, i);
         console.warn(`[Gemini Retry] Rate limit hit for ${activityDescription}. Retrying in ${currentDelay / 1000}s... (Attempt ${i + 1}/${maxRetries})`);
-        await insertActivity(supabaseClient, caseId, `[Gemini] Rate limit hit for ${activityDescription}. Retrying in ${currentDelay / 1000}s...`, 'processing');
+        await insertAgentActivity(supabaseClient, caseId, `[Gemini] Rate limit hit for ${activityDescription}. Retrying in ${currentDelay / 1000}s...`, 'processing');
         await new Promise(resolve => setTimeout(resolve, currentDelay));
       } else {
         // Re-throw other errors immediately
@@ -105,13 +107,52 @@ serve(async (req) => {
 
     if (filesError) throw filesError;
     if (!files || files.length === 0) {
-      await insertActivity(supabaseClient, caseId, 'No files found to analyze for timeline.', 'completed');
+      await insertAgentActivity(supabaseClient, caseId, 'No files found to analyze for timeline.', 'completed');
       return new Response(JSON.stringify({ message: "No files to analyze." }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const evidenceContext = files.map(file => 
+    let evidenceContext = files.map(file => 
       `File: "${file.suggested_name || file.file_name}" (ID: ${file.id})\nSummary: ${file.description || 'No summary available.'}`
     ).join('\n\n---\n\n');
+
+    // --- New: Handle large evidence context ---
+    if (evidenceContext.length > MAX_CONTEXT_LENGTH) {
+        await insertAgentActivity(supabaseClient, caseId, 'Timeline Agent', 'System', 'Context Too Large', `Evidence context of ${evidenceContext.length} chars exceeds limit. Pre-summarizing for timeline generation...`, 'processing');
+        const preSummarizationPrompt = `The following text is a collection of summaries from various legal documents. It is too long to process in its entirety for timeline generation. Please summarize this entire collection into a more concise overview, retaining only the most critical facts, names, dates, and events relevant to a legal case. Combined Summaries:\n\n${evidenceContext}`;
+        
+        let preSummaryResult;
+        if (aiModel === 'openai') {
+            const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
+            if (!openaiApiKey) throw new Error("OPENAI_API_KEY is not set.");
+            const openai = new OpenAI({ apiKey: openaiApiKey });
+            const chatCompletion = await openai.chat.completions.create({
+                model: 'gpt-4o',
+                messages: [{ role: 'user', content: preSummarizationPrompt }],
+            });
+            preSummaryResult = chatCompletion.choices[0].message.content;
+        } else { // gemini
+            const geminiApiKey = Deno.env.get('GOOGLE_GEMINI_API_KEY');
+            if (!geminiApiKey) throw new Error("GOOGLE_GEMINI_API_KEY is not set.");
+            const genAI = new GoogleGenerativeAI(geminiApiKey);
+            const modelForPreSummary = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite-preview-06-17" });
+            const result = await callGeminiWithRetry(
+                () => modelForPreSummary.generateContent(preSummarizationPrompt),
+                caseId,
+                supabaseClient,
+                `pre-summarization for timeline context`
+            );
+            preSummaryResult = result.response.text();
+        }
+
+        if (preSummaryResult) {
+            evidenceContext = preSummaryResult;
+            await insertAgentActivity(supabaseClient, caseId, 'Timeline Agent', 'System', 'Pre-summarization Complete', `Context reduced to ${evidenceContext.length} chars for timeline generation.`, 'completed');
+        } else {
+            await insertAgentActivity(supabaseClient, caseId, 'Timeline Agent', 'System', 'Pre-summarization Failed', `Could not pre-summarize context. Proceeding with truncated context.`, 'error');
+            evidenceContext = evidenceContext.substring(0, MAX_CONTEXT_LENGTH); // Fallback to simple truncation
+        }
+    }
+    // --- End: Handle large evidence context ---
 
     const focusInstruction = focus
       ? `Your analysis MUST focus exclusively on events related to the following topic: "${focus}". Ignore any events not directly relevant to this topic.`
@@ -120,8 +161,8 @@ serve(async (req) => {
     const prompt = `
       You are a specialized AI agent tasked with creating a chronological timeline of events from a set of case evidence summaries.
       Analyze the following evidence context. ${focusInstruction}
-      For each event, provide a date (if available), a concise title, and a brief description.
-      The date should be in YYYY-MM-DD format if possible. If no specific date is found, use the file's context to estimate or state "Date Unknown".
+      Identify the most important events. Provide a maximum of 100 events.
+      For each event, provide a date (if available, in YYYY-MM-DD format, otherwise "Date Unknown"), a concise title (under 15 words), and a brief description (under 50 words).
       Your response MUST be a JSON object, with a single key "timeline_events" which is an array of objects. Each object should have "event_date", "title", and "description" keys.
       
       Example Response:
@@ -209,8 +250,8 @@ serve(async (req) => {
       }
     }
     return new Response(JSON.stringify({ error: error.message }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 });
