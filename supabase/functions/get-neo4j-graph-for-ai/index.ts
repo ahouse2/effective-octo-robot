@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-import neo4j from 'https://esm.sh/neo4j-driver@5.20.0';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,6 +10,39 @@ const corsHeaders = {
 };
 
 const MAX_GRAPH_TEXT_LENGTH = 50000; // A safe character limit for the graph text
+
+// Helper function to send Cypher queries via Neo4j HTTP Transactional Endpoint
+async function neo4jHttpQuery(query: string, params: Record<string, any>, auth: {username: string, password: string}, httpUrl: string) {
+  const authString = btoa(`${auth.username}:${auth.password}`); // Base64 encode credentials
+
+  const response = await fetch(httpUrl, {
+    method: "POST",
+    headers: {
+      "Authorization": `Basic ${authString}`,
+      "Content-Type": "application/json",
+      ...corsHeaders
+    },
+    body: JSON.stringify({
+      statements: [{
+        statement: query,
+        parameters: params,
+        resultDataContents: ["row", "graph"] // Request both row and graph data
+      }]
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Neo4j HTTP error: ${response.status} ${response.statusText} - ${errorText}`);
+  }
+
+  const data = await response.json();
+  if (data.errors && data.errors.length > 0) {
+    throw new Error(`Neo4j query error: ${data.errors.map((e: any) => e.message).join(', ')}`);
+  }
+  // Return the data part of the first result, which contains rows and graph objects
+  return data.results[0]?.data || [];
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -23,48 +55,50 @@ serve(async (req) => {
 
     const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
     
-    // Move Neo4j credential checks here, after OPTIONS is handled
-    const NEO4J_URI = Deno.env.get('NEO4J_URI');
-    const NEO4J_USERNAME = Deno.env.get('NEO4J_USERNAME');
-    const NEO4J_PASSWORD = Deno.env.get('NEO4J_PASSWORD');
-    const NEO4J_DATABASE = Deno.env.get('NEO4J_DATABASE');
+    const NEO4J_QUERY_API_URL = Deno.env.get('NEO4J_QUERY_API_URL');
+    const NEO4J_USER = Deno.env.get('NEO4J_USERNAME');
+    const NEO4J_PASS = Deno.env.get('NEO4J_PASSWORD');
 
-    if (!NEO4J_URI || !NEO4J_USERNAME || !NEO4J_PASSWORD || !NEO4J_DATABASE) {
+    if (!NEO4J_QUERY_API_URL || !NEO4J_USER || !NEO4J_PASS) {
       throw new Error('Neo4j credentials are not set in Supabase secrets.');
     }
 
-    const driver = neo4j.driver(NEO4J_URI, neo4j.auth.basic(NEO4J_USERNAME, NEO4J_PASSWORD));
-    const session = driver.session({ database: NEO4J_DATABASE });
-
     let graphTextRepresentation = "";
     try {
-      const result = await session.run(
+      const resultData = await neo4jHttpQuery(
         'MATCH (c:Case {id: $caseId})-[r]-(n) RETURN c, r, n',
-        { caseId }
+        { caseId },
+        {username: NEO4J_USER, password: NEO4J_PASS},
+        NEO4J_QUERY_API_URL
       );
 
-      if (result.records.length === 0) {
+      if (resultData.length === 0) {
         throw new Error("No graph data found for this case in Neo4j. Please export the data first.");
       }
 
       const relationships = new Set<string>();
-      result.records.forEach(record => {
-        const node1 = record.get('c');
-        const rel = record.get('r');
-        const node2 = record.get('n');
-        
-        const n1Label = node1.labels[0];
-        const n1Name = node1.properties.name || node1.properties.title || 'Case';
-        const n2Label = node2.labels[0];
-        const n2Name = node2.properties.name || node2.properties.title || 'Node';
-        const relType = rel.type;
+      resultData.forEach(record => {
+        const nodesInRecord = record.graph.nodes;
+        const relationshipsInRecord = record.graph.relationships;
 
-        relationships.add(`(${n1Label}: ${n1Name})-[:${relType}]->(${n2Label}: ${n2Name})`);
+        relationshipsInRecord.forEach(rel => {
+          const startNode = nodesInRecord.find((n: any) => n.id === rel.startNode);
+          const endNode = nodesInRecord.find((n: any) => n.id === rel.endNode);
+          
+          if (startNode && endNode) {
+            const n1Label = startNode.labels[0];
+            const n1Name = startNode.properties.name || startNode.properties.title || startNode.properties.suggested_name || n1Label;
+            const n2Label = endNode.labels[0];
+            const n2Name = endNode.properties.name || endNode.properties.title || endNode.properties.suggested_name || n2Label;
+            const relType = rel.type;
+
+            relationships.add(`(${n1Label}: ${n1Name})-[:${relType}]->(${n2Label}: ${n2Name})`);
+          }
+        });
       });
       graphTextRepresentation = Array.from(relationships).join('\n');
     } finally {
-      await session.close();
-      await driver.close();
+      // No explicit session/driver close needed for HTTP fetch
     }
 
     if (graphTextRepresentation.length > MAX_GRAPH_TEXT_LENGTH) {
@@ -76,7 +110,6 @@ serve(async (req) => {
             content: `The knowledge graph is too large to analyze in a single pass. Analysis will be performed on a summarized version of the graph. For full detail, explore the graph visually.`,
             status: 'completed',
         });
-        // In a real scenario, we might chunk this text as well, but for now, we'll truncate and warn.
         graphTextRepresentation = graphTextRepresentation.substring(0, MAX_GRAPH_TEXT_LENGTH);
     }
 

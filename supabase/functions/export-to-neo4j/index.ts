@@ -48,11 +48,11 @@ serve(async (req) => {
     const { caseId } = await req.json();
     if (!caseId) throw new Error("Case ID is required");
 
-    const NEO4J_HTTP_URL = Deno.env.get('NEO4J_HTTP_URL');
+    const NEO4J_QUERY_API_URL = Deno.env.get('NEO4J_QUERY_API_URL');
     const NEO4J_USER = Deno.env.get('NEO4J_USERNAME');
     const NEO4J_PASS = Deno.env.get('NEO4J_PASSWORD');
     
-    if (!NEO4J_HTTP_URL || !NEO4J_USER || !NEO4J_PASS) {
+    if (!NEO4J_QUERY_API_URL || !NEO4J_USER || !NEO4J_PASS) {
       throw new Error('Neo4j HTTP URL or credentials are not configured in Supabase secrets.');
     }
 
@@ -83,7 +83,7 @@ serve(async (req) => {
         status: caseData.status
       },
       {username: NEO4J_USER, password: NEO4J_PASS},
-      NEO4J_HTTP_URL
+      NEO4J_QUERY_API_URL
     );
 
     // 3. Process files
@@ -104,7 +104,7 @@ serve(async (req) => {
           fileName: file.suggested_name || file.file_name
         },
         {username: NEO4J_USER, password: NEO4J_PASS},
-        NEO4J_HTTP_URL
+        NEO4J_QUERY_API_URL
       );
     }
 

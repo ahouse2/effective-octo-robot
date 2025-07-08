@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
-import neo4j from 'https://esm.sh/neo4j-driver@5.20.0'; // Using official Neo4j driver
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,80 +9,104 @@ const corsHeaders = {
   'X-Content-Type-Options': 'nosniff',
 };
 
+// Helper function to send Cypher queries via Neo4j HTTP Transactional Endpoint
+async function neo4jHttpQuery(query: string, params: Record<string, any>, auth: {username: string, password: string}, httpUrl: string) {
+  const authString = btoa(`${auth.username}:${auth.password}`); // Base64 encode credentials
+
+  const response = await fetch(httpUrl, {
+    method: "POST",
+    headers: {
+      "Authorization": `Basic ${authString}`,
+      "Content-Type": "application/json",
+      ...corsHeaders
+    },
+    body: JSON.stringify({
+      statements: [{
+        statement: query,
+        parameters: params,
+        resultDataContents: ["row", "graph"] // Request both row and graph data
+      }]
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Neo4j HTTP error: ${response.status} ${response.statusText} - ${errorText}`);
+  }
+
+  const data = await response.json();
+  if (data.errors && data.errors.length > 0) {
+    throw new Error(`Neo4j query error: ${data.errors.map((e: any) => e.message).join(', ')}`);
+  }
+  // Return the data part of the first result, which contains rows and graph objects
+  return data.results[0]?.data || [];
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     console.log('Received OPTIONS request for get-neo4j-graph');
     return new Response(null, { headers: corsHeaders });
   }
 
-  let driver;
-  let session;
   try {
     const { caseId } = await req.json();
     if (!caseId) {
       return new Response(JSON.stringify({ error: 'Case ID is required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const NEO4J_URI = Deno.env.get('NEO4J_URI');
-    const NEO4J_USERNAME = Deno.env.get('NEO4J_USERNAME');
-    const NEO4J_PASSWORD = Deno.env.get('NEO4J_PASSWORD');
-    const NEO4J_DATABASE = Deno.env.get('NEO4J_DATABASE');
+    const NEO4J_QUERY_API_URL = Deno.env.get('NEO4J_QUERY_API_URL');
+    const NEO4J_USER = Deno.env.get('NEO4J_USERNAME');
+    const NEO4J_PASS = Deno.env.get('NEO4J_PASSWORD');
 
-    if (!NEO4J_URI || !NEO4J_USERNAME || !NEO4J_PASSWORD || !NEO4J_DATABASE) {
+    if (!NEO4J_QUERY_API_URL || !NEO4J_USER || !NEO4J_PASS) {
       return new Response(JSON.stringify({ error: 'Neo4j credentials are not set in Supabase secrets.' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
     
-    console.log('Attempting to connect to Neo4j...');
-    driver = neo4j.driver(NEO4J_URI, neo4j.auth.basic(NEO4J_USERNAME, NEO4J_PASSWORD));
-    session = driver.session({ database: NEO4J_DATABASE });
-    console.log('Successfully connected to Neo4j.');
-
-    console.log(`Fetching graph data for case: ${caseId}`);
-    const result = await session.run(
+    console.log(`Fetching graph data for case: ${caseId} using HTTP API.`);
+    const resultData = await neo4jHttpQuery(
       'MATCH (c:Case {id: $caseId})-[r]-(n) RETURN c, r, n',
-      { caseId }
+      { caseId },
+      {username: NEO4J_USER, password: NEO4J_PASS},
+      NEO4J_QUERY_API_URL
     );
 
-    if (result.records.length === 0) {
+    if (resultData.length === 0) {
       throw new Error("No graph data found for this case in Neo4j. Please export the data first.");
     }
 
     const nodesMap = new Map();
     const linksMap = new Map();
 
-    result.records.forEach(record => {
-      const node1 = record.get('c');
-      const rel = record.get('r');
-      const node2 = record.get('n');
+    resultData.forEach(record => {
+      // record.graph contains the actual node and relationship objects
+      const nodesInRecord = record.graph.nodes;
+      const relationshipsInRecord = record.graph.relationships;
 
-      [node1, node2].forEach(node => {
-        if (node && !nodesMap.has(node.identity.toString())) {
-          nodesMap.set(node.identity.toString(), {
-            id: node.properties.id,
-            name: node.properties.name || node.properties.title || node.properties.suggestedName || node.labels[0],
+      nodesInRecord.forEach(node => {
+        if (!nodesMap.has(node.id)) {
+          nodesMap.set(node.id, {
+            id: node.id,
+            name: node.properties.name || node.properties.title || node.properties.suggested_name || node.labels[0],
             label: node.labels[0],
           });
         }
       });
 
-      if (rel) {
-        const sourceId = nodesMap.get(rel.start.toString())?.id;
-        const targetId = nodesMap.get(rel.end.toString())?.id;
-        if (sourceId && targetId) {
-          const linkKey = `${sourceId}-${targetId}-${rel.type}`;
-          if (!linksMap.has(linkKey)) {
-            linksMap.set(linkKey, {
-              source: sourceId,
-              target: targetId,
-              label: rel.type,
-            });
-          }
+      relationshipsInRecord.forEach(rel => {
+        const sourceId = rel.startNode;
+        const targetId = rel.endNode;
+        const linkKey = `${sourceId}-${targetId}-${rel.type}`;
+        if (!linksMap.has(linkKey)) {
+          linksMap.set(linkKey, {
+            source: sourceId,
+            target: targetId,
+            label: rel.type,
+          });
         }
-      }
-    }); 
-    // Removed the extra '});' here that was causing the syntax error.
+      });
+    });
       
     const graphData = {
       nodes: Array.from(nodesMap.values()),
@@ -103,14 +126,5 @@ serve(async (req) => {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
-  } finally {
-    if (session) {
-      await session.close();
-      console.log('Neo4j session closed.');
-    }
-    if (driver) {
-      await driver.close();
-      console.log('Neo4j driver closed.');
-    }
   }
 });
