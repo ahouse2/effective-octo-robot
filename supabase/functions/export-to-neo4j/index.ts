@@ -69,14 +69,14 @@ serve(async (req) => {
       if (url.protocol === 'https:') {
         // If it's already an HTTPS URL, use it as the base for the transactional endpoint
         NEO4J_HTTP_TRANSACTION_ENDPOINT = `${url.origin}/db/neo4j/tx`;
-      } else if (url.protocol === 'bolt:' || url.protocol === 'neo4j:') {
+      } else if (url.protocol === 'bolt:' || url.protocol === 'neo4j:' || url.protocol === 'neo4j+s:') {
         // If it's a Bolt/Neo4j URI, extract hostname and construct HTTPS endpoint
         NEO4J_HTTP_TRANSACTION_ENDPOINT = `https://${url.hostname}/db/neo4j/tx`;
       } else {
-        throw new Error(`Unsupported protocol in NEO4J_CONNECTION_URI: ${url.protocol}. Expected 'https:', 'bolt:', or 'neo4j:'.`);
+        throw new Error(`Unsupported protocol in NEO4J_CONNECTION_URI: ${url.protocol}. Expected 'https:', 'bolt:', 'neo4j:', or 'neo4j+s:'.`);
       }
     } catch (e) {
-      throw new Error(`Invalid NEO4J_CONNECTION_URI format: ${e.message}. Please ensure it's a valid URL (e.g., https://your-instance.aura.com or bolt://your-instance.aura.com:7687).`);
+      throw new Error(`Invalid NEO4J_CONNECTION_URI format: ${e.message}. Please ensure it's a valid URL (e.g., https://your-instance.aura.com or bolt://your-instance.aura.com:7687 or neo4j+s://your-instance.aura.com).`);
     }
 
     console.log(`Constructed Neo4j HTTP Endpoint: ${NEO4J_HTTP_TRANSACTION_ENDPOINT}`);
