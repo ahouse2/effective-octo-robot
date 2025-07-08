@@ -8,9 +8,50 @@ const corsHeaders = {
   'Cache-Control': 'no-store'
 };
 
+// Global variables to store the access token and its expiration
+let neo4jAccessToken: string | null = null;
+let neo4jTokenExpiry: number = 0; // Unix timestamp in milliseconds
+
+// Function to obtain or refresh the Neo4j AuraDB OAuth token
+async function getNeo4jAccessToken(username: string, password: string): Promise<string> {
+  const now = Date.now();
+  // Check if the current token is still valid (e.g., expires in more than 5 minutes)
+  if (neo4jAccessToken && neo4jTokenExpiry > now + (5 * 60 * 1000)) {
+    console.log("[Neo4j Auth] Reusing existing access token.");
+    return neo4jAccessToken;
+  }
+
+  console.log("[Neo4j Auth] Obtaining new access token...");
+  const authString = btoa(`${username}:${password}`); // Base64 encode client ID and secret
+
+  const response = await fetch('https://api.neo4j.io/oauth/token', {
+    method: "POST",
+    headers: {
+      "Authorization": `Basic ${authString}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      'grant_type': 'client_credentials'
+    }).toString()
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`[Neo4j Auth] Failed to get access token: Status ${response.status}, Body: ${errorText}`);
+    throw new Error(`Neo4j OAuth token error: Status ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json();
+  neo4jAccessToken = data.access_token;
+  neo4jTokenExpiry = now + (data.expires_in * 1000); // expires_in is in seconds
+
+  console.log("[Neo4j Auth] New access token obtained. Expires in:", data.expires_in, "seconds.");
+  return neo4jAccessToken;
+}
+
 // Function to send Cypher queries via Neo4j HTTP Transactional Endpoint
 async function neo4jHttpQuery(query: string, params: Record<string, any>, auth: {username: string, password: string}, httpUrl: string) {
-  const authString = btoa(`${auth.username}:${auth.password}`); // Base64 encode credentials
+  const accessToken = await getNeo4jAccessToken(auth.username, auth.password);
 
   const requestBody = JSON.stringify({
     statements: [{
@@ -25,7 +66,7 @@ async function neo4jHttpQuery(query: string, params: Record<string, any>, auth: 
   const response = await fetch(httpUrl, {
     method: "POST",
     headers: {
-      "Authorization": `Basic ${authString}`,
+      "Authorization": `Bearer ${accessToken}`, // Use Bearer token here
       "Content-Type": "application/json",
     },
     body: requestBody
@@ -107,7 +148,7 @@ serve(async (req) => {
         type: caseData.type,
         status: caseData.status
       },
-      {username: NEO4J_USER, password: NEO4J_PASS},
+      {username: NEO4J_USER, password: NEO4J_PASS}, // Pass client ID/secret for token acquisition
       NEO4J_HTTP_TRANSACTION_ENDPOINT
     );
 
@@ -128,7 +169,7 @@ serve(async (req) => {
           fileId: file.id,
           fileName: file.suggested_name || file.file_name
         },
-        {username: NEO4J_USER, password: NEO4J_PASS},
+        {username: NEO4J_USER, password: NEO4J_PASS}, // Pass client ID/secret for token acquisition
         NEO4J_HTTP_TRANSACTION_ENDPOINT
       );
     }
