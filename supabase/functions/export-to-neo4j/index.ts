@@ -63,9 +63,18 @@ serve(async (req) => {
       throw new Error('Neo4j connection URI or credentials are not configured in Supabase secrets.');
     }
 
-    // Extract host from NEO4J_CONNECTION_URI (which is likely a Bolt URI)
-    const neo4jHost = NEO4J_CONNECTION_URI.replace(/^(neo4j|bolt)\+?s?:\/\//, '').split(':')[0];
-    const NEO4J_HTTP_TRANSACTION_ENDPOINT = `https://${neo4jHost}/db/neo4j/tx`; // Correct HTTP endpoint for transactional queries
+    let neo4jHost: string;
+    try {
+      const url = new URL(NEO4J_CONNECTION_URI);
+      neo4jHost = url.hostname;
+      if (neo4jHost === 'https' || neo4jHost === 'http') {
+        throw new Error(`Invalid Neo4j connection URI hostname: "${neo4jHost}". Please ensure NEO4J_CONNECTION_URI is a valid Bolt URI (e.g., bolt://your-instance.aura.com:7687) or a full HTTP URL.`);
+      }
+    } catch (e) {
+      throw new Error(`Invalid NEO4J_CONNECTION_URI format: ${e.message}. Please ensure it's a valid URL (e.g., bolt://your-instance.aura.com:7687).`);
+    }
+
+    const NEO4J_HTTP_TRANSACTION_ENDPOINT = `https://${neo4jHost}/db/neo4j/tx`;
     console.log(`Constructed Neo4j HTTP Endpoint: ${NEO4J_HTTP_TRANSACTION_ENDPOINT}`);
 
     const supabaseClient = createClient(
