@@ -12,6 +12,16 @@ const corsHeaders = {
 async function neo4jHttpQuery(query: string, params: Record<string, any>, auth: {username: string, password: string}, httpUrl: string) {
   const authString = btoa(`${auth.username}:${auth.password}`); // Base64 encode credentials
 
+  const requestBody = JSON.stringify({
+    statements: [{
+      statement: query,
+      parameters: params
+    }]
+  });
+
+  console.log(`[Neo4j HTTP Query] Sending request to: ${httpUrl}`);
+  console.log(`[Neo4j HTTP Query] Request Body: ${requestBody}`);
+
   const response = await fetch(httpUrl, {
     method: "POST",
     headers: {
@@ -19,23 +29,21 @@ async function neo4jHttpQuery(query: string, params: Record<string, any>, auth: 
       "Content-Type": "application/json",
       ...corsHeaders // Include CORS headers for the fetch request itself
     },
-    body: JSON.stringify({
-      statements: [{
-        statement: query,
-        parameters: params
-      }]
-    })
+    body: requestBody
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Neo4j HTTP error: ${response.status} ${response.statusText} - ${errorText}`);
+    console.error(`[Neo4j HTTP Query] Request failed: Status ${response.status}, Body: ${errorText}`);
+    throw new Error(`Neo4j HTTP error: Status ${response.status} - ${errorText}`);
   }
 
   const data = await response.json();
   if (data.errors && data.errors.length > 0) {
+    console.error(`[Neo4j HTTP Query] Query returned errors: ${JSON.stringify(data.errors)}`);
     throw new Error(`Neo4j query error: ${data.errors.map((e: any) => e.message).join(', ')}`);
   }
+  console.log(`[Neo4j HTTP Query] Request successful. Response data: ${JSON.stringify(data)}`);
   return data;
 }
 
