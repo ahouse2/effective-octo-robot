@@ -61,6 +61,11 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Neo4j connection URI or credentials are not set in Supabase secrets.' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
+    // Extract host from NEO4J_CONNECTION_URI (which is likely a Bolt URI)
+    const neo4jHost = NEO4J_CONNECTION_URI.replace(/^(neo4j|bolt)\+?s?:\/\//, '').split(':')[0];
+    const NEO4J_HTTP_TRANSACTION_ENDPOINT = `https://${neo4jHost}/db/neo4j/tx`; // Correct HTTP endpoint for transactional queries
+    console.log(`Constructed Neo4j HTTP Endpoint: ${NEO4J_HTTP_TRANSACTION_ENDPOINT}`);
+
     const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
     
     console.log(`Fetching graph data for case: ${caseId} using HTTP API.`);
@@ -68,7 +73,7 @@ serve(async (req) => {
       'MATCH (c:Case {id: $caseId})-[r]-(n) RETURN c, r, n',
       { caseId },
       {username: NEO4J_USER, password: NEO4J_PASS},
-      NEO4J_CONNECTION_URI
+      NEO4J_HTTP_TRANSACTION_ENDPOINT
     );
 
     if (resultData.length === 0) {

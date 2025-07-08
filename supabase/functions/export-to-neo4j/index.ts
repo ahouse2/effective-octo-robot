@@ -63,6 +63,11 @@ serve(async (req) => {
       throw new Error('Neo4j connection URI or credentials are not configured in Supabase secrets.');
     }
 
+    // Extract host from NEO4J_CONNECTION_URI (which is likely a Bolt URI)
+    const neo4jHost = NEO4J_CONNECTION_URI.replace(/^(neo4j|bolt)\+?s?:\/\//, '').split(':')[0];
+    const NEO4J_HTTP_TRANSACTION_ENDPOINT = `https://${neo4jHost}/db/neo4j/tx`; // Correct HTTP endpoint for transactional queries
+    console.log(`Constructed Neo4j HTTP Endpoint: ${NEO4J_HTTP_TRANSACTION_ENDPOINT}`);
+
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -90,7 +95,7 @@ serve(async (req) => {
         status: caseData.status
       },
       {username: NEO4J_USER, password: NEO4J_PASS},
-      NEO4J_CONNECTION_URI
+      NEO4J_HTTP_TRANSACTION_ENDPOINT
     );
 
     // 3. Process files
@@ -111,7 +116,7 @@ serve(async (req) => {
           fileName: file.suggested_name || file.file_name
         },
         {username: NEO4J_USER, password: NEO4J_PASS},
-        NEO4J_CONNECTION_URI
+        NEO4J_HTTP_TRANSACTION_ENDPOINT
       );
     }
 

@@ -62,13 +62,18 @@ serve(async (req) => {
       throw new Error('Neo4j connection URI or credentials are not set in Supabase secrets.');
     }
 
+    // Extract host from NEO4J_CONNECTION_URI (which is likely a Bolt URI)
+    const neo4jHost = NEO4J_CONNECTION_URI.replace(/^(neo4j|bolt)\+?s?:\/\//, '').split(':')[0];
+    const NEO4J_HTTP_TRANSACTION_ENDPOINT = `https://${neo4jHost}/db/neo4j/tx`; // Correct HTTP endpoint for transactional queries
+    console.log(`Constructed Neo4j HTTP Endpoint: ${NEO4J_HTTP_TRANSACTION_ENDPOINT}`);
+
     let graphTextRepresentation = "";
     try {
       const resultData = await neo4jHttpQuery(
         'MATCH (c:Case {id: $caseId})-[r]-(n) RETURN c, r, n',
         { caseId },
         {username: NEO4J_USER, password: NEO4J_PASS},
-        NEO4J_CONNECTION_URI
+        NEO4J_HTTP_TRANSACTION_ENDPOINT
       );
 
       if (resultData.length === 0) {
