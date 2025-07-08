@@ -8,50 +8,9 @@ const corsHeaders = {
   'Cache-Control': 'no-store'
 };
 
-// Global variables to store the access token and its expiration
-let neo4jAccessToken: string | null = null;
-let neo4jTokenExpiry: number = 0; // Unix timestamp in milliseconds
-
-// Function to obtain or refresh the Neo4j AuraDB OAuth token
-async function getNeo4jAccessToken(clientId: string, clientSecret: string): Promise<string> {
-  const now = Date.now();
-  // Check if the current token is still valid (e.g., expires in more than 5 minutes)
-  if (neo4jAccessToken && neo4jTokenExpiry > now + (5 * 60 * 1000)) {
-    console.log("[Neo4j Auth] Reusing existing access token.");
-    return neo4jAccessToken;
-  }
-
-  console.log("[Neo4j Auth] Obtaining new access token...");
-  const authString = btoa(`${clientId}:${clientSecret}`); // Base64 encode client ID and secret
-
-  const response = await fetch('https://api.neo4j.io/oauth/token', {
-    method: "POST",
-    headers: {
-      "Authorization": `Basic ${authString}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({
-      'grant_type': 'client_credentials'
-    }).toString()
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error(`[Neo4j Auth] Failed to get access token: Status ${response.status}, Body: ${errorText}`);
-    throw new Error(`Neo4j OAuth token error: Status ${response.status} - ${errorText}`);
-  }
-
-  const data = await response.json();
-  neo4jAccessToken = data.access_token;
-  neo4jTokenExpiry = now + (data.expires_in * 1000); // expires_in is in seconds
-
-  console.log("[Neo4j Auth] New access token obtained. Expires in:", data.expires_in, "seconds.");
-  return neo4jAccessToken;
-}
-
-// Function to send Cypher queries via Neo4j HTTP Transactional Endpoint
-async function neo4jHttpQuery(query: string, params: Record<string, any>, clientId: string, clientSecret: string, httpUrl: string) {
-  const accessToken = await getNeo4jAccessToken(clientId, clientSecret);
+// Function to send Cypher queries via Neo4j HTTP Transactional Endpoint using Basic Auth
+async function neo4jHttpQuery(query: string, params: Record<string, any>, username: string, password: string, httpUrl: string) {
+  const authString = btoa(`${username}:${password}`); // Base64 encode username and password
 
   const requestBody = JSON.stringify({
     statements: [{
@@ -66,7 +25,7 @@ async function neo4jHttpQuery(query: string, params: Record<string, any>, client
   const response = await fetch(httpUrl, {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${accessToken}`, // Use Bearer token here
+      "Authorization": `Basic ${authString}`, // Use Basic Auth here
       "Content-Type": "application/json",
     },
     body: requestBody
@@ -97,21 +56,19 @@ serve(async (req) => {
     if (!caseId) throw new Error("Case ID is required");
 
     const NEO4J_CONNECTION_URI = Deno.env.get('NEO4J_CONNECTION_URI');
-    const NEO4J_CLIENT_ID = Deno.env.get('NEO4J_USERNAME'); // This will now be the API Client ID
-    const NEO4J_CLIENT_SECRET = Deno.env.get('NEO4J_PASSWORD'); // This will now be the Client Secret
+    const NEO4J_USERNAME = Deno.env.get('NEO4J_USERNAME');
+    const NEO4J_PASSWORD = Deno.env.get('NEO4J_PASSWORD');
     
-    if (!NEO4J_CONNECTION_URI || !NEO4J_CLIENT_ID || !NEO4J_CLIENT_SECRET) {
-      throw new Error('Neo4j connection URI or credentials (Client ID/Secret) are not configured in Supabase secrets.');
+    if (!NEO4J_CONNECTION_URI || !NEO4J_USERNAME || !NEO4J_PASSWORD) {
+      throw new Error('Neo4j connection URI or credentials (Username/Password) are not configured in Supabase secrets.');
     }
 
     let NEO4J_HTTP_TRANSACTION_ENDPOINT: string;
     try {
       const url = new URL(NEO4J_CONNECTION_URI);
       if (url.protocol === 'https:') {
-        // If it's already an HTTPS URL, use it as the base for the transactional endpoint
         NEO4J_HTTP_TRANSACTION_ENDPOINT = `${url.origin}/db/neo4j/tx`;
       } else if (url.protocol === 'bolt:' || url.protocol === 'neo4j:' || url.protocol === 'neo4j+s:') {
-        // If it's a Bolt/Neo4j URI, extract hostname and construct HTTPS endpoint
         NEO4J_HTTP_TRANSACTION_ENDPOINT = `https://${url.hostname}/db/neo4j/tx`;
       } else {
         throw new Error(`Unsupported protocol in NEO4J_CONNECTION_URI: ${url.protocol}. Expected 'https:', 'bolt:', 'neo4j:', or 'neo4j+s:'.`);
@@ -148,7 +105,7 @@ serve(async (req) => {
         type: caseData.type,
         status: caseData.status
       },
-      NEO4J_CLIENT_ID, NEO4J_CLIENT_SECRET, // Pass client ID/secret for token acquisition
+      NEO4J_USERNAME, NEO4J_PASSWORD,
       NEO4J_HTTP_TRANSACTION_ENDPOINT
     );
 
@@ -169,7 +126,7 @@ serve(async (req) => {
           fileId: file.id,
           fileName: file.suggested_name || file.file_name
         },
-        NEO4J_CLIENT_ID, NEO4J_CLIENT_SECRET, // Pass client ID/secret for token acquisition
+        NEO4J_USERNAME, NEO4J_PASSWORD,
         NEO4J_HTTP_TRANSACTION_ENDPOINT
       );
     }
