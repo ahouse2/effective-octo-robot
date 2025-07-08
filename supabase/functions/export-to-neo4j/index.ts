@@ -27,7 +27,6 @@ async function neo4jHttpQuery(query: string, params: Record<string, any>, auth: 
     headers: {
       "Authorization": `Basic ${authString}`,
       "Content-Type": "application/json",
-      // Removed ...corsHeaders from here as they are for the response, not the request to Neo4j
     },
     body: requestBody
   });
@@ -56,12 +55,12 @@ serve(async (req) => {
     const { caseId } = await req.json();
     if (!caseId) throw new Error("Case ID is required");
 
-    const NEO4J_QUERY_API_URL = Deno.env.get('NEO4J_QUERY_API_URL');
+    const NEO4J_CONNECTION_URI = Deno.env.get('NEO4J_CONNECTION_URI');
     const NEO4J_USER = Deno.env.get('NEO4J_USERNAME');
     const NEO4J_PASS = Deno.env.get('NEO4J_PASSWORD');
     
-    if (!NEO4J_QUERY_API_URL || !NEO4J_USER || !NEO4J_PASS) {
-      throw new Error('Neo4j HTTP URL or credentials are not configured in Supabase secrets.');
+    if (!NEO4J_CONNECTION_URI || !NEO4J_USER || !NEO4J_PASS) {
+      throw new Error('Neo4j connection URI or credentials are not configured in Supabase secrets.');
     }
 
     const supabaseClient = createClient(
@@ -91,7 +90,7 @@ serve(async (req) => {
         status: caseData.status
       },
       {username: NEO4J_USER, password: NEO4J_PASS},
-      NEO4J_QUERY_API_URL
+      NEO4J_CONNECTION_URI
     );
 
     // 3. Process files
@@ -112,7 +111,7 @@ serve(async (req) => {
           fileName: file.suggested_name || file.file_name
         },
         {username: NEO4J_USER, password: NEO4J_PASS},
-        NEO4J_QUERY_API_URL
+        NEO4J_CONNECTION_URI
       );
     }
 

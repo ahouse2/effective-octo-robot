@@ -18,7 +18,6 @@ async function neo4jHttpQuery(query: string, params: Record<string, any>, auth: 
     headers: {
       "Authorization": `Basic ${authString}`,
       "Content-Type": "application/json",
-      ...corsHeaders
     },
     body: JSON.stringify({
       statements: [{
@@ -54,12 +53,12 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Case ID is required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const NEO4J_QUERY_API_URL = Deno.env.get('NEO4J_QUERY_API_URL');
+    const NEO4J_CONNECTION_URI = Deno.env.get('NEO4J_CONNECTION_URI');
     const NEO4J_USER = Deno.env.get('NEO4J_USERNAME');
     const NEO4J_PASS = Deno.env.get('NEO4J_PASSWORD');
 
-    if (!NEO4J_QUERY_API_URL || !NEO4J_USER || !NEO4J_PASS) {
-      return new Response(JSON.stringify({ error: 'Neo4j credentials are not set in Supabase secrets.' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    if (!NEO4J_CONNECTION_URI || !NEO4J_USER || !NEO4J_PASS) {
+      return new Response(JSON.stringify({ error: 'Neo4j connection URI or credentials are not set in Supabase secrets.' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
@@ -69,7 +68,7 @@ serve(async (req) => {
       'MATCH (c:Case {id: $caseId})-[r]-(n) RETURN c, r, n',
       { caseId },
       {username: NEO4J_USER, password: NEO4J_PASS},
-      NEO4J_QUERY_API_URL
+      NEO4J_CONNECTION_URI
     );
 
     if (resultData.length === 0) {
