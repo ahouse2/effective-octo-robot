@@ -27,7 +27,7 @@ async function neo4jHttpQuery(query: string, params: Record<string, any>, auth: 
     headers: {
       "Authorization": `Basic ${authString}`,
       "Content-Type": "application/json",
-      ...corsHeaders // Include CORS headers for the fetch request itself
+      // Removed ...corsHeaders from here as they are for the response, not the request to Neo4j
     },
     body: requestBody
   });
