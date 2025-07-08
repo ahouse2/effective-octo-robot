@@ -29,7 +29,7 @@ async function fileToGenerativePart(blob: Blob, mimeType: string) {
 }
 
 function extractJson(text: string): any | null {
-  const jsonRegex = /```json\s*([\s\S]*?)\s*```|({[\s\S]*}|\[[\sS]*\])/;
+  const jsonRegex = /```json\s*([\s\S]*?)\s*```|({[\s\S]*}|\[[\s\S]*\])/;
   const match = text.match(jsonRegex);
   if (match) {
     const jsonString = match[1] || match[2];
@@ -272,7 +272,7 @@ serve(async (req) => {
 
             // Add a delay here to avoid hitting rate limits on the next batch
             if (i + BATCH_SIZE < chunks.length) {
-                await new Promise(resolve => setTimeout(resolve, 1500)); // 1.5-second delay
+                await new Promise(resolve => setTimeout(resolve, 3000)); // Increased from 1.5s to 3s
             }
         }
 
@@ -320,6 +320,7 @@ serve(async (req) => {
     }
 
     if (!finalSummary || !finalSummary.description) {
+      console.error(`Summarization failed for file "${fileName}". Final summary was:`, finalSummary);
       throw new Error(`AI did not return a valid JSON summary for file "${fileName}". Raw response might be malformed or empty.`);
     }
 
