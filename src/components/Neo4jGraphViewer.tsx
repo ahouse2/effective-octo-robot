@@ -4,10 +4,7 @@ import { toast } from "sonner";
 
 interface Neo4jGraphViewerProps {
   dbId: string;
-  // WARNING: Passing password directly to the frontend is a security risk.
-  // This prop is included as per user's request for neovis.js, but it's highly recommended
-  // to use a secure backend proxy or public read-only access for production.
-  serverPassword?: string; 
+  serverPassword?: string;
 }
 
 const Neo4jGraphViewer: React.FC<Neo4jGraphViewerProps> = ({ dbId, serverPassword }) => {
@@ -22,8 +19,6 @@ const Neo4jGraphViewer: React.FC<Neo4jGraphViewerProps> = ({ dbId, serverPasswor
       return;
     }
 
-    // WARNING: For production, consider a secure backend proxy or public read-only access.
-    // Exposing serverPassword directly in client-side code is a security risk.
     if (!serverPassword) {
       toast.warning("Neo4j password is not provided to Neo4jGraphViewer. Graph may not load without authentication.");
     }
@@ -38,68 +33,32 @@ const Neo4jGraphViewer: React.FC<Neo4jGraphViewerProps> = ({ dbId, serverPasswor
       neo4j: {
         serverUrl: `neo4j+s://${dbId}.databases.neo4j.io`,
         serverUser: "neo4j",
-        serverPassword: serverPassword, // Added missing comma here
+        serverPassword: serverPassword,
         encrypted: "ENCRYPTION_ON",
-        trust: "TRUST_ALL_CERTIFICATES", // Use with caution in production
+        trust: "TRUST_ALL_CERTIFICATES",
       },
       labels: {
-        Case: {
-          caption: "name",
-          color: "#ff4d4d", // Red
-        },
-        File: {
-          caption: "suggested_name",
-          color: "#4d79ff", // Blue
-        },
-        Category: {
-          caption: "name",
-          color: "#ffc14d", // Orange
-        },
-        Tag: {
-          caption: "name",
-          color: "#4dffc1", // Green
-        },
-        Insight: {
-          caption: "title",
-          color: "#c14dff", // Purple
-        },
-        CaseTheory: {
-          caption: "status",
-          color: "#808080", // Gray
-        }
+        Case: { caption: "name", color: "#ff4d4d" },
+        File: { caption: "suggested_name", color: "#4d79ff" },
+        Category: { caption: "name", color: "#ffc14d" },
+        Tag: { caption: "name", color: "#4dffc1" },
+        Insight: { caption: "title", color: "#c14dff" },
+        CaseTheory: { caption: "status", color: "#808080" },
       },
       relationships: {
-        HAS_FILE: {
-          caption: true,
-          color: "#A5A5A5",
-        },
-        HAS_CATEGORY: {
-          caption: true,
-          color: "#A5A5A5",
-        },
-        HAS_TAG: {
-          caption: true,
-          color: "#A5A5A5",
-        },
-        HAS_INSIGHT: {
-          caption: true,
-          color: "#A5A5A5",
-        },
-        HAS_THEORY: {
-          caption: true,
-          color: "#A5A5A5",
-        },
-        BASED_ON_FILE: {
-          caption: true,
-          color: "#A5A5A5",
-        }
+        HAS_FILE: { caption: true, color: "#A5A5A5" },
+        HAS_CATEGORY: { caption: true, color: "#A5A5A5" },
+        HAS_TAG: { caption: true, color: "#A5A5A5" },
+        HAS_INSIGHT: { caption: true, color: "#A5A5A5" },
+        HAS_THEORY: { caption: true, color: "#A5A5A5" },
+        BASED_ON_FILE: { caption: true, color: "#A5A5A5" },
       },
       initialCypher: `
         MATCH (c:Case {id: '${dbId}'})-[r]-(n) 
         OPTIONAL MATCH (n)-[r2]-(m) 
         RETURN c, r, n, r2, m 
         LIMIT 200
-      `, // Adjusted query to fetch related nodes for the specific case
+      `,
     };
 
     try {
@@ -111,14 +70,13 @@ const Neo4jGraphViewer: React.FC<Neo4jGraphViewerProps> = ({ dbId, serverPasswor
       toast.error(`Failed to initialize graph viewer: ${e.message}. Check console for details.`);
     }
 
-    // Cleanup function
     return () => {
       if (vizRef.current) {
         vizRef.current.clear();
         vizRef.current = null;
       }
     };
-  }, [dbId, serverPassword]); // Re-render if dbId or password changes
+  }, [dbId, serverPassword]);
 
   return (
     <div className="flex flex-col h-full">
@@ -128,7 +86,7 @@ const Neo4jGraphViewer: React.FC<Neo4jGraphViewerProps> = ({ dbId, serverPasswor
           onClick={() => vizRef.current && vizRef.current.render()}
           className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
         >
-          🧠 Refresh Graph
+          ?? Refresh Graph
         </button>
       </div>
       <div

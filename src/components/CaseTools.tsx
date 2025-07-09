@@ -17,7 +17,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom"; // Import useNavigate
 import { Textarea } from "./ui/textarea";
 
 interface CaseToolsProps {
@@ -38,6 +38,7 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
   const [isAnalyzingGraph, setIsAnalyzingGraph] = useState(false);
   const [timelineFocus, setTimelineFocus] = useState("");
   const { user } = useSession();
+  const navigate = useNavigate(); // Initialize useNavigate
 
   const handleFileChangeAndUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     if (!event.target.files || event.target.files.length === 0) return;
@@ -194,7 +195,8 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
         const detailedError = error.context?.error || error.message;
         throw new Error(detailedError);
       }
-      toast.success("Case data successfully exported to Graph DB. You can now view the analysis.", { id: loadingToastId });
+      toast.success("Case data successfully exported to Graph DB. Redirecting to graph view...", { id: loadingToastId });
+      navigate(`/graph-analysis/${caseId}`); // Navigate to the graph analysis page
     } catch (err: any) {
       console.error("Graph export error:", err);
       toast.error(err.message || "Failed to export to Graph DB.", { id: loadingToastId });
