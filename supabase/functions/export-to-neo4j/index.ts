@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.1'; // Updated version
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.1';
+import neo4j from "https://esm.sh/neo4j-driver@5.28.1"; // Import the Neo4j driver
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -9,42 +10,13 @@ const corsHeaders = {
   'X-Content-Type-Options': 'nosniff',
 };
 
-// Helper function to send Cypher queries via Neo4j HTTP Transactional Endpoint using Basic Auth
-async function neo4jHttpQuery(query: string, params: Record<string, any>, username: string, password: string, httpUrl: string) {
-  const authString = btoa(`${username}:${password}`); // Base64 encode username and password
-  const cleanedQuery = query.replace(/[\r\n]+/g, ' ').trim(); // Remove newlines and trim whitespace
-
-  const response = await fetch(httpUrl, {
-    method: "POST",
-    headers: {
-      "Authorization": `Basic ${authString}`, // Use Basic Auth here
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      statements: [{
-        statement: cleanedQuery, // Use the cleaned query
-        parameters: params,
-        resultDataContents: ["row"] // We only need to know if it succeeded
-      }]
-    })
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Neo4j HTTP error: ${response.status} ${response.statusText} - ${errorText}`);
-  }
-
-  const data = await response.json();
-  if (data.errors && data.errors.length > 0) {
-    throw new Error(`Neo4j query error: ${data.errors.map((e: any) => e.message).join(', ')}`);
-  }
-  return data;
-}
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  let driver;
+  let session;
 
   try {
     const { caseId } = await req.json();
@@ -60,20 +32,9 @@ serve(async (req) => {
       throw new Error('Neo4j connection URI or credentials (Username/Password) are not set in Supabase secrets.');
     }
 
-    let NEO4J_HTTP_TRANSACTION_ENDPOINT: string;
-    try {
-      const url = new URL(NEO4J_CONNECTION_URI);
-      if (url.protocol === 'neo4j+s:') {
-        // For AuraDB, the HTTP endpoint typically uses port 7473
-        NEO4J_HTTP_TRANSACTION_ENDPOINT = `https://${url.hostname}:7473/db/neo4j/tx`;
-      } else if (url.protocol === 'https:') {
-        NEO4J_HTTP_TRANSACTION_ENDPOINT = `${url.origin}/db/neo4j/tx`;
-      } else {
-        throw new Error(`Unsupported protocol in NEO4J_CONNECTION_URI: ${url.protocol}. Expected 'https:', 'bolt:', 'neo4j:', or 'neo4j+s:'.`);
-      }
-    } catch (e) {
-      throw new Error(`Invalid NEO4J_CONNECTION_URI format: ${e.message}. Please ensure it's a valid URL (e.g., https://your-instance.aura.com or bolt://your-instance.aura.com:7687 or neo4j+s://your-instance.aura.com).`);
-    }
+    // Initialize Neo4j Driver
+    driver = neo4j.driver(NEO4J_CONNECTION_URI, neo4j.auth.basic(NEO4J_USERNAME, NEO4J_PASSWORD));
+    session = driver.session();
 
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -210,12 +171,9 @@ serve(async (req) => {
     }
 
     // Execute all Cypher statements in a single transaction
-    await neo4jHttpQuery(
-      cypherStatements.map(s => s.statement).join('; '),
-      cypherStatements.reduce((acc, s) => ({ ...acc, ...s.parameters }), {}),
-      NEO4J_USERNAME, NEO4J_PASSWORD,
-      NEO4J_HTTP_TRANSACTION_ENDPOINT
-    );
+    for (const stmt of cypherStatements) {
+      await session.run(stmt.statement, stmt.parameters);
+    }
 
     return new Response(JSON.stringify({ message: 'Case data exported to Neo4j successfully!' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -228,5 +186,8 @@ serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,
     });
+  } finally {
+    if (session) await session.close();
+    if (driver) await driver.close();
   }
 });
