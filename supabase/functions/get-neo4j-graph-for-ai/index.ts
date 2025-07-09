@@ -14,6 +14,7 @@ const MAX_GRAPH_TEXT_LENGTH = 50000; // A safe character limit for the graph tex
 // Helper function to send Cypher queries via Neo4j HTTP Transactional Endpoint using Basic Auth
 async function neo4jHttpQuery(query: string, params: Record<string, any>, username: string, password: string, httpUrl: string) {
   const authString = btoa(`${username}:${password}`); // Base64 encode username and password
+  const cleanedQuery = query.replace(/[\r\n]+/g, ' ').trim(); // Remove newlines and trim whitespace
 
   const response = await fetch(httpUrl, {
     method: "POST",
@@ -23,7 +24,7 @@ async function neo4jHttpQuery(query: string, params: Record<string, any>, userna
     },
     body: JSON.stringify({
       statements: [{
-        statement: query,
+        statement: cleanedQuery, // Use the cleaned query
         parameters: params,
         resultDataContents: ["row", "graph"] // Request both row and graph data
       }]

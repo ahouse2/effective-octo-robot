@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { createClient } from 'https://esm.sh/@supabase/supabase/supabase-js@2.45.0';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -12,6 +12,7 @@ const corsHeaders = {
 // Helper function to send Cypher queries via Neo4j HTTP Transactional Endpoint using Basic Auth
 async function neo4jHttpQuery(query: string, params: Record<string, any>, username: string, password: string, httpUrl: string) {
   const authString = btoa(`${username}:${password}`); // Base64 encode username and password
+  const cleanedQuery = query.replace(/[\r\n]+/g, ' ').trim(); // Remove newlines and trim whitespace
 
   const response = await fetch(httpUrl, {
     method: "POST",
@@ -21,7 +22,7 @@ async function neo4jHttpQuery(query: string, params: Record<string, any>, userna
     },
     body: JSON.stringify({
       statements: [{
-        statement: query,
+        statement: cleanedQuery, // Use the cleaned query
         parameters: params,
         resultDataContents: ["row"] // We only need to know if it succeeded
       }]
