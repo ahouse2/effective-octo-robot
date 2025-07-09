@@ -5,7 +5,7 @@ import { CaseTheorySummary } from "@/components/CaseTheorySummary";
 import { CaseInsightsCard } from "@/components/CaseInsightsCard";
 import { EvidenceManager } from "@/components/EvidenceManager";
 import { CaseChatDisplay } from "@/components/CaseChatDisplay";
-import { AgentActivityLog } from "@/components/AgentActivityLog";
+import { AgentActivityLog } "@/components/AgentActivityLog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useParams, useNavigate } from "react-router-dom";
 import { Send } from "lucide-react";
@@ -18,7 +18,7 @@ import { CaseTools } from "@/components/CaseTools";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { EditCaseDirectivesDialog } from "@/components/EditCaseDirectivesDialog";
 import { Progress } from "@/components/ui/progress";
-import { VisualizationsTab } from "@/components/VisualizationsTab"; // Import the new tab component
+import { VisualizationsTab } from "@/components/VisualizationsTab";
 
 interface CaseDetails {
   name: string;
@@ -184,11 +184,11 @@ const AgentInteraction = () => {
 
   const rightPanel = (
     <Tabs defaultValue="theory" className="h-full flex flex-col">
-      <TabsList className="grid w-full grid-cols-6"> {/* Changed to 6 columns */}
+      <TabsList className="grid w-full grid-cols-3"> {/* Changed to 3 columns */}
         <TabsTrigger value="theory">Theory</TabsTrigger>
         <TabsTrigger value="insights">Insights</TabsTrigger>
         <TabsTrigger value="evidence">Evidence</TabsTrigger>
-        <TabsTrigger value="visualizations">Visualizations</TabsTrigger> {/* New Tab Trigger */}
+        <TabsTrigger value="visualizations">Visualizations</TabsTrigger>
         <TabsTrigger value="tools">Tools</TabsTrigger>
         <TabsTrigger value="log">Log</TabsTrigger>
       </TabsList>
@@ -201,7 +201,7 @@ const AgentInteraction = () => {
       <TabsContent value="evidence" className="flex-1 overflow-auto">
         <EvidenceManager caseId={caseId} />
       </TabsContent>
-      <TabsContent value="visualizations" className="flex-1 overflow-auto"> {/* New Tab Content */}
+      <TabsContent value="visualizations" className="flex-1 overflow-auto">
         <VisualizationsTab caseId={caseId} />
       </TabsContent>
       <TabsContent value="tools" className="flex-1 overflow-auto">
@@ -217,12 +217,12 @@ const AgentInteraction = () => {
     return (
       <Layout>
         <Tabs defaultValue="chat" className="w-full">
-          <TabsList className="grid w-full grid-cols-6">
+          <TabsList className="grid w-full grid-cols-3"> {/* Changed to 3 columns */}
             <TabsTrigger value="chat">Chat</TabsTrigger>
             <TabsTrigger value="theory">Theory</TabsTrigger>
             <TabsTrigger value="insights">Insights</TabsTrigger>
             <TabsTrigger value="evidence">Evidence</TabsTrigger>
-            <TabsTrigger value="visualizations">Visualizations</TabsTrigger> {/* New Tab Trigger */}
+            <TabsTrigger value="visualizations">Visualizations</TabsTrigger>
             <TabsTrigger value="tools">Tools</TabsTrigger>
             <TabsTrigger value="log">Log</TabsTrigger>
           </TabsList>
@@ -230,7 +230,7 @@ const AgentInteraction = () => {
           <TabsContent value="theory" className="p-4"><CaseTheorySummary caseId={caseId} /></TabsContent>
           <TabsContent value="insights" className="p-4"><CaseInsightsCard caseId={caseId} /></TabsContent>
           <TabsContent value="evidence"><EvidenceManager caseId={caseId} /></TabsContent>
-          <TabsContent value="visualizations"><VisualizationsTab caseId={caseId} /></TabsContent> {/* New Tab Content */}
+          <TabsContent value="visualizations"><VisualizationsTab caseId={caseId} /></TabsContent>
           <TabsContent value="tools"><CaseTools caseId={caseId} /></TabsContent>
           <TabsContent value="log" className="p-2"><AgentActivityLog caseId={caseId} /></TabsContent>
         </Tabs>
