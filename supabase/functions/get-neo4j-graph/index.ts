@@ -65,10 +65,11 @@ serve(async (req) => {
     let NEO4J_HTTP_TRANSACTION_ENDPOINT: string;
     try {
       const url = new URL(NEO4J_CONNECTION_URI);
-      if (url.protocol === 'https:') {
+      if (url.protocol === 'neo4j+s:') {
+        // For AuraDB, the HTTP endpoint typically uses port 7473
+        NEO4J_HTTP_TRANSACTION_ENDPOINT = `https://${url.hostname}:7473/db/neo4j/tx`;
+      } else if (url.protocol === 'https:') {
         NEO4J_HTTP_TRANSACTION_ENDPOINT = `${url.origin}/db/neo4j/tx`;
-      } else if (url.protocol === 'bolt:' || url.protocol === 'neo4j:' || url.protocol === 'neo4j+s:') {
-        NEO4J_HTTP_TRANSACTION_ENDPOINT = `https://${url.hostname}/db/neo4j/tx`;
       } else {
         throw new Error(`Unsupported protocol in NEO4J_CONNECTION_URI: ${url.protocol}. Expected 'https:', 'bolt:', 'neo4j:', or 'neo4j+s:'.`);
       }
