@@ -5,7 +5,7 @@ import { CaseTheorySummary } from "@/components/CaseTheorySummary";
 import { CaseInsightsCard } from "@/components/CaseInsightsCard";
 import { EvidenceManager } from "@/components/EvidenceManager";
 import { CaseChatDisplay } from "@/components/CaseChatDisplay";
-import { AgentActivityLog } from "@/components/AgentActivityLog"; // Corrected import
+import { AgentActivityLog } from "@/components/AgentActivityLog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useParams, useNavigate } from "react-router-dom";
 import { Send } from "lucide-react";
@@ -184,7 +184,7 @@ const AgentInteraction = () => {
 
   const rightPanel = (
     <Tabs defaultValue="theory" className="h-full flex flex-col">
-      <TabsList className="grid w-full grid-cols-3">
+      <TabsList className="grid w-full grid-cols-3 h-auto"> {/* Added h-auto */}
         <TabsTrigger value="theory">Theory</TabsTrigger>
         <TabsTrigger value="insights">Insights</TabsTrigger>
         <TabsTrigger value="evidence">Evidence</TabsTrigger>
@@ -217,7 +217,7 @@ const AgentInteraction = () => {
     return (
       <Layout>
         <Tabs defaultValue="chat" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-3 h-auto"> {/* Added h-auto */}
             <TabsTrigger value="chat">Chat</TabsTrigger>
             <TabsTrigger value="theory">Theory</TabsTrigger>
             <TabsTrigger value="insights">Insights</TabsTrigger>
