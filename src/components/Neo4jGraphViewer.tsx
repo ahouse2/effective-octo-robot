@@ -38,7 +38,7 @@ const Neo4jGraphViewer: React.FC<Neo4jGraphViewerProps> = ({ dbId, serverPasswor
       neo4j: {
         serverUrl: `neo4j+s://${dbId}.databases.neo4j.io`,
         serverUser: "neo4j",
-        serverPassword: serverPassword, // This is where the password would be used
+        serverPassword: serverPassword, // Added missing comma here
         encrypted: "ENCRYPTION_ON",
         trust: "TRUST_ALL_CERTIFICATES", // Use with caution in production
       },
