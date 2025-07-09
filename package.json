@@ -55,6 +55,7 @@
     "lodash": "^4.17.21",
     "lucide-react": "^0.462.0",
     "neo4j-driver": "^5.28.1",
+    "neovis.js": "^2.1.0",
     "next-themes": "^0.3.0",
     "openai": "^5.7.0",
     "react": "^18.3.1",
