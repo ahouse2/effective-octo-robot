@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import ForceGraph2D from 'react-force-graph-2d';
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
-import { Camera, ExternalLink } from "lucide-react";
+import { Camera, ExternalLink, RefreshCw } from "lucide-react"; // Added RefreshCw
 
 interface GraphNode {
   id: string;
