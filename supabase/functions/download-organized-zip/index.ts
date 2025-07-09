@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.1'; // Updated version
 import * as fflate from 'https://esm.sh/fflate@0.8.2';
 
 const corsHeaders = {

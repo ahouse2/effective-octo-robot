@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.50.1'; // Updated version
 import OpenAI from 'https://esm.sh/openai@4.52.7';
 import { GoogleGenerativeAI } from 'https://esm.sh/@google/generative-ai@0.15.0';
 
@@ -81,9 +81,6 @@ async function handleSearchCommand(supabaseClient: SupabaseClient, genAI: Google
   const prompt = `
     You are a semantic search engine. Based on the user's query, analyze the following file summaries and identify the most relevant files.
     For each relevant file, provide its ID and one or more short, relevant snippets from its summary that directly relate to the query.
-    The user's query is: "${query}"
-
-    Your response MUST be a JSON object with a single key "results", which is an array of objects. Each object should have "id" (the file ID) and "snippets" (an array of strings).
     Highlight the most relevant words in the snippets using <b> tags.
     
     Example Response:
