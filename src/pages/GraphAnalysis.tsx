@@ -12,7 +12,7 @@ const GraphAnalysis = () => {
   // WARNING: For security, the Neo4j password should NOT be stored or passed directly to the frontend.
   // This is a placeholder. You would need to manually provide it here for neovis.js to connect directly.
   // Example: const neo4jPassword = "YOUR_NEO4J_PASSWORD_HERE";
-  const neo4jPassword = undefined; // Placeholder for security
+  const neo4jPassword = "vJ0GWzj_pyjTP9AMENLR0fCbdEvoznIRCSWmTwk-Fjo"; // Your provided password
 
   useEffect(() => {
     // Extract dbId from VITE_NEO4J_CONNECTION_URI environment variable
@@ -20,7 +20,7 @@ const GraphAnalysis = () => {
     if (connectionUri) {
       try {
         const url = new URL(connectionUri);
-        // Expected format: neo4j+s://<dbId>.databases.neo4j.io
+        // Expected format: neo4j+s://<dbId>.databases.neo4j.io:7687
         const hostnameParts = url.hostname.split('.');
         if (hostnameParts.length >= 3) {
           setDbId(hostnameParts[0]);
