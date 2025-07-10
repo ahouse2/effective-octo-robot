@@ -1,3 +1,5 @@
+/// <reference types="https://deno.land/x/deno_types/deno/stable/lib.deno.d.ts" />
+/// <import map="../../import_map.json" />
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.50.1';
 import { GoogleGenerativeAI } from 'https://esm.sh/@google/generative-ai@0.15.0';
@@ -237,23 +239,23 @@ serve(async (req) => {
     const events = timelineData.timeline_events;
 
     const eventsToInsert = events.map((event: any) => {
-      let eventTimestamp;
+      let eventTimestamp: string | null = null; // Initialize as null
       if (event.event_date && event.event_date !== "Date Unknown") {
         const parsedDate = new Date(event.event_date);
         if (!isNaN(parsedDate.getTime())) { // Check if date is valid
-          eventTimestamp = parsedDate;
+          eventTimestamp = parsedDate.toISOString(); // Store as ISO string
         } else {
-          console.warn(`Invalid date format from AI: ${event.event_date}. Using current date.`);
-          eventTimestamp = new Date(); // Fallback to current date if invalid
+          console.warn(`Invalid date format from AI: ${event.event_date}. Storing timestamp as null.`);
+          // eventTimestamp remains null
         }
       } else {
-        eventTimestamp = new Date(); // Fallback to current date if "Date Unknown" or missing
+        // eventTimestamp remains null for "Date Unknown" or missing
       }
 
       return {
         case_id: caseId,
         timeline_id: timelineId, // Link to the specific timeline
-        timestamp: eventTimestamp,
+        timestamp: eventTimestamp, // This will be null if "Date Unknown" or invalid
         title: event.title,
         description: event.description,
         insight_type: 'auto_generated_event',

@@ -12,11 +12,11 @@ import { downloadTextFile } from "@/lib/download";
 
 interface TimelineEvent {
   id: string;
-  timestamp: Date;
+  timestamp: Date | null; // Changed to allow null
   title: string;
   description: string;
   relevant_file_ids: string[] | null;
-  timeline_id: string; // Added timeline_id
+  timeline_id: string;
 }
 
 interface FileMetadata {
@@ -83,7 +83,7 @@ export const TimelineDisplay: React.FC<TimelineDisplayProps> = ({ caseId }) => {
 
       const events: TimelineEvent[] = (autoEventsData || []).map(event => ({
         id: event.id,
-        timestamp: new Date(event.timestamp),
+        timestamp: event.timestamp ? new Date(event.timestamp) : null, // Handle null timestamp
         title: event.title,
         description: event.description,
         relevant_file_ids: event.relevant_file_ids,
@@ -166,8 +166,9 @@ export const TimelineDisplay: React.FC<TimelineDisplayProps> = ({ caseId }) => {
     content += `Generated on: ${new Date().toLocaleString()}\n\n`;
 
     displayedEvents.forEach((event, index) => {
-      const eventDate = event.timestamp.toISOString().split('T')[0]; // Get YYYY-MM-DD
-      const displayDate = eventDate === 'Date Unknown' ? 'Date Unknown' : format(event.timestamp, "MMM dd, yyyy HH:mm");
+      const displayDate = event.timestamp
+        ? format(event.timestamp, "MMM dd, yyyy HH:mm")
+        : 'Date Unknown';
 
       content += `## ${displayDate} - ${event.title}\n`;
       content += `${event.description}\n`;
@@ -176,7 +177,9 @@ export const TimelineDisplay: React.FC<TimelineDisplayProps> = ({ caseId }) => {
         event.relevant_file_ids.forEach(fileId => {
           const file = allFilesMetadata.find(f => f.id === fileId);
           if (file) {
-            content += `- [${file.suggested_name || file.file_name}](${file.file_path})\n`;
+            // For export, just list the name and original path (Supabase Storage URL)
+            const fileUrl = supabase.storage.from('evidence-files').getPublicUrl(file.file_path).data.publicUrl;
+            content += `- [${file.suggested_name || file.file_name}](${fileUrl})\n`;
           }
         });
       }
@@ -285,9 +288,9 @@ export const TimelineDisplay: React.FC<TimelineDisplayProps> = ({ caseId }) => {
                   <div className="absolute -left-2.5 mt-1 h-4 w-4 rounded-full border-2 border-background bg-primary" />
                   <div className="ml-4">
                     <p className="text-xs text-muted-foreground timestamp">
-                      {event.timestamp.toISOString().split('T')[0] === 'Date Unknown'
-                        ? 'Date Unknown'
-                        : format(event.timestamp, "MMM dd, yyyy HH:mm")}
+                      {event.timestamp
+                        ? format(event.timestamp, "MMM dd, yyyy HH:mm")
+                        : 'Date Unknown'}
                     </p>
                     <h3 className="font-semibold text-foreground mt-1 flex items-center">
                       <Bot className="h-4 w-4 mr-2 text-blue-500" />
