@@ -1,3 +1,7 @@
+// This file provides type declarations for Deno-specific globals and remote modules
+// to satisfy the local TypeScript compiler in a non-Deno environment.
+// It is NOT meant to be deployed as a Supabase Edge Function.
+
 declare namespace Deno {
   namespace env {
     function get(key: string): string | undefined;
