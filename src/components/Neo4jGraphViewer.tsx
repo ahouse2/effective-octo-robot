@@ -34,8 +34,7 @@ const Neo4jGraphViewer: React.FC<Neo4jGraphViewerProps> = ({ dbId, serverPasswor
         serverUrl: `neo4j+s://${dbId}.databases.neo4j.io`,
         serverUser: "neo4j",
         serverPassword: serverPassword,
-        encrypted: "ENCRYPTION_ON",
-        trust: "TRUST_ALL_CERTIFICATES",
+        // Removed redundant 'encrypted' and 'trust' properties
       },
       labels: {
         Case: { caption: "name", color: "#ff4d4d" },
@@ -86,7 +85,7 @@ const Neo4jGraphViewer: React.FC<Neo4jGraphViewerProps> = ({ dbId, serverPasswor
           onClick={() => vizRef.current && vizRef.current.render()}
           className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
         >
-          ?? Refresh Graph
+          Refresh Graph
         </button>
       </div>
       <div
