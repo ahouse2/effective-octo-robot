@@ -236,15 +236,30 @@ serve(async (req) => {
     
     const events = timelineData.timeline_events;
 
-    const eventsToInsert = events.map((event: any) => ({
-      case_id: caseId,
-      timeline_id: timelineId, // Link to the specific timeline
-      timestamp: event.event_date && event.event_date !== "Date Unknown" ? new Date(event.event_date) : new Date(),
-      title: event.title,
-      description: event.description,
-      insight_type: 'auto_generated_event',
-      relevant_file_ids: event.relevant_file_ids || [],
-    }));
+    const eventsToInsert = events.map((event: any) => {
+      let eventTimestamp;
+      if (event.event_date && event.event_date !== "Date Unknown") {
+        const parsedDate = new Date(event.event_date);
+        if (!isNaN(parsedDate.getTime())) { // Check if date is valid
+          eventTimestamp = parsedDate;
+        } else {
+          console.warn(`Invalid date format from AI: ${event.event_date}. Using current date.`);
+          eventTimestamp = new Date(); // Fallback to current date if invalid
+        }
+      } else {
+        eventTimestamp = new Date(); // Fallback to current date if "Date Unknown" or missing
+      }
+
+      return {
+        case_id: caseId,
+        timeline_id: timelineId, // Link to the specific timeline
+        timestamp: eventTimestamp,
+        title: event.title,
+        description: event.description,
+        insight_type: 'auto_generated_event',
+        relevant_file_ids: Array.isArray(event.relevant_file_ids) ? event.relevant_file_ids : [], // Ensure it's an array
+      };
+    });
 
     console.log("Events to Insert:", eventsToInsert);
 

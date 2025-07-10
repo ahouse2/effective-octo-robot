@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.50.1'; // Updated version
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.50.1';
 import OpenAI from 'https://esm.sh/openai@4.52.7';
 import { GoogleGenerativeAI } from 'https://esm.sh/@google/generative-ai@0.15.0';
 
@@ -101,7 +101,7 @@ async function handleSearchCommand(supabaseClient: SupabaseClient, genAI: Google
 
   const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite-preview-06-17" });
   const result = await model.generateContent(prompt);
-  const responseText = result.response.text();
+  const responseText = (result as any).response.text(); // Type assertion
   const jsonResult = extractJson(responseText);
 
   if (!jsonResult) {
@@ -263,7 +263,7 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
         const preSummarizationPrompt = `The following text is a collection of summaries from various legal documents. It is too long to process. Please summarize this entire collection into a more concise overview, retaining all key facts, names, dates, and legal concepts. Combined Summaries:\n\n${contextSnippets}`;
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite-preview-06-17" });
         const result = await model.generateContent(preSummarizationPrompt);
-        contextSnippets = result.response.text();
+        contextSnippets = (result as any).response.text(); // Type assertion
         await insertAgentActivity(supabaseClient, caseId, 'Gemini RAG', 'System', 'Pre-summarization Complete', `Context reduced to ${contextSnippets.length} chars.`, 'completed');
     }
 
@@ -318,15 +318,15 @@ async function handleGeminiRAGCommand(supabaseClient: SupabaseClient, genAI: Goo
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite-preview-06-17" });
     const result = await model.generateContent(synthesisPrompt);
     
-    const response = result.response;
+    const response = (result as any).response; // Type assertion
     if (!response) throw new Error("The AI model did not return a valid response.");
-    if (response.promptFeedback?.blockReason) {
-        const blockReason = response.promptFeedback.blockReason;
-        const safetyRatings = response.promptFeedback.safetyRatings?.map(r => `${r.category}: ${r.probability}`).join(', ');
+    if ((response as any).promptFeedback?.blockReason) { // Type assertion
+        const blockReason = (response as any).promptFeedback.blockReason; // Type assertion
+        const safetyRatings = (response as any).promptFeedback.safetyRatings?.map((r: any) => `${r.category}: ${r.probability}`).join(', '); // Type assertion
         throw new Error(`The AI's response was blocked for safety reasons. Reason: ${blockReason}. Details: [${safetyRatings}].`);
     }
     
-    const responseText = response.text();
+    const responseText = (response as any).text(); // Type assertion
     await updateProgress(supabaseClient, caseId, 80, 'Parsing AI response and updating database...');
 
     if (command === 're_run_analysis') {
@@ -422,7 +422,7 @@ serve(async (req) => {
     
             await insertAgentActivity(supabaseClient, caseId, 'Diagnostic Agent', 'System', 'Gemini Connection Test', 'Successfully connected to Google Gemini API with the gemini-2.5-flash-lite-preview-06-17 model.', 'completed');
             return new Response(JSON.stringify({ message: 'Gemini API connection successful for gemini-2.5-flash-lite-preview-06-17!' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
-        } catch (e) {
+        } catch (e: any) { // Type assertion
             console.error("Gemini Connection Diagnosis Error:", e);
             await insertAgentActivity(supabaseClient, caseId, 'Diagnostic Agent', 'System', 'Gemini Connection Test Failed', `Failed to connect to Gemini API using gemini-2.5-flash-lite-preview-06-17: ${e.message}`, 'error');
             throw new Error(`Gemini Connection Test Failed for gemini-2.5-flash-lite-preview-06-17: ${e.message}. Please verify your GOOGLE_GEMINI_API_KEY secret and ensure it has permissions for this model.`);

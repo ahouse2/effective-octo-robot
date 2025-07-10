@@ -1,3 +1,6 @@
+/// <reference types="https://deno.land/x/deno_types/deno/stable/lib.deno.d.ts" />
+/// <import map="../../import_map.json" />
+
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.1'; // Updated version
 

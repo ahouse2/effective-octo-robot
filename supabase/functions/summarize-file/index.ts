@@ -189,12 +189,12 @@ serve(async (req) => {
         `image summarization for ${fileName}`
       );
       
-      if (result.response.promptFeedback?.blockReason) {
-          const reason = result.response.promptFeedback.blockReason;
-          const safetyRatings = result.response.promptFeedback.safetyRatings?.map(r => `${r.category}: ${r.probability}`).join(', ');
+      if ((result as any).response.promptFeedback?.blockReason) { // Type assertion
+          const reason = (result as any).response.promptFeedback.blockReason; // Type assertion
+          const safetyRatings = (result as any).response.promptFeedback.safetyRatings?.map((r: any) => `${r.category}: ${r.probability}`).join(', '); // Type assertion
           throw new Error(`Image summarization blocked by safety filters. Reason: ${reason}. Details: [${safetyRatings}].`);
       }
-      finalSummary = extractJson(result.response.text());
+      finalSummary = extractJson((result as any).response.text()); // Type assertion
 
     } else if (mimeType === 'application/pdf') { // Handle PDFs by sending the blob directly
       const pdfPart = await fileToGenerativePart(fileBlob, mimeType);
@@ -207,12 +207,12 @@ serve(async (req) => {
         `PDF summarization for ${fileName}`
       );
 
-      if (result.response.promptFeedback?.blockReason) {
-          const reason = result.response.promptFeedback.blockReason;
-          const safetyRatings = result.response.promptFeedback.safetyRatings?.map(r => `${r.category}: ${r.probability}`).join(', ');
+      if ((result as any).response.promptFeedback?.blockReason) { // Type assertion
+          const reason = (result as any).response.promptFeedback.blockReason; // Type assertion
+          const safetyRatings = (result as any).response.promptFeedback.safetyRatings?.map((r: any) => `${r.category}: ${r.probability}`).join(', '); // Type assertion
           throw new Error(`PDF summarization blocked by safety filters. Reason: ${reason}. Details: [${safetyRatings}].`);
       }
-      finalSummary = extractJson(result.response.text());
+      finalSummary = extractJson((result as any).response.text()); // Type assertion
 
     } else if (mimeType.startsWith('text/') || mimeType === 'message/rfc822') { // Keep existing text/email handling
       const textContent = await fileBlob.text();
@@ -228,12 +228,12 @@ serve(async (req) => {
           `small file summarization for ${fileName}`
         );
 
-        if (result.response.promptFeedback?.blockReason) {
-            const reason = result.response.promptFeedback.blockReason;
-            const safetyRatings = result.response.promptFeedback.safetyRatings?.map(r => `${r.category}: ${r.probability}`).join(', ');
+        if ((result as any).response.promptFeedback?.blockReason) { // Type assertion
+            const reason = (result as any).response.promptFeedback.blockReason; // Type assertion
+            const safetyRatings = (result as any).response.promptFeedback.safetyRatings?.map((r: any) => `${r.category}: ${r.probability}`).join(', '); // Type assertion
             throw new Error(`Document summarization blocked by safety filters. Reason: ${reason}. Details: [${safetyRatings}].`);
         }
-        finalSummary = extractJson(result.response.text());
+        finalSummary = extractJson((result as any).response.text()); // Type assertion
 
       } else {
         await insertActivity(supabaseClient, caseId, `File is large. Starting chunked summarization.`);
@@ -262,7 +262,7 @@ serve(async (req) => {
 
             settledResults.forEach((result, index) => {
                 if (result.status === 'fulfilled') {
-                    const geminiResponse = result.value.response;
+                    const geminiResponse = (result.value as any).response; // Type assertion
                     if (geminiResponse.promptFeedback?.blockReason) {
                         const reason = geminiResponse.promptFeedback.blockReason;
                         console.warn(`Chunk ${i + index} of file "${fileName}" was blocked by safety filters. Reason: ${reason}`);
@@ -307,12 +307,12 @@ serve(async (req) => {
           `final summarization for ${fileName}`
         );
 
-        if (finalResult.response.promptFeedback?.blockReason) {
-            const reason = finalResult.response.promptFeedback.blockReason;
-            const safetyRatings = finalResult.response.promptFeedback.safetyRatings?.map(r => `${r.category}: ${r.probability}`).join(', ');
+        if ((finalResult as any).response.promptFeedback?.blockReason) { // Type assertion
+            const reason = (finalResult as any).response.promptFeedback.blockReason; // Type assertion
+            const safetyRatings = (finalResult as any).response.promptFeedback.safetyRatings?.map((r: any) => `${r.category}: ${r.probability}`).join(', '); // Type assertion
             throw new Error(`Final summarization blocked by safety filters. Reason: ${reason}. Details: [${safetyRatings}].`);
         }
-        finalSummary = extractJson(finalResult.response.text());
+        finalSummary = extractJson((finalResult as any).response.text()); // Type assertion
       }
     } else {
       await supabaseClient.from('case_files_metadata').update({
@@ -351,7 +351,7 @@ serve(async (req) => {
 
   } catch (error: any) {
     console.error(`Summarize File Error for ${fileName || filePath || fileId}:`, error.message, error.stack);
-    if (caseId && fileId) {
+    if (caseId) {
         const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
         const errorMessage = `Processing failed for "${fileName || filePath || fileId}": ${error.message}`;
         await insertActivity(supabaseClient, caseId, errorMessage, 'error');

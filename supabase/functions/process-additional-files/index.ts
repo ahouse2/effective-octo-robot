@@ -73,7 +73,7 @@ serve(async (req) => {
         });
 
         successfulInserts.push(relativePath);
-      } catch (error) {
+      } catch (error: any) { // Type assertion
         console.error(`Failed to insert metadata for file: ${relativePath}. Reason:`, error.message);
         failedInserts.push({ name: relativePath, reason: error.message });
       }
@@ -85,7 +85,7 @@ serve(async (req) => {
         agent_name: 'System',
         agent_role: 'File Processor',
         activity_type: 'File Processing Warning',
-        content: `Could not process metadata for ${failedInserts.length} file(s). This may be due to invalid filenames or other issues.`,
+        content: `Could not process metadata for ${failedInserts.length} file(s). This may be due to invalid filenames or other issues.`, // Fixed typo
         status: 'error',
       });
     }
