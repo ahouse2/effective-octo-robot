@@ -1,6 +1,3 @@
-/// <reference types="https://deno.land/x/deno_types/deno/stable/lib.deno.d.ts" />
-/// <import map="../import_map.json" />
-
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.50.1';
 import { GoogleGenerativeAI } from 'https://esm.sh/@google/generative-ai@0.15.0';
@@ -83,10 +80,10 @@ serve(async (req) => {
     const body = await req.json();
     caseId = body.caseId;
     const focus = body.focus;
-    timelineId = body.timelineId; // New
-    timelineName = body.timelineName; // New
+    timelineId = body.timelineId;
+    timelineName = body.timelineName;
 
-    if (!caseId || !timelineId || !timelineName) { // timelineId and timelineName are now required
+    if (!caseId || !timelineId || !timelineName) {
       throw new Error("caseId, timelineId, and timelineName are required.");
     }
 
@@ -172,6 +169,9 @@ serve(async (req) => {
       For each event, provide a date (if available, in YYYY-MM-DD format, otherwise "Date Unknown"), a concise title (under 15 words), a brief description (under 50 words), and an array of 'relevant_file_ids' (UUIDs of files from the context that directly support this event).
       Your response MUST be a JSON object, with a single key "timeline_events" which is an array of objects. Each object should have "event_date", "title", "description", and "relevant_file_ids" keys.
       
+      **IMPORTANT DATE FORMAT:** Ensure 'event_date' is always in 'YYYY-MM-DD' format. If a specific date cannot be determined, use "Date Unknown".
+      **IMPORTANT FILE IDs:** The 'relevant_file_ids' array MUST contain the exact UUIDs of the files from the provided context that are relevant to the event. If no specific file is relevant, provide an empty array [].
+
       Example Response:
       {
         "timeline_events": [
@@ -180,6 +180,12 @@ serve(async (req) => {
             "title": "Financial Misconduct Alleged",
             "description": "Email from Jane Doe to John Doe alleges unauthorized transfer of funds.",
             "relevant_file_ids": ["file-id-123", "file-id-456"]
+          },
+          {
+            "event_date": "Date Unknown",
+            "title": "General Agreement",
+            "description": "Parties reached a general agreement on minor issues.",
+            "relevant_file_ids": []
           }
         ]
       }

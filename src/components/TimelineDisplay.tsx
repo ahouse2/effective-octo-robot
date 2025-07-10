@@ -166,7 +166,10 @@ export const TimelineDisplay: React.FC<TimelineDisplayProps> = ({ caseId }) => {
     content += `Generated on: ${new Date().toLocaleString()}\n\n`;
 
     displayedEvents.forEach((event, index) => {
-      content += `## ${format(event.timestamp, "MMM dd, yyyy HH:mm")} - ${event.title}\n`;
+      const eventDate = event.timestamp.toISOString().split('T')[0]; // Get YYYY-MM-DD
+      const displayDate = eventDate === 'Date Unknown' ? 'Date Unknown' : format(event.timestamp, "MMM dd, yyyy HH:mm");
+
+      content += `## ${displayDate} - ${event.title}\n`;
       content += `${event.description}\n`;
       if (event.relevant_file_ids && event.relevant_file_ids.length > 0) {
         content += `\n**Relevant Files:**\n`;
@@ -282,7 +285,9 @@ export const TimelineDisplay: React.FC<TimelineDisplayProps> = ({ caseId }) => {
                   <div className="absolute -left-2.5 mt-1 h-4 w-4 rounded-full border-2 border-background bg-primary" />
                   <div className="ml-4">
                     <p className="text-xs text-muted-foreground timestamp">
-                      {format(event.timestamp, "MMM dd, yyyy HH:mm")}
+                      {event.timestamp.toISOString().split('T')[0] === 'Date Unknown'
+                        ? 'Date Unknown'
+                        : format(event.timestamp, "MMM dd, yyyy HH:mm")}
                     </p>
                     <h3 className="font-semibold text-foreground mt-1 flex items-center">
                       <Bot className="h-4 w-4 mr-2 text-blue-500" />
