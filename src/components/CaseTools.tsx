@@ -17,7 +17,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Link, useNavigate } from "react-router-dom"; // Import useNavigate
+import { Link, useNavigate } from "react-router-dom";
 import { Textarea } from "./ui/textarea";
 
 interface CaseToolsProps {
@@ -37,8 +37,9 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
   const [isExportingToGraph, setIsExportingToGraph] = useState(false);
   const [isAnalyzingGraph, setIsAnalyzingGraph] = useState(false);
   const [timelineFocus, setTimelineFocus] = useState("");
+  const [newTimelineName, setNewTimelineName] = useState(""); // New state for timeline name
   const { user } = useSession();
-  const navigate = useNavigate(); // Initialize useNavigate
+  const navigate = useNavigate();
 
   const handleFileChangeAndUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     if (!event.target.files || event.target.files.length === 0) return;
@@ -164,18 +165,50 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
   };
 
   const handleGenerateTimeline = async () => {
+    if (!user) {
+      toast.error("You must be logged in to generate a timeline.");
+      return;
+    }
+
     setIsGeneratingTimeline(true);
-    const loadingToastId = toast.loading(timelineFocus ? `Generating timeline for "${timelineFocus}"...` : "Generating general timeline...");
+    const loadingToastId = toast.loading("Creating new timeline entry...");
+
     try {
-      const { error } = await supabase.functions.invoke('create-timeline-from-evidence', {
-        body: { caseId, focus: timelineFocus || null },
+      const timelineNameToUse = newTimelineName.trim() || `Timeline - ${new Date().toLocaleString()}`;
+
+      // 1. Create a new timeline record
+      const { data: newTimeline, error: timelineError } = await supabase
+        .from('case_timelines')
+        .insert({
+          case_id: caseId,
+          name: timelineNameToUse,
+          description: timelineFocus.trim() ? `Focused on: ${timelineFocus.trim()}` : 'General overview timeline.',
+          generated_by: 'User',
+        })
+        .select()
+        .single();
+
+      if (timelineError) throw new Error("Failed to create timeline record: " + timelineError.message);
+      if (!newTimeline) throw new Error("New timeline record not returned.");
+
+      toast.loading(`Generating timeline "${timelineNameToUse}"...`, { id: loadingToastId });
+
+      // 2. Invoke the Edge Function with the new timeline ID and name
+      const { error: functionError } = await supabase.functions.invoke('create-timeline-from-evidence', {
+        body: { 
+          caseId, 
+          focus: timelineFocus || null,
+          timelineId: newTimeline.id, // Pass the new timeline ID
+          timelineName: newTimeline.name, // Pass the new timeline name
+        },
       });
-      if (error) {
-        const detailedError = error.context?.error || error.message;
+      if (functionError) {
+        const detailedError = functionError.context?.error || functionError.message;
         throw new Error(detailedError);
       }
-      toast.success("Timeline generation complete! Check the Case Details page.", { id: loadingToastId });
+      toast.success(`Timeline "${timelineNameToUse}" generated! Check the Visualizations tab.`, { id: loadingToastId });
       setTimelineFocus("");
+      setNewTimelineName(""); // Clear the timeline name input
     } catch (err: any) {
       console.error("Timeline generation error:", err);
       toast.error(err.message || "Failed to generate timeline.", { id: loadingToastId });
@@ -196,7 +229,7 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
         throw new Error(detailedError);
       }
       toast.success("Case data successfully exported to Graph DB. Redirecting to graph view...", { id: loadingToastId });
-      navigate(`/graph-analysis/${caseId}`); // Navigate to the graph analysis page
+      navigate(`/graph-analysis/${caseId}`);
     } catch (err: any) {
       console.error("Graph export error:", err);
       toast.error(err.message || "Failed to export to Graph DB.", { id: loadingToastId });
@@ -232,7 +265,7 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
       let allFiles: any[] = [];
       let hasMore = true;
       let page = 0;
-      const pageSize = 1000; // Supabase default limit
+      const pageSize = 1000;
 
       toast.info("Fetching file list...", { id: loadingToastId });
 
@@ -267,7 +300,7 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
 
       toast.info(`Found ${allFiles.length} files. Submitting to summarizer agent... This may take a while.`, { id: loadingToastId });
 
-      const batchSize = 10; // Invoke 10 functions at a time
+      const batchSize = 10;
       for (let i = 0; i < allFiles.length; i += batchSize) {
           const batch = allFiles.slice(i, i + batchSize);
           const currentBatchNum = i / batchSize + 1;
@@ -386,13 +419,22 @@ export const CaseTools: React.FC<CaseToolsProps> = ({ caseId }) => {
         <p className="text-sm text-muted-foreground mb-2">Generate new data representations or export them.</p>
         <div className="space-y-2">
           <div className="space-y-2 rounded-md border p-4">
-            <Label htmlFor="timeline-focus">Focused Timeline Generation</Label>
+            <Label htmlFor="new-timeline-name">Timeline Name</Label>
+            <Input
+              id="new-timeline-name"
+              placeholder="e.g., 'Custody Dispute Timeline', 'Financial Overview'"
+              value={newTimelineName}
+              onChange={(e) => setNewTimelineName(e.target.value)}
+              disabled={isGeneratingTimeline}
+            />
+            <Label htmlFor="timeline-focus">Timeline Focus (Optional)</Label>
             <Textarea
               id="timeline-focus"
               placeholder="Optional: Enter a fact pattern or legal argument to focus on..."
               value={timelineFocus}
               onChange={(e) => setTimelineFocus(e.target.value)}
               className="min-h-[60px]"
+              disabled={isGeneratingTimeline}
             />
             <Button onClick={handleGenerateTimeline} disabled={isGeneratingTimeline} className="w-full" variant="secondary">
               <Clock className="h-4 w-4 mr-2" />

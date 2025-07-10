@@ -1,5 +1,8 @@
+/// <reference types="https://deno.land/x/deno_types/deno/stable/lib.deno.d.ts" />
+/// <import map="../import_map.json" />
+
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.50.1'; // Updated version
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.50.1';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -68,6 +71,33 @@ serve(async (req) => {
           body: { filePath: meta.file_path, fileId: meta.id, caseId: meta.case_id },
         });
       }
+    }
+
+    // Automatically generate a default "Case Overview" timeline
+    const { data: defaultTimeline, error: timelineInsertError } = await supabaseClient
+      .from('case_timelines')
+      .insert({
+        case_id: caseId,
+        name: 'Case Overview',
+        description: 'Automatically generated comprehensive timeline of key events.',
+        generated_by: 'AI',
+      })
+      .select()
+      .single();
+
+    if (timelineInsertError) {
+      console.error('Error creating default timeline:', timelineInsertError);
+      // Don't throw, allow the rest of the function to proceed
+    } else if (defaultTimeline) {
+      // Trigger timeline generation for the default timeline
+      await supabaseClient.functions.invoke('create-timeline-from-evidence', {
+        body: { 
+          caseId: caseId, 
+          focus: null, // No specific focus for the overview
+          timelineId: defaultTimeline.id,
+          timelineName: defaultTimeline.name,
+        },
+      });
     }
 
     return new Response(JSON.stringify({ message: 'Case created and files are being summarized. You can run a full analysis once summarization is complete.', caseId }), {

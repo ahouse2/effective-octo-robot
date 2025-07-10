@@ -1,3 +1,6 @@
+/// <reference types="https://deno.land/x/deno_types/deno/stable/lib.deno.d.ts" />
+/// <import map="../import_map.json" />
+
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.50.1';
 import { GoogleGenerativeAI } from 'https://esm.sh/@google/generative-ai@0.15.0';
@@ -29,7 +32,6 @@ function extractJson(text: string): any | null {
   return null;
 }
 
-// Corrected insertAgentActivity to match the general signature
 async function insertAgentActivity(supabaseClient: SupabaseClient, caseId: string, agentName: string, agentRole: string, activityType: string, content: string, status: 'processing' | 'completed' | 'error' = 'completed') {
   const { error } = await supabaseClient.from('agent_activities').insert({
     case_id: caseId,
@@ -42,7 +44,6 @@ async function insertAgentActivity(supabaseClient: SupabaseClient, caseId: strin
   if (error) console.error(`Failed to insert agent activity [${activityType}]`, error);
 }
 
-// New retry helper function for Gemini API calls
 async function callGeminiWithRetry<T>(
   geminiCall: () => Promise<T>,
   caseId: string,
@@ -55,14 +56,12 @@ async function callGeminiWithRetry<T>(
     try {
       return await geminiCall();
     } catch (error: any) {
-      // Check for 429 Too Many Requests or quota errors
       if (error.status === 429 || (error.message && error.message.includes("quota"))) {
         const currentDelay = initialDelayMs * Math.pow(2, i);
         console.warn(`[Gemini Retry] Rate limit hit for ${activityDescription}. Retrying in ${currentDelay / 1000}s... (Attempt ${i + 1}/${maxRetries})`);
         await insertAgentActivity(supabaseClient, caseId, 'Timeline Agent', 'Chronology Specialist', 'Timeline Generation', `[Gemini] Rate limit hit for ${activityDescription}. Retrying in ${currentDelay / 1000}s...`, 'processing');
         await new Promise(resolve => setTimeout(resolve, currentDelay));
       } else {
-        // Re-throw other errors immediately
         throw error;
       }
     }
@@ -77,11 +76,19 @@ serve(async (req) => {
   }
 
   let caseId: string | null = null;
+  let timelineId: string | null = null;
+  let timelineName: string | null = null;
+
   try {
     const body = await req.json();
     caseId = body.caseId;
     const focus = body.focus;
-    if (!caseId) throw new Error("Case ID is required.");
+    timelineId = body.timelineId; // New
+    timelineName = body.timelineName; // New
+
+    if (!caseId || !timelineId || !timelineName) { // timelineId and timelineName are now required
+      throw new Error("caseId, timelineId, and timelineName are required.");
+    }
 
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -89,8 +96,8 @@ serve(async (req) => {
     );
 
     const activityMessage = focus 
-      ? `Starting timeline generation focused on: "${focus}"...`
-      : 'Starting general timeline generation process...';
+      ? `Starting timeline generation for "${timelineName}" focused on: "${focus}"...`
+      : `Starting general timeline generation for "${timelineName}"...`;
     await insertAgentActivity(supabaseClient, caseId, 'Timeline Agent', 'Chronology Specialist', 'Timeline Generation', activityMessage, 'processing');
 
     const { data: caseData, error: caseError } = await supabaseClient
@@ -117,7 +124,6 @@ serve(async (req) => {
       `File: "${file.suggested_name || file.file_name}" (ID: ${file.id})\nSummary: ${file.description || 'No summary available.'}`
     ).join('\n\n---\n\n');
 
-    // --- New: Handle large evidence context ---
     if (evidenceContext.length > MAX_CONTEXT_LENGTH) {
         await insertAgentActivity(supabaseClient, caseId, 'Timeline Agent', 'Chronology Specialist', 'Context Too Large', `Evidence context of ${evidenceContext.length} chars exceeds limit. Pre-summarizing for timeline generation...`, 'processing');
         const preSummarizationPrompt = `The following text is a collection of summaries from various legal documents. It is too long to process in its entirety for timeline generation. Please summarize this entire collection into a more concise overview, retaining only the most critical facts, names, dates, and events relevant to a legal case. Combined Summaries:\n\n${evidenceContext}`;
@@ -142,7 +148,7 @@ serve(async (req) => {
                 caseId,
                 supabaseClient,
                 `pre-summarization for timeline context`
-            ) as any; // Type assertion
+            ) as any;
             preSummaryResult = result.response.text();
         }
 
@@ -151,10 +157,9 @@ serve(async (req) => {
             await insertAgentActivity(supabaseClient, caseId, 'Timeline Agent', 'Chronology Specialist', 'Pre-summarization Complete', `Context reduced to ${evidenceContext.length} chars for timeline generation.`, 'completed');
         } else {
             await insertAgentActivity(supabaseClient, caseId, 'Timeline Agent', 'Chronology Specialist', 'Pre-summarization Failed', `Could not pre-summarize context. Proceeding with truncated context.`, 'error');
-            evidenceContext = evidenceContext.substring(0, MAX_CONTEXT_LENGTH); // Fallback to simple truncation
+            evidenceContext = evidenceContext.substring(0, MAX_CONTEXT_LENGTH);
         }
     }
-    // --- End: Handle large evidence context ---
 
     const focusInstruction = focus
       ? `Your analysis MUST focus exclusively on events related to the following topic: "${focus}". Ignore any events not directly relevant to this topic.`
@@ -207,17 +212,17 @@ serve(async (req) => {
         caseId,
         supabaseClient,
         `timeline generation for case ${caseId}`
-      ) as any; // Type assertion
+      ) as any;
       responseContent = result.response.text();
     } else {
       throw new Error(`Unsupported AI model: ${aiModel}`);
     }
 
-    console.log("AI Raw Response for Timeline:", responseContent); // Log raw response
+    console.log("AI Raw Response for Timeline:", responseContent);
     if (!responseContent) throw new Error("AI returned an empty response.");
 
     const timelineData = extractJson(responseContent);
-    console.log("Parsed Timeline Data:", timelineData); // Log parsed data
+    console.log("Parsed Timeline Data:", timelineData);
     
     if (!timelineData || !Array.isArray(timelineData.timeline_events)) {
       throw new Error(`AI did not return a valid JSON object with a 'timeline_events' array. Response: ${responseContent}`);
@@ -227,23 +232,24 @@ serve(async (req) => {
 
     const eventsToInsert = events.map((event: any) => ({
       case_id: caseId,
+      timeline_id: timelineId, // Link to the specific timeline
       timestamp: event.event_date && event.event_date !== "Date Unknown" ? new Date(event.event_date) : new Date(),
       title: event.title,
       description: event.description,
       insight_type: 'auto_generated_event',
-      relevant_file_ids: event.relevant_file_ids || [], // Ensure this is an array
+      relevant_file_ids: event.relevant_file_ids || [],
     }));
 
-    console.log("Events to Insert:", eventsToInsert); // Log events array before insert
+    console.log("Events to Insert:", eventsToInsert);
 
     if (eventsToInsert.length > 0) {
         const { error: insertError } = await supabaseClient.from('case_insights').insert(eventsToInsert);
         if (insertError) throw insertError;
     }
 
-    await insertAgentActivity(supabaseClient, caseId, 'Timeline Agent', 'Chronology Specialist', 'Timeline Generation', `Successfully generated and saved ${events.length} timeline events.`, 'completed');
+    await insertAgentActivity(supabaseClient, caseId, 'Timeline Agent', 'Chronology Specialist', 'Timeline Generation', `Successfully generated and saved ${events.length} timeline events for "${timelineName}".`, 'completed');
 
-    return new Response(JSON.stringify({ message: `Successfully generated ${events.length} timeline events.` }), {
+    return new Response(JSON.stringify({ message: `Successfully generated ${events.length} timeline events for "${timelineName}".` }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });
@@ -253,7 +259,7 @@ serve(async (req) => {
     if (caseId) {
       try {
         const supabaseClient = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
-        await insertAgentActivity(supabaseClient, caseId, 'Timeline Agent', 'Chronology Specialist', 'Timeline Generation', `Error during timeline generation: ${error.message}`, 'error');
+        await insertAgentActivity(supabaseClient, caseId, 'Timeline Agent', 'Chronology Specialist', 'Timeline Generation', `Error during timeline generation for "${timelineName || 'unknown timeline'}": ${error.message}`, 'error');
       } catch (logError) {
         console.error("Failed to log the primary error:", logError);
       }
