@@ -5,9 +5,10 @@ import { toast } from "sonner";
 interface Neo4jGraphViewerProps {
   dbId: string;
   serverPassword?: string;
+  caseId: string; // Add caseId prop
 }
 
-const Neo4jGraphViewer: React.FC<Neo4jGraphViewerProps> = ({ dbId, serverPassword }) => {
+const Neo4jGraphViewer: React.FC<Neo4jGraphViewerProps> = ({ dbId, serverPassword, caseId }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const vizRef = useRef<any>(null);
 
@@ -16,6 +17,11 @@ const Neo4jGraphViewer: React.FC<Neo4jGraphViewerProps> = ({ dbId, serverPasswor
 
     if (!dbId) {
       toast.error("Neo4j Database ID is missing. Please check your environment variables.");
+      return;
+    }
+
+    if (!caseId) {
+      toast.error("Case ID is missing for graph visualization.");
       return;
     }
 
@@ -34,7 +40,6 @@ const Neo4jGraphViewer: React.FC<Neo4jGraphViewerProps> = ({ dbId, serverPasswor
         serverUrl: `neo4j+s://${dbId}.databases.neo4j.io`,
         serverUser: "neo4j",
         serverPassword: serverPassword,
-        // Removed redundant 'encrypted' and 'trust' properties
       },
       labels: {
         Case: { caption: "name", color: "#ff4d4d" },
@@ -53,7 +58,7 @@ const Neo4jGraphViewer: React.FC<Neo4jGraphViewerProps> = ({ dbId, serverPasswor
         BASED_ON_FILE: { caption: true, color: "#A5A5A5" },
       },
       initialCypher: `
-        MATCH (c:Case {id: '${dbId}'})-[r]-(n) 
+        MATCH (c:Case {id: '${caseId}'})-[r]-(n) 
         OPTIONAL MATCH (n)-[r2]-(m) 
         RETURN c, r, n, r2, m 
         LIMIT 200
@@ -63,7 +68,7 @@ const Neo4jGraphViewer: React.FC<Neo4jGraphViewerProps> = ({ dbId, serverPasswor
     try {
       vizRef.current = new NeoVis(config);
       vizRef.current.render();
-      toast.success("Neo4j graph viewer initialized. Ensure credentials are set for connection.");
+      toast.success("Neo4j graph viewer initialized. Ensure credentials are set and data is exported.");
     } catch (e: any) {
       console.error("Error initializing NeoVis:", e);
       toast.error(`Failed to initialize graph viewer: ${e.message}. Check console for details.`);
@@ -75,7 +80,7 @@ const Neo4jGraphViewer: React.FC<Neo4jGraphViewerProps> = ({ dbId, serverPasswor
         vizRef.current = null;
       }
     };
-  }, [dbId, serverPassword]);
+  }, [dbId, serverPassword, caseId]); // Add caseId to dependencies
 
   return (
     <div className="flex flex-col h-full">

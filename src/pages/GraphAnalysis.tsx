@@ -52,12 +52,12 @@ const GraphAnalysis = () => {
           {/* Removed "Save as PNG" button as neovis.js handles its own rendering */}
         </div>
         <div className="flex-grow border rounded-lg overflow-hidden relative bg-gray-50 dark:bg-gray-900 p-4">
-          {dbId ? (
-            <Neo4jGraphViewer dbId={dbId} serverPassword={neo4jPassword} />
+          {dbId && caseId ? (
+            <Neo4jGraphViewer dbId={dbId} serverPassword={neo4jPassword} caseId={caseId} />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10">
               <p className="text-muted-foreground">
-                Neo4j connection details missing. Please ensure `VITE_NEO4J_CONNECTION_URI` is set in your .env file.
+                Neo4j connection details or Case ID missing. Please ensure `VITE_NEO4J_CONNECTION_URI` is set in your .env file and a case is selected.
               </p>
             </div>
           )}
