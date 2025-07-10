@@ -141,7 +141,8 @@ export const TimelineDisplay: React.FC<TimelineDisplayProps> = ({ caseId }) => {
       setSelectedFile(file);
       setIsViewerOpen(true);
     } else {
-      toast.error("File not found or metadata missing.");
+      console.error(`File with ID ${fileId} not found in metadata.`);
+      toast.error("File not found or metadata missing. It might have been deleted or not fully processed.");
     }
   };
 
@@ -180,6 +181,8 @@ export const TimelineDisplay: React.FC<TimelineDisplayProps> = ({ caseId }) => {
             // For export, just list the name and original path (Supabase Storage URL)
             const fileUrl = supabase.storage.from('evidence-files').getPublicUrl(file.file_path).data.publicUrl;
             content += `- [${file.suggested_name || file.file_name}](${fileUrl})\n`;
+          } else {
+            content += `- [File ID: ${fileId} (Not Found)]\n`;
           }
         });
       }
@@ -312,7 +315,19 @@ export const TimelineDisplay: React.FC<TimelineDisplayProps> = ({ caseId }) => {
                               <FileText className="h-3 w-3 mr-1" />
                               {file.suggested_name || file.file_name}
                             </Button>
-                          ) : null;
+                          ) : (
+                            <Button
+                              key={fileId}
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-3 text-xs text-red-500 border-red-300"
+                              disabled
+                              title="File not found or metadata missing."
+                            >
+                              <FileText className="h-3 w-3 mr-1" />
+                              File Missing ({fileId.substring(0, 4)}...)
+                            </Button>
+                          );
                         })}
                       </div>
                     )}
