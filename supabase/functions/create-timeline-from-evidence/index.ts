@@ -1,4 +1,3 @@
-/// <reference types="https://deno.land/x/deno_types/deno/stable/lib.deno.d.ts" />
 /// <import map="../../import_map.json" />
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.50.1';
@@ -172,7 +171,7 @@ serve(async (req) => {
       Your response MUST be a JSON object, with a single key "timeline_events" which is an array of objects. Each object should have "event_date", "title", "description", and "relevant_file_ids" keys.
       
       **IMPORTANT DATE FORMAT:** Ensure 'event_date' is always in 'YYYY-MM-DD' format. If a specific date cannot be determined, use "Date Unknown".
-      **IMPORTANT FILE IDs:** The 'relevant_file_ids' array MUST contain the exact UUIDs of the files from the provided context that are relevant to the event. If no specific file is relevant, provide an empty array [].
+      **CRITICAL: EXACT FILE IDs:** The 'relevant_file_ids' array MUST contain the *exact* UUIDs (e.g., "a1b2c3d4-e5f6-7890-1234-567890abcdef") of the files from the provided context that are relevant to the event. You *must* copy these IDs directly from the "ID: <UUID>" part of the file context. Do not invent or modify file IDs. If no specific file is relevant, provide an empty array [].
 
       Example Response:
       {
@@ -181,7 +180,7 @@ serve(async (req) => {
             "event_date": "2023-01-15",
             "title": "Financial Misconduct Alleged",
             "description": "Email from Jane Doe to John Doe alleges unauthorized transfer of funds.",
-            "relevant_file_ids": ["file-id-123", "file-id-456"]
+            "relevant_file_ids": ["file-id-123", "file-id-456"] // These must be exact UUIDs from the context
           },
           {
             "event_date": "Date Unknown",

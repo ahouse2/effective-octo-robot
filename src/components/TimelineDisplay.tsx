@@ -142,6 +142,7 @@ export const TimelineDisplay: React.FC<TimelineDisplayProps> = ({ caseId }) => {
       setIsViewerOpen(true);
     } else {
       console.error(`File with ID ${fileId} not found in metadata.`);
+      console.log("Available file IDs:", allFilesMetadata.map(f => f.id)); // Debugging log
       toast.error("File not found or metadata missing. It might have been deleted or not fully processed.");
     }
   };
