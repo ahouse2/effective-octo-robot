@@ -2,17 +2,17 @@ import React, { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
-import { toast } from "sonner";
 import { format } from "date-fns";
-import { Bot, FileText, Download, Printer } from "lucide-react";
+import { Bot, FileText, Download, Printer, Link } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DocumentViewer } from "./DocumentViewer";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { downloadTextFile } from "@/lib/download";
+import { toast } from "sonner";
 
 interface TimelineEvent {
   id: string;
-  timestamp: Date | null; // Changed to allow null
+  timestamp: Date | null;
   title: string;
   description: string;
   relevant_file_ids: string[] | null;
@@ -83,7 +83,7 @@ export const TimelineDisplay: React.FC<TimelineDisplayProps> = ({ caseId }) => {
 
       const events: TimelineEvent[] = (autoEventsData || []).map(event => ({
         id: event.id,
-        timestamp: event.timestamp ? new Date(event.timestamp) : null, // Handle null timestamp
+        timestamp: event.timestamp ? new Date(event.timestamp) : null,
         title: event.title,
         description: event.description,
         relevant_file_ids: event.relevant_file_ids,
@@ -126,14 +126,14 @@ export const TimelineDisplay: React.FC<TimelineDisplayProps> = ({ caseId }) => {
         }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'case_timelines', filter: `case_id=eq.${caseId}` }, () => {
-        fetchTimelineData(); // Re-fetch if a new timeline is added/updated/deleted
+        fetchTimelineData();
       })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [caseId, selectedTimelineId]); // Re-fetch when selectedTimelineId changes
+  }, [caseId, selectedTimelineId]);
 
   const handleFileLinkClick = (fileId: string) => {
     const file = allFilesMetadata.find(f => f.id === fileId);
@@ -141,10 +141,13 @@ export const TimelineDisplay: React.FC<TimelineDisplayProps> = ({ caseId }) => {
       setSelectedFile(file);
       setIsViewerOpen(true);
     } else {
-      console.error(`File with ID ${fileId} not found in metadata.`);
-      console.log("Available file IDs:", allFilesMetadata.map(f => f.id)); // Debugging log
       toast.error("File not found or metadata missing. It might have been deleted or not fully processed.");
     }
+  };
+
+  const getFilePublicUrl = (filePath: string) => {
+    const { data } = supabase.storage.from('evidence-files').getPublicUrl(filePath);
+    return data.publicUrl;
   };
 
   const displayedEvents = selectedTimelineId
@@ -179,8 +182,7 @@ export const TimelineDisplay: React.FC<TimelineDisplayProps> = ({ caseId }) => {
         event.relevant_file_ids.forEach(fileId => {
           const file = allFilesMetadata.find(f => f.id === fileId);
           if (file) {
-            // For export, just list the name and original path (Supabase Storage URL)
-            const fileUrl = supabase.storage.from('evidence-files').getPublicUrl(file.file_path).data.publicUrl;
+            const fileUrl = getFilePublicUrl(file.file_path);
             content += `- [${file.suggested_name || file.file_name}](${fileUrl})\n`;
           } else {
             content += `- [File ID: ${fileId} (Not Found)]\n`;
@@ -215,6 +217,8 @@ export const TimelineDisplay: React.FC<TimelineDisplayProps> = ({ caseId }) => {
               .description { font-size: 0.9em; color: #555; }
               .file-link { font-size: 0.8em; color: #007bff; text-decoration: none; }
               .file-link:hover { text-decoration: underline; }
+              .file-links-container { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+              .file-link-button { display: flex; align-items: center; padding: 4px 8px; border-radius: 4px; background: #f0f0f0; }
             </style>
           </head>
           <body>
@@ -302,34 +306,48 @@ export const TimelineDisplay: React.FC<TimelineDisplayProps> = ({ caseId }) => {
                     </h3>
                     <p className="text-sm text-muted-foreground description">{event.description}</p>
                     {event.relevant_file_ids && event.relevant_file_ids.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {event.relevant_file_ids.map(fileId => {
-                          const file = allFilesMetadata.find(f => f.id === fileId);
-                          return file ? (
-                            <Button
-                              key={fileId}
-                              variant="outline"
-                              size="sm"
-                              className="h-7 px-3 text-xs file-link"
-                              onClick={() => handleFileLinkClick(fileId)}
-                            >
-                              <FileText className="h-3 w-3 mr-1" />
-                              {file.suggested_name || file.file_name}
-                            </Button>
-                          ) : (
-                            <Button
-                              key={fileId}
-                              variant="outline"
-                              size="sm"
-                              className="h-7 px-3 text-xs text-red-500 border-red-300"
-                              disabled
-                              title="File not found or metadata missing."
-                            >
-                              <FileText className="h-3 w-3 mr-1" />
-                              File Missing ({fileId.substring(0, 4)}...)
-                            </Button>
-                          );
-                        })}
+                      <div className="mt-2">
+                        <p className="text-xs text-muted-foreground mb-1">Supporting Documents:</p>
+                        <div className="flex flex-wrap gap-2">
+                          {event.relevant_file_ids.map(fileId => {
+                            const file = allFilesMetadata.find(f => f.id === fileId);
+                            return file ? (
+                              <div key={fileId} className="flex items-center gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 px-3 text-xs"
+                                  onClick={() => handleFileLinkClick(fileId)}
+                                >
+                                  <FileText className="h-3 w-3 mr-1" />
+                                  {file.suggested_name || file.file_name}
+                                </Button>
+                                <a
+                                  href={getFilePublicUrl(file.file_path)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-xs text-blue-500 hover:text-blue-700 flex items-center"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <Link className="h-3 w-3 mr-1" />
+                                  Open in new tab
+                                </a>
+                              </div>
+                            ) : (
+                              <Button
+                                key={fileId}
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-3 text-xs text-red-500 border-red-300"
+                                disabled
+                                title="File not found or metadata missing."
+                              >
+                                <FileText className="h-3 w-3 mr-1" />
+                                File Missing ({fileId.substring(0, 4)}...)
+                              </Button>
+                            );
+                          })}
+                        </div>
                       </div>
                     )}
                   </div>
