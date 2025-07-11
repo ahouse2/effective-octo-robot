@@ -54,6 +54,12 @@ export const SessionContextProvider: React.FC<{ children: React.ReactNode }> = (
 
     getSession();
 
+    // Add error listener for the subscription itself
+    subscription.onError((error) => {
+      console.error("Supabase Auth WebSocket Error:", error);
+      toast.error("Real-time connection error. Please check your network or Supabase project settings.");
+    });
+
     return () => subscription.unsubscribe();
   }, [navigate, location.pathname]);
 
