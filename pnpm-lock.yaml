@@ -104,15 +104,9 @@ importers:
       '@supabase/auth-ui-shared':
         specifier: ^0.1.8
         version: 0.1.8(@supabase/supabase-js@2.50.1(ws@8.18.2))
-      '@supabase/supabase-js':
-        specifier: ^2.50.1
-        version: 2.50.1(ws@8.18.2)
       '@tanstack/react-query':
         specifier: ^5.56.2
         version: 5.74.4(react@18.3.1)
-      '@types/lodash':
-        specifier: ^4.17.20
-        version: 4.17.20
       '@types/react-pdf':
         specifier: ^7.0.0
         version: 7.0.0(@types/react@18.3.20)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -201,6 +195,9 @@ importers:
       '@tailwindcss/typography':
         specifier: ^0.5.15
         version: 0.5.16(tailwindcss@3.4.17)
+      '@types/lodash':
+        specifier: ^4.17.7
+        version: 4.17.20
       '@types/node':
         specifier: ^22.5.5
         version: 22.14.1
