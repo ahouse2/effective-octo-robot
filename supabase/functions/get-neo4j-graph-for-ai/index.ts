@@ -1,6 +1,7 @@
+/// <import map="./import_map.json" />
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.1';
-import neo4j from "https://esm.sh/neo4j-driver@5.28.1"; // Import the Neo4j driver
+import { Neo4j } from "@/deno_neo4j/mod.ts"; // Corrected import path
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -17,8 +18,7 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  let driver;
-  let session;
+  let driver: Neo4j | undefined;
 
   try {
     const { caseId } = await req.json();
@@ -34,47 +34,59 @@ serve(async (req) => {
       throw new Error('Neo4j connection URI or credentials (Username/Password) are not set in Supabase secrets.');
     }
 
-    // Initialize Neo4j Driver
-    driver = neo4j.driver(NEO4J_CONNECTION_URI, neo4j.auth.basic(NEO4J_USERNAME, NEO4J_PASSWORD));
-    session = driver.session();
+    // Initialize Deno-native Neo4j Client
+    driver = new Neo4j(NEO4J_CONNECTION_URI, { username: NEO4J_USERNAME, password: NEO4J_PASSWORD });
+    await driver.connect();
 
-    console.log(`Fetching graph data for AI analysis for case: ${caseId} using Neo4j Driver.`);
+    console.log(`Fetching graph data for AI analysis for case: ${caseId} using Deno Neo4j Client.`);
 
     let graphTextRepresentation = "";
     try {
-      const result = await session.run(
-        'MATCH (c:Case {id: $caseId})-[r]-(n) RETURN c, r, n',
+      // Query to return relationships in a format suitable for text representation
+      const { records } = await driver.query(
+        `
+        MATCH (c:Case {id: $caseId})-[r]-(n) 
+        OPTIONAL MATCH (n)-[r2]-(m) 
+        RETURN 
+          labels(c) AS c_labels, properties(c).name AS c_name, properties(c).title AS c_title, properties(c).suggested_name AS c_suggested_name,
+          labels(n) AS n_labels, properties(n).name AS n_name, properties(n).title AS n_title, properties(n).suggested_name AS n_suggested_name,
+          type(r) AS r_type,
+          CASE WHEN r2 IS NOT NULL THEN labels(m) ELSE NULL END AS m_labels, 
+          CASE WHEN r2 IS NOT NULL THEN properties(m).name ELSE NULL END AS m_name, 
+          CASE WHEN r2 IS NOT NULL THEN properties(m).title ELSE NULL END AS m_title, 
+          CASE WHEN r2 IS NOT NULL THEN properties(m).suggested_name ELSE NULL END AS m_suggested_name,
+          CASE WHEN r2 IS NOT NULL THEN type(r2) ELSE NULL END AS r2_type
+        LIMIT 200
+        `
+        ,
         { caseId }
       );
 
-      if (result.records.length === 0) {
+      if (records.length === 0) {
         throw new Error("No graph data found for this case in Neo4j. Please export the data first.");
       }
 
       const relationships = new Set<string>();
-      result.records.forEach(record => {
-        // Extract nodes and relationships from the record fields
-        const nodesInRecord = record._fields.filter((f: any) => f.labels);
-        const relationshipsInRecord = record._fields.filter((f: any) => f.type);
+      records.forEach(record => {
+        const c_labels = record[0];
+        const c_name = record[1] || record[2] || record[3] || c_labels[0];
+        const n_labels = record[4];
+        const n_name = record[5] || record[6] || record[7] || n_labels[0];
+        const r_type = record[8];
 
-        relationshipsInRecord.forEach((rel: any) => {
-          const startNode = nodesInRecord.find((n: any) => n.elementId === rel.startNodeElementId);
-          const endNode = nodesInRecord.find((n: any) => n.elementId === rel.endNodeElementId);
-          
-          if (startNode && endNode) {
-            const n1Label = startNode.labels[0];
-            const n1Name = startNode.properties.name || startNode.properties.title || startNode.properties.suggested_name || n1Label;
-            const n2Label = endNode.labels[0];
-            const n2Name = endNode.properties.name || endNode.properties.title || endNode.properties.suggested_name || n2Label;
-            const relType = rel.type;
+        relationships.add(`(${c_labels[0]}: ${c_name})-[:${r_type}]->(${n_labels[0]}: ${n_name})`);
 
-            relationships.add(`(${n1Label}: ${n1Name})-[:${relType}]->(${n2Label}: ${n2Name})`);
-          }
-        });
+        const m_labels = record[9];
+        const m_name = record[10] || record[11] || record[12] || (m_labels ? m_labels[0] : null);
+        const r2_type = record[13];
+
+        if (r2_type && m_labels && m_name) {
+          relationships.add(`(${n_labels[0]}: ${n_name})-[:${r2_type}]->(${m_labels[0]}: ${m_name})`);
+        }
       });
       graphTextRepresentation = Array.from(relationships).join('\n');
     } finally {
-      // Session and driver are closed in the outer finally block
+      // Driver is closed in the outer finally block
     }
 
     if (graphTextRepresentation.length > MAX_GRAPH_TEXT_LENGTH) {
@@ -133,7 +145,6 @@ serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } finally {
-    if (session) await session.close();
     if (driver) await driver.close();
   }
 });

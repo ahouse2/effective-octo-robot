@@ -1,5 +1,5 @@
-import { v4 } from "uuid/v4";
-import { encode } from "encoding/base64";
+import { v4 } from "https://deno.land/std@0.224.0/uuid/v4.ts";
+import { encode } from "https://deno.land/std@0.224.0/encoding/base64.ts";
 
 export class Neo4j {
   private url: string;

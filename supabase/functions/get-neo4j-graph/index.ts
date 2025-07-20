@@ -1,6 +1,7 @@
+/// <import map="./import_map.json" />
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.1';
-import neo4j from "https://esm.sh/neo4j-driver@5.28.1"; // Import the Neo4j driver
+import { Neo4j } from "@/deno_neo4j/mod.ts"; // Corrected import path
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -16,8 +17,7 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  let driver;
-  let session;
+  let driver: Neo4j | undefined;
 
   try {
     const { caseId } = await req.json();
@@ -33,47 +33,99 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Neo4j connection URI or credentials (Username/Password) are not set in Supabase secrets.' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Initialize Neo4j Driver
-    driver = neo4j.driver(NEO4J_CONNECTION_URI, neo4j.auth.basic(NEO4J_USERNAME, NEO4J_PASSWORD));
-    session = driver.session();
+    // Initialize Deno-native Neo4j Client
+    driver = new Neo4j(NEO4J_CONNECTION_URI, { username: NEO4J_USERNAME, password: NEO4J_PASSWORD });
+    await driver.connect();
 
-    console.log(`Fetching graph data for case: ${caseId} using Neo4j Driver.`);
-    const result = await session.run(
-      'MATCH (c:Case {id: $caseId})-[r]-(n) RETURN c, r, n',
+    console.log(`Fetching graph data for case: ${caseId} using Deno Neo4j Client.`);
+    
+    // Query to return nodes and relationships in a format easier to parse
+    const { records } = await driver.query(
+      `
+      MATCH (c:Case {id: $caseId})-[r]-(n) 
+      OPTIONAL MATCH (n)-[r2]-(m) 
+      RETURN 
+        apoc.map.merge(properties(c), {id: id(c), labels: labels(c)}) AS c_node, 
+        apoc.map.merge(properties(n), {id: id(n), labels: labels(n)}) AS n_node, 
+        type(r) AS r_type, id(startNode(r)) AS r_start, id(endNode(r)) AS r_end,
+        CASE WHEN r2 IS NOT NULL THEN apoc.map.merge(properties(m), {id: id(m), labels: labels(m)}) ELSE NULL END AS m_node,
+        CASE WHEN r2 IS NOT NULL THEN type(r2) ELSE NULL END AS r2_type, 
+        CASE WHEN r2 IS NOT NULL THEN id(startNode(r2)) ELSE NULL END AS r2_start, 
+        CASE WHEN r2 IS NOT NULL THEN id(endNode(r2)) ELSE NULL END AS r2_end
+      LIMIT 200
+      `,
       { caseId }
     );
 
-    if (result.records.length === 0) {
+    if (records.length === 0) {
       throw new Error("No graph data found for this case in Neo4j. Please export the data first.");
     }
 
     const nodesMap = new Map();
     const linksMap = new Map();
 
-    result.records.forEach(record => {
-      // Extract nodes and relationships from the record fields
-      record._fields.forEach((field: any) => {
-        if (field.labels) { // It's a node
-          if (!nodesMap.has(field.elementId)) {
-            nodesMap.set(field.elementId, {
-              id: field.elementId,
-              name: field.properties.name || field.properties.title || field.properties.suggested_name || field.labels[0],
-              label: field.labels[0],
-            });
-          }
-        } else if (field.type) { // It's a relationship
-          const sourceId = field.startNodeElementId;
-          const targetId = field.endNodeElementId;
-          const linkKey = `${sourceId}-${targetId}-${field.type}`;
-          if (!linksMap.has(linkKey)) {
-            linksMap.set(linkKey, {
-              source: sourceId,
-              target: targetId,
-              label: field.type,
-            });
-          }
+    records.forEach(record => {
+      // Each record is an array of values returned by the RETURN clause
+      const c_node = record[0];
+      const n_node = record[1];
+      const r_type = record[2];
+      const r_start = record[3];
+      const r_end = record[4];
+      const m_node = record[5];
+      const r2_type = record[6];
+      const r2_start = record[7];
+      const r2_end = record[8];
+
+      // Add c_node
+      if (c_node && !nodesMap.has(c_node.id)) {
+        nodesMap.set(c_node.id, {
+          id: c_node.id,
+          name: c_node.name || c_node.title || c_node.suggested_name || c_node.labels[0],
+          label: c_node.labels[0],
+        });
+      }
+
+      // Add n_node
+      if (n_node && !nodesMap.has(n_node.id)) {
+        nodesMap.set(n_node.id, {
+          id: n_node.id,
+          name: n_node.name || n_node.title || n_node.suggested_name || n_node.labels[0],
+          label: n_node.labels[0],
+        });
+      }
+
+      // Add m_node (if exists)
+      if (m_node && !nodesMap.has(m_node.id)) {
+        nodesMap.set(m_node.id, {
+          id: m_node.id,
+          name: m_node.name || m_node.title || m_node.suggested_name || m_node.labels[0],
+          label: m_node.labels[0],
+        });
+      }
+
+      // Add first relationship (c)-[r]-(n)
+      if (r_type && r_start && r_end) {
+        const linkKey = `${r_start}-${r_end}-${r_type}`;
+        if (!linksMap.has(linkKey)) {
+          linksMap.set(linkKey, {
+            source: r_start,
+            target: r_end,
+            label: r_type,
+          });
         }
-      });
+      }
+
+      // Add second relationship (n)-[r2]-(m) if it exists
+      if (r2_type && r2_start && r2_end) {
+        const linkKey = `${r2_start}-${r2_end}-${r2_type}`;
+        if (!linksMap.has(linkKey)) {
+          linksMap.set(linkKey, {
+            source: r2_start,
+            target: r2_end,
+            label: r2_type,
+          });
+        }
+      }
     });
       
     const graphData = {
@@ -95,7 +147,6 @@ serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } finally {
-    if (session) await session.close();
     if (driver) await driver.close();
   }
 });

@@ -1,6 +1,7 @@
+/// <import map="./import_map.json" />
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.1';
-import neo4j from "https://esm.sh/neo4j-driver@5.28.1"; // Import the Neo4j driver
+import { Neo4j } from "@/deno_neo4j/mod.ts"; // Corrected import path
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,8 +16,7 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  let driver;
-  let session;
+  let driver: Neo4j | undefined;
 
   try {
     const { caseId } = await req.json();
@@ -32,9 +32,9 @@ serve(async (req) => {
       throw new Error('Neo4j connection URI or credentials (Username/Password) are not set in Supabase secrets.');
     }
 
-    // Initialize Neo4j Driver
-    driver = neo4j.driver(NEO4J_CONNECTION_URI, neo4j.auth.basic(NEO4J_USERNAME, NEO4J_PASSWORD));
-    session = driver.session();
+    // Initialize Deno-native Neo4j Client
+    driver = new Neo4j(NEO4J_CONNECTION_URI, { username: NEO4J_USERNAME, password: NEO4J_PASSWORD });
+    await driver.connect();
 
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -170,9 +170,9 @@ serve(async (req) => {
       });
     }
 
-    // Execute all Cypher statements in a single transaction
+    // Execute all Cypher statements
     for (const stmt of cypherStatements) {
-      await session.run(stmt.statement, stmt.parameters);
+      await driver.query(stmt.statement, stmt.parameters);
     }
 
     return new Response(JSON.stringify({ message: 'Case data exported to Neo4j successfully!' }), {
@@ -187,7 +187,6 @@ serve(async (req) => {
       status: 500,
     });
   } finally {
-    if (session) await session.close();
     if (driver) await driver.close();
   }
 });
