@@ -1,17 +1,17 @@
 "use client";
 
 import * as React from "react";
-import { ResizablePanelGroup as ResizablePanelGroupPrimitive, ResizablePanel as ResizablePanelPrimitive, PanelResizeHandle } from "react-resizable-panels"; // Corrected imports
+import { ResizablePanelGroup, ResizablePanel, PanelResizeHandle } from "react-resizable-panels"; // Corrected imports
 import { GripVertical } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-const ResizablePanelGroup = ({
+const ResizablePanelGroupComponent = ({ // Renamed to avoid conflict with imported type
   className,
   children,
   ...props
-}: React.ComponentProps<typeof ResizablePanelGroupPrimitive>) => (
-  <ResizablePanelGroupPrimitive
+}: React.ComponentProps<typeof ResizablePanelGroup>) => (
+  <ResizablePanelGroup
     className={cn(
       "flex h-full w-full data-[panel-group-direction=vertical]:flex-col",
       className,
@@ -19,10 +19,10 @@ const ResizablePanelGroup = ({
     {...props}
   >
     {children}
-  </ResizablePanelGroupPrimitive>
+  </ResizablePanelGroup>
 );
 
-const ResizablePanel = ResizablePanelPrimitive; // Export ResizablePanel
+const ResizablePanelComponent = ResizablePanel; // Renamed to avoid conflict with imported type
 
 const ResizableHandle = ({
   withHandle,
@@ -46,4 +46,4 @@ const ResizableHandle = ({
   </PanelResizeHandle>
 );
 
-export { ResizablePanelGroup, ResizablePanel, ResizableHandle };
+export { ResizablePanelGroupComponent as ResizablePanelGroup, ResizablePanelComponent as ResizablePanel, ResizableHandle };
