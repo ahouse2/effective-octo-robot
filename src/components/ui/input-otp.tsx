@@ -1,10 +1,10 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import { OTPInput, SlotProps } from "input-otp"
-import { Dot } from "lucide-react"
+import * as React from "react";
+import { OTPInput, Slot, type SlotProps } from "input-otp";
+import { Dot } from "lucide-react";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
 const InputOTP = React.forwardRef<
   React.ElementRef<typeof OTPInput>,
@@ -14,52 +14,52 @@ const InputOTP = React.forwardRef<
     ref={ref}
     containerClassName={cn(
       "flex items-center gap-2 has-[:disabled]:opacity-50",
-      containerClassName
+      containerClassName,
     )}
     className={cn("disabled:cursor-not-allowed", className)}
     {...props}
   />
-))
-InputOTP.displayName = "InputOTP"
+));
+InputOTP.displayName = "InputOTP";
 
 const InputOTPSlot = React.forwardRef<
-  React.ElementRef<"div">,
-  SlotProps & { has?: boolean; isActive?: boolean } & React.ComponentPropsWithoutRef<"div"> // Added has and isActive to props
->(({ char, has, isActive, className, ...props }, ref) => {
-  return (
-    <div
-      ref={ref}
-      className={cn(
-        "relative flex h-9 w-9 items-center justify-center border-y border-r border-input text-sm shadow-sm transition-all first:rounded-l-md first:border-l last:rounded-r-md",
-        isActive && "z-10 ring-1 ring-ring",
-        className
-      )}
-      {...props}
-    >
-      {char}
-      {has && (
-        <div
-          className={cn(
-            "absolute inset-0 flex items-center justify-center",
-            isActive ? "text-foreground" : "text-muted-foreground"
-          )}
-        >
-          <Dot />
-        </div>
-      )}
-    </div>
-  )
-})
-InputOTPSlot.displayName = "InputOTPSlot"
+  React.ElementRef<typeof Slot>,
+  React.ComponentPropsWithoutRef<typeof Slot> & { index: number }
+>(({ index, className, ...props }, ref) => (
+  <Slot
+    ref={ref}
+    index={index}
+    className={cn(
+      "relative flex h-9 w-9 items-center justify-center border-y border-r border-input text-sm shadow-sm transition-all first:rounded-l-md first:border-l last:rounded-r-md",
+      "focus-within:z-10 focus-within:ring-1 focus-within:ring-ring",
+      className,
+    )}
+    {...props}
+  >
+    {({ isActive, char, isFocused }: SlotProps) => ( // Destructure isFocused from SlotProps
+      <React.Fragment>
+        {char}
+        {isActive && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <div className="h-4 w-px animate-caret-blink bg-foreground duration-1000" />
+          </div>
+        )}
+      </React.Fragment>
+    )}
+  </Slot>
+));
+InputOTPSlot.displayName = "InputOTPSlot";
 
-const InputOTPSeparator = React.forwardRef<
-  React.ElementRef<"div">,
-  React.ComponentPropsWithoutRef<"div">
->(({ ...props }, ref) => (
-  <div ref={ref} role="separator" {...props}>
-    <Dot />
-  </div>
-))
-InputOTPSeparator.displayName = "InputOTPSeparator"
+const InputOTPDot = React.forwardRef<
+  React.ElementRef<typeof Dot>,
+  React.ComponentPropsWithoutRef<typeof Dot>
+>(({ className, ...props }, ref) => (
+  <Dot
+    ref={ref}
+    className={cn("h-2 w-2", className)}
+    {...props}
+  />
+));
+InputOTPDot.displayName = "InputOTPDot";
 
-export { InputOTP, InputOTPSlot, InputOTPSeparator }
+export { InputOTP, InputOTPSlot, InputOTPDot };
