@@ -12,6 +12,15 @@ declare module "https://deno.land/std@0.224.0/http/server.ts" {
   export function serve(handler: (req: Request) => Promise<Response> | Response): Promise<void>;
 }
 
+declare module "https://deno.land/std@0.224.0/uuid/v4.ts" {
+  export function v4(): string;
+}
+
+declare module "https://deno.land/std@0.224.0/encoding/base64.ts" {
+  export function encode(input: string | Uint8Array): string;
+  export function decode(input: string): Uint8Array;
+}
+
 declare module "https://esm.sh/@supabase/supabase-js@2.50.1" {
   import { SupabaseClient as SupabaseClientOriginal, createClient as createClientOriginal, Session, User } from '@supabase/supabase-js';
   export { Session, User };

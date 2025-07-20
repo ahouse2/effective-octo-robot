@@ -13,6 +13,7 @@ const corsHeaders = {
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
+    console.log('Received OPTIONS request for export-to-neo4j');
     return new Response(null, { headers: corsHeaders });
   }
 
@@ -20,6 +21,7 @@ serve(async (req) => {
 
   try {
     const { caseId } = await req.json();
+    console.log(`Received request to export case ID: ${caseId} to Neo4j.`);
     if (!caseId) {
       return new Response(JSON.stringify({ error: 'Case ID is required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
@@ -29,20 +31,25 @@ serve(async (req) => {
     const NEO4J_PASSWORD = Deno.env.get('NEO4J_PASSWORD');
 
     if (!NEO4J_CONNECTION_URI || !NEO4J_USERNAME || !NEO4J_PASSWORD) {
-      throw new Error('Neo4j connection URI or credentials (Username/Password) are not set in Supabase secrets.');
+      console.error('Neo4j environment variables are not set.');
+      throw new Error('Neo4j connection URI or credentials (Username/Password) are not set in Supabase secrets. Please configure SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, NEO4J_CONNECTION_URI, NEO4J_USERNAME, NEO4J_PASSWORD in your Supabase project secrets.');
     }
+    console.log('Neo4j credentials found. Attempting to connect...');
 
     // Initialize Deno-native Neo4j Client
     driver = new Neo4j(NEO4J_CONNECTION_URI, { username: NEO4J_USERNAME, password: NEO4J_PASSWORD });
     await driver.connect();
+    console.log('Successfully connected to Neo4j.');
 
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
       { auth: { persistSession: false } }
     );
+    console.log('Supabase client initialized.');
 
     // Fetch all relevant data for the case
+    console.log('Fetching case data from Supabase...');
     const [{ data: caseData, error: caseError },
            { data: filesData, error: filesError },
            { data: insightsData, error: insightsError },
@@ -53,8 +60,15 @@ serve(async (req) => {
       supabaseClient.from('case_theories').select('*').eq('case_id', caseId).single(),
     ]);
 
-    if (caseError) throw new Error(`Failed to fetch case data: ${caseError.message}`);
-    if (!caseData) throw new Error(`Case with ID ${caseId} not found.`);
+    if (caseError) {
+      console.error(`Failed to fetch case data: ${caseError.message}`);
+      throw new Error(`Failed to fetch case data: ${caseError.message}`);
+    }
+    if (!caseData) {
+      console.warn(`Case with ID ${caseId} not found in Supabase.`);
+      throw new Error(`Case with ID ${caseId} not found.`);
+    }
+    console.log('Case data fetched successfully.');
 
     const cypherStatements: { statement: string; parameters: Record<string, any> }[] = [];
 
@@ -69,9 +83,11 @@ serve(async (req) => {
         last_updated: caseData.last_updated,
       },
     });
+    console.log('Added Cypher for Case node.');
 
     // 2. Create or merge File nodes and link to Case
     if (filesData && filesData.length > 0) {
+      console.log(`Found ${filesData.length} files. Adding Cypher for File nodes and relationships...`);
       for (const file of filesData) {
         cypherStatements.push({
           statement: `
@@ -113,10 +129,13 @@ serve(async (req) => {
           }
         }
       }
+    } else {
+      console.log('No files found for this case.');
     }
 
     // 3. Create or merge Insight nodes and link to Case
     if (insightsData && insightsData.length > 0) {
+      console.log(`Found ${insightsData.length} insights. Adding Cypher for Insight nodes and relationships...`);
       for (const insight of insightsData) {
         cypherStatements.push({
           statement: `
@@ -148,10 +167,13 @@ serve(async (req) => {
           }
         }
       }
+    } else {
+      console.log('No insights found for this case.');
     }
 
     // 4. Create or merge CaseTheory node and link to Case
     if (theoryData) {
+      console.log('Found case theory. Adding Cypher for CaseTheory node and relationship...');
       cypherStatements.push({
         statement: `
           MERGE (t:CaseTheory {id: $theoryId})
@@ -168,12 +190,17 @@ serve(async (req) => {
           caseId: caseData.id,
         },
       });
+    } else {
+      console.log('No case theory found for this case.');
     }
 
     // Execute all Cypher statements
+    console.log(`Executing ${cypherStatements.length} Cypher statements...`);
     for (const stmt of cypherStatements) {
+      console.log(`Executing: ${stmt.statement} with params: ${JSON.stringify(stmt.parameters)}`);
       await driver.query(stmt.statement, stmt.parameters);
     }
+    console.log('All Cypher statements executed successfully.');
 
     return new Response(JSON.stringify({ message: 'Case data exported to Neo4j successfully!' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -181,12 +208,15 @@ serve(async (req) => {
     });
 
   } catch (error: any) {
-    console.error('Edge Function error:', error.message);
+    console.error('Edge Function error during Neo4j export:', error.message, error.stack);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,
     });
   } finally {
-    if (driver) await driver.close();
+    if (driver) {
+      console.log('Closing Neo4j connection.');
+      await driver.close();
+    }
   }
 });
