@@ -6,7 +6,7 @@ import useEmblaCarousel, {
   type EmblaCarouselType,
   type EmblaViewportRefType,
 } from "embla-carousel-react";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react"; // Corrected import syntax
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -54,7 +54,7 @@ const Carousel = React.forwardRef<
     },
     ref,
   ) => {
-    const [carouselRef, api] = useEmblaCarousel({
+    const [carouselRef, carouselApi] = useEmblaCarousel({
       ...opts,
       axis: orientation === "horizontal" ? "x" : "y",
     });
@@ -67,12 +67,12 @@ const Carousel = React.forwardRef<
     }, []);
 
     const scrollPrev = React.useCallback(() => {
-      api?.scrollPrev();
-    }, [api]);
+      carouselApi?.scrollPrev();
+    }, [carouselApi]);
 
     const scrollNext = React.useCallback(() => {
-      api?.scrollNext();
-    }, [api]);
+      carouselApi?.scrollNext();
+    }, [carouselApi]);
 
     const handleKeyDown = React.useCallback(
       (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -88,24 +88,24 @@ const Carousel = React.forwardRef<
     );
 
     React.useEffect(() => {
-      if (!api) {
+      if (!carouselApi) {
         return;
       }
 
-      onSelect(api);
-      api.on("reInit", onSelect);
-      api.on("select", onSelect);
+      onSelect(carouselApi);
+      carouselApi.on("reInit", onSelect);
+      carouselApi.on("select", onSelect);
 
       if (setApi) {
-        setApi(api);
+        setApi(carouselApi);
       }
-    }, [api, onSelect, setApi]);
+    }, [carouselApi, onSelect, setApi]);
 
     return (
       <CarouselContext.Provider
         value={{
           carouselRef,
-          api,
+          api: carouselApi,
           scrollPrev,
           scrollNext,
           canScrollPrev,

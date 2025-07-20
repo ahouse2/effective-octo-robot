@@ -19,7 +19,7 @@ import {
   YAxis,
 } from "recharts";
 
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/utils"; // Import cn
 
 // Define ChartConfig and related types locally or import from a non-circular source
 export type ChartConfig = {
