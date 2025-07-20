@@ -1,16 +1,16 @@
 "use client";
 
 import * as React from "react";
-import { ResizablePanelGroup, ResizablePanel, PanelResizeHandle } from "react-resizable-panels";
+import { ResizablePanelGroup as ResizablePanelGroupPrimitive, ResizablePanel as ResizablePanelPrimitive, PanelResizeHandle as PanelResizeHandlePrimitive } from "react-resizable-panels";
 import { GripVertical } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-const ResizablePanelGroupComponent = React.forwardRef<
-  React.ElementRef<typeof ResizablePanelGroup>,
-  React.ComponentPropsWithoutRef<typeof ResizablePanelGroup>
+const ResizablePanelGroup = React.forwardRef<
+  React.ElementRef<typeof ResizablePanelGroupPrimitive>,
+  React.ComponentPropsWithoutRef<typeof ResizablePanelGroupPrimitive>
 >(({ className, ...props }, ref) => (
-  <ResizablePanelGroup
+  <ResizablePanelGroupPrimitive
     ref={ref}
     className={cn(
       "flex h-full w-full data-[panel-group-direction=vertical]:flex-col",
@@ -19,27 +19,27 @@ const ResizablePanelGroupComponent = React.forwardRef<
     {...props}
   />
 ));
-ResizablePanelGroupComponent.displayName = "ResizablePanelGroup";
+ResizablePanelGroup.displayName = "ResizablePanelGroup";
 
-const ResizablePanelComponent = React.forwardRef<
-  React.ElementRef<typeof ResizablePanel>,
-  React.ComponentPropsWithoutRef<typeof ResizablePanel>
+const ResizablePanel = React.forwardRef<
+  React.ElementRef<typeof ResizablePanelPrimitive>,
+  React.ComponentPropsWithoutRef<typeof ResizablePanelPrimitive>
 >(({ className, ...props }, ref) => (
-  <ResizablePanel
+  <ResizablePanelPrimitive
     ref={ref}
     className={cn(className)}
     {...props}
   />
 ));
-ResizablePanelComponent.displayName = "ResizablePanel";
+ResizablePanel.displayName = "ResizablePanel";
 
 const ResizableHandle = React.forwardRef<
-  React.ElementRef<typeof PanelResizeHandle>,
-  React.ComponentPropsWithoutRef<typeof PanelResizeHandle> & {
+  React.ElementRef<typeof PanelResizeHandlePrimitive>,
+  React.ComponentPropsWithoutRef<typeof PanelResizeHandlePrimitive> & {
     withHandle?: boolean;
   }
 >(({ withHandle, className, ...props }, ref) => (
-  <PanelResizeHandle
+  <PanelResizeHandlePrimitive
     ref={ref}
     className={cn(
       "relative flex w-px items-center justify-center bg-border after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 data-[panel-group-direction=vertical]:h-px data-[panel-group-direction=vertical]:w-full data-[panel-group-direction=vertical]:after:inset-x-0 data-[panel-group-direction=vertical]:after:h-1 data-[panel-group-direction=vertical]:after:w-full data-[panel-group-direction=vertical]:after:-translate-y-1/2 data-[panel-group-direction=vertical]:after:-translate-x-0",
@@ -52,8 +52,8 @@ const ResizableHandle = React.forwardRef<
         <GripVertical className="h-2.5 w-2.5" />
       </div>
     )}
-  </PanelResizeHandle>
+  </PanelResizeHandlePrimitive>
 );
 ResizableHandle.displayName = "ResizableHandle";
 
-export { ResizablePanelGroupComponent as ResizablePanelGroup, ResizablePanelComponent as ResizablePanel, ResizableHandle };
+export { ResizablePanelGroup, ResizablePanel, ResizableHandle };
