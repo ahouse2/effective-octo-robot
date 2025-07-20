@@ -21,12 +21,8 @@ declare module "https://deno.land/std@0.224.0/encoding/base64.ts" {
   export function decode(input: string): Uint8Array;
 }
 
-declare module "https://esm.sh/@supabase/supabase-js@2.50.1" {
-  import { SupabaseClient as SupabaseClientOriginal, createClient as createClientOriginal, Session, User } from '@supabase/supabase-js';
-  export { Session, User };
-  export const createClient: typeof createClientOriginal;
-  export type SupabaseClient = SupabaseClientOriginal;
-}
+// Removed: declare module "https://esm.sh/@supabase/supabase-js@2.50.1" { ... }
+// This declaration is removed to allow TypeScript to use the official types from the installed npm package.
 
 declare module "https://esm.sh/@google/generative-ai@0.15.0" {
   import { GoogleGenerativeAI as GoogleGenerativeAIOriginal, GenerativeModel } from '@google/generative-ai';
