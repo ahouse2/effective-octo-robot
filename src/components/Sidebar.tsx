@@ -5,7 +5,7 @@ import { FolderKanban, Gavel, User, LogOut, Scale } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { SidebarThemeToggle } from "./SidebarThemeToggle"; // Correct import path
+import { SidebarThemeToggle } from "./SidebarThemeToggle"; // Corrected import path
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {}
 
