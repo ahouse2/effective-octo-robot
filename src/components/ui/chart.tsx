@@ -243,7 +243,7 @@ const ChartPrimitive = React.forwardRef<
   const { orientation } = useChart();
   return (
     <ResponsiveContainer
-      ref={ref}
+      // ref={ref} // Removed ref from Recharts component
       className={cn(
         orientation === "horizontal" && "aspect-[2/1]",
         orientation === "vertical" && "aspect-[1/2]",
