@@ -35,7 +35,7 @@ const InputOTPSlot = React.forwardRef<
   React.HTMLAttributes<HTMLDivElement> & { index: number }
 >(({ index, className, ...props }, ref) => {
   const inputOTPContext = React.useContext(OTPInputContext);
-  const { char, hasFocused, isActive } = inputOTPContext.slots[index]; // Reverted to hasFocused
+  const { char, isFocused, isActive } = inputOTPContext.slots[index]; // Corrected to isFocused
 
   return (
     <div
@@ -43,7 +43,7 @@ const InputOTPSlot = React.forwardRef<
       className={cn(
         "relative flex h-9 w-9 items-center justify-center border-y border-r border-input text-sm shadow-sm transition-all first:rounded-l-md first:border-l last:rounded-r-md",
         isActive && "z-10 ring-1 ring-ring",
-        hasFocused && "z-20 ring-2 ring-ring", // Reverted to hasFocused
+        isFocused && "z-20 ring-2 ring-ring", // Corrected to isFocused
         className,
       )}
       {...props}
