@@ -20,49 +20,43 @@ export const SessionContextProvider: React.FC<{ children: React.ReactNode }> = (
   const location = useLocation();
 
   useEffect(() => {
-    let mounted = true;
-
-    const getSession = async () => {
-      const { data: { session: initialSession }, error } = await supabase.auth.getSession();
-      if (error) {
-        console.error("Error getting initial session:", error);
-        toast.error("Failed to retrieve session.");
-      }
-      if (mounted) {
-        setSession(initialSession);
-        setUser(initialSession?.user || null);
-        setLoading(false);
-        if (!initialSession && location.pathname !== '/login') {
-          navigate('/login');
-        }
-      }
-    };
-
-    getSession();
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
-      if (!mounted) return;
-      
       setSession(currentSession);
       setUser(currentSession?.user || null);
       setLoading(false);
 
       if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
         if (location.pathname === '/login') {
-          navigate('/');
+          navigate('/'); // Redirect to home if logged in and on login page
         }
       } else if (event === 'SIGNED_OUT') {
         if (location.pathname !== '/login') {
-          navigate('/login');
+          navigate('/login'); // Redirect to login if logged out and not already on login page
           toast.info("You have been logged out.");
         }
       }
     });
 
-    return () => {
-      mounted = false;
-      subscription?.unsubscribe();
+    // Initial session check
+    const getSession = async () => {
+      const { data: { session: initialSession }, error } = await supabase.auth.getSession();
+      if (error) {
+        console.error("Error getting initial session:", error);
+        toast.error("Failed to retrieve session.");
+      }
+      setSession(initialSession);
+      setUser(initialSession?.user || null);
+      setLoading(false);
+      if (!initialSession && location.pathname !== '/login') {
+        navigate('/login');
+      }
     };
+
+    getSession();
+
+    // Removed: subscription.onError((error) => { ... }); as it's not a function on this subscription type.
+
+    return () => subscription.unsubscribe();
   }, [navigate, location.pathname]);
 
   if (loading) {
